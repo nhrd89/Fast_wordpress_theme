@@ -14,5 +14,9 @@ Thumbs.db
 *.swo
 *~
 
-# Node (if build tools are added later)
+# Node
 node_modules/
+
+# Build output
+assets/css/dist/
+assets/js/dist/

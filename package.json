@@ -1,0 +1,22 @@
+{
+  "name": "pinlightning",
+  "version": "1.0.0",
+  "description": "Build tools for the PinLightning WordPress theme",
+  "private": true,
+  "scripts": {
+    "build:css": "mkdir -p assets/css/dist && lightningcss --minify --bundle assets/css/critical.css -o assets/css/dist/critical.css && lightningcss --minify --bundle assets/css/main.css -o assets/css/dist/main.css",
+    "build:js": "mkdir -p assets/js/dist && terser assets/js/core.js -o assets/js/dist/core.js --compress --mangle",
+    "build": "npm-run-all --parallel build:css build:js",
+    "deploy": "npm run build && bash deploy.sh",
+    "test": "npm run build && bash deploy.sh",
+    "dev": "chokidar \"assets/css/*.css\" \"assets/js/*.js\" --ignore \"assets/css/dist\" --ignore \"assets/js/dist\" -c \"npm run build\"",
+    "zip": "npm run build && cd .. && zip -r pinlightning.zip Fast_wordpress_theme/ -x '*.git*' '*.env*' '*node_modules*' '*deploy.sh*'"
+  },
+  "devDependencies": {
+    "chokidar-cli": "^3.0.0",
+    "lightningcss-cli": "^1.31.1",
+    "npm-run-all": "^4.1.5",
+    "terser": "^5.46.0"
+  },
+  "license": "GPL-2.0-or-later"
+}

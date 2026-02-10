@@ -51,10 +51,43 @@ PinLightning/
 3. Configure menus under **Appearance > Menus**
 4. Customize colors and logo under **Appearance > Customize**
 
+## Build Tools
+
+Requires Node.js. Install dependencies and run the build:
+
+```bash
+npm install
+npm run build        # minify CSS + JS into assets/*/dist/
+npm run dev          # watch for changes and rebuild
+npm run deploy       # build + SFTP upload to server
+npm run zip          # build + create distributable zip
+```
+
+## Configuration
+
+### Cache Flush Endpoint
+
+The theme exposes a REST endpoint for cache flushing at `/wp-json/pinlightning/v1/flush-cache`. To use it, add this line to your `wp-config.php`:
+
+```php
+define( 'PINLIGHTNING_CACHE_SECRET', 'pl_flush_2024_s3cur3' );
+```
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and fill in your credentials:
+
+```bash
+cp .env.example .env
+```
+
+The `.env` file is git-ignored and will never be committed.
+
 ## Requirements
 
 - WordPress 5.9+
 - PHP 7.4+
+- Node.js 18+ (for build tools)
 
 ## License
 
