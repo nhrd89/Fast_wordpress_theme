@@ -2,20 +2,24 @@
 /**
  * The footer template.
  *
+ * 3-column footer with back-to-top button (pure CSS).
+ *
  * @package PinLightning
  * @since 1.0.0
  */
 ?>
+</main><!-- #primary -->
 
-	<footer id="colophon" class="site-footer">
-		<div class="site-footer-inner">
-			<?php if ( is_active_sidebar( 'footer-1' ) ) : ?>
-				<div class="footer-widgets">
-					<?php dynamic_sidebar( 'footer-1' ); ?>
-				</div>
-			<?php endif; ?>
+<footer class="site-footer" role="contentinfo">
+	<div class="footer-inner">
+		<div class="footer-columns">
+			<div class="footer-col footer-about">
+				<h3 class="footer-heading"><?php esc_html_e( 'About', 'pinlightning' ); ?></h3>
+				<p><?php echo esc_html( get_bloginfo( 'description' ) ); ?></p>
+			</div>
 
-			<div class="site-info">
+			<div class="footer-col footer-links">
+				<h3 class="footer-heading"><?php esc_html_e( 'Quick Links', 'pinlightning' ); ?></h3>
 				<?php
 				wp_nav_menu( array(
 					'theme_location' => 'footer',
@@ -25,16 +29,38 @@
 					'depth'          => 1,
 				) );
 				?>
-				<span class="copyright">
-					&copy; <?php echo date( 'Y' ); // phpcs:ignore ?>
-					<a href="<?php echo esc_url( home_url( '/' ) ); ?>">
-						<?php bloginfo( 'name' ); ?>
-					</a>
-				</span>
+			</div>
+
+			<div class="footer-col footer-social">
+				<h3 class="footer-heading"><?php esc_html_e( 'Follow Us', 'pinlightning' ); ?></h3>
+				<div class="social-links">
+					<?php
+					$social_links = array(
+						'pinlightning_pinterest_url'  => 'Pinterest',
+						'pinlightning_instagram_url'  => 'Instagram',
+						'pinlightning_facebook_url'   => 'Facebook',
+						'pinlightning_twitter_url'    => 'X / Twitter',
+					);
+					foreach ( $social_links as $mod => $label ) :
+						$url = get_theme_mod( $mod, '' );
+						if ( $url ) :
+							?>
+							<a href="<?php echo esc_url( $url ); ?>" class="social-link" target="_blank" rel="noopener noreferrer">
+								<?php echo esc_html( $label ); ?>
+							</a>
+						<?php endif; ?>
+					<?php endforeach; ?>
+				</div>
 			</div>
 		</div>
-	</footer>
-</div><!-- #page -->
+
+		<div class="footer-bottom">
+			<p class="copyright">&copy; <?php echo esc_html( date_i18n( 'Y' ) ); ?> <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><?php bloginfo( 'name' ); ?></a></p>
+		</div>
+	</div>
+
+	<a href="#top" class="back-to-top" aria-label="<?php esc_attr_e( 'Back to top', 'pinlightning' ); ?>">&uarr;</a>
+</footer>
 
 <?php wp_footer(); ?>
 

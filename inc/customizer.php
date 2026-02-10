@@ -15,9 +15,9 @@ function pinlightning_customize_register( $wp_customize ) {
 	$wp_customize->get_setting( 'blogname' )->transport        = 'postMessage';
 	$wp_customize->get_setting( 'blogdescription' )->transport = 'postMessage';
 
-	// Colors section.
+	// Accent color.
 	$wp_customize->add_setting( 'pinlightning_accent_color', array(
-		'default'           => '#0066cc',
+		'default'           => '#e91e63',
 		'sanitize_callback' => 'sanitize_hex_color',
 		'transport'         => 'postMessage',
 	) );
@@ -26,6 +26,32 @@ function pinlightning_customize_register( $wp_customize ) {
 		'label'   => __( 'Accent Color', 'pinlightning' ),
 		'section' => 'colors',
 	) ) );
+
+	// Social links section.
+	$wp_customize->add_section( 'pinlightning_social', array(
+		'title'    => __( 'Social Links', 'pinlightning' ),
+		'priority' => 120,
+	) );
+
+	$social_fields = array(
+		'pinlightning_pinterest_url' => __( 'Pinterest URL', 'pinlightning' ),
+		'pinlightning_instagram_url' => __( 'Instagram URL', 'pinlightning' ),
+		'pinlightning_facebook_url'  => __( 'Facebook URL', 'pinlightning' ),
+		'pinlightning_twitter_url'   => __( 'X / Twitter URL', 'pinlightning' ),
+	);
+
+	foreach ( $social_fields as $id => $label ) {
+		$wp_customize->add_setting( $id, array(
+			'default'           => '',
+			'sanitize_callback' => 'esc_url_raw',
+		) );
+
+		$wp_customize->add_control( $id, array(
+			'label'   => $label,
+			'section' => 'pinlightning_social',
+			'type'    => 'url',
+		) );
+	}
 }
 add_action( 'customize_register', 'pinlightning_customize_register' );
 
@@ -33,10 +59,10 @@ add_action( 'customize_register', 'pinlightning_customize_register' );
  * Output custom CSS for Customizer settings.
  */
 function pinlightning_customizer_css() {
-	$accent_color = get_theme_mod( 'pinlightning_accent_color', '#0066cc' );
-	if ( '#0066cc' !== $accent_color ) {
+	$accent_color = get_theme_mod( 'pinlightning_accent_color', '#e91e63' );
+	if ( '#e91e63' !== $accent_color ) {
 		printf(
-			'<style>:root { --pinlightning-accent: %s; }</style>',
+			'<style>:root{--pl-accent:%s}</style>',
 			esc_attr( $accent_color )
 		);
 	}
