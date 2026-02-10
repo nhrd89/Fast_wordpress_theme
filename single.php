@@ -18,16 +18,11 @@ while ( have_posts() ) :
 	$word_count = str_word_count( wp_strip_all_tags( $content ) );
 	$read_time  = max( 1, (int) ceil( $word_count / 250 ) );
 
-	// Dominant color for placeholder.
-	$dominant_color = '';
-	if ( function_exists( 'pinlightning_get_dominant_color' ) ) {
-		$dominant_color = pinlightning_get_dominant_color( get_the_ID() );
-	}
 ?>
 
 	<?php if ( has_post_thumbnail() ) : ?>
-		<div class="post-hero" <?php echo $dominant_color ? 'style="background-color:' . esc_attr( $dominant_color ) . '"' : ''; ?>>
-			<?php the_post_thumbnail( 'post-hero', array( 'class' => 'post-hero-img' ) ); ?>
+		<div class="post-hero">
+			<?php the_post_thumbnail( 'large', array( 'class' => 'post-hero-img' ) ); ?>
 		</div>
 	<?php endif; ?>
 

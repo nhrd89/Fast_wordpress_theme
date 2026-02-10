@@ -172,27 +172,17 @@
 
 /* === Post hero === */
 .post-hero {
-	width: 100%;
-	max-height: 600px;
-	overflow: hidden;
-	background: var(--pl-border);
-	border-radius: 0 !important;
-	position: relative;
+	max-width: var(--pl-content);
+	margin: 0 auto;
+	padding: 1.5rem 1rem 0;
+	text-align: center;
 }
 
-.post-hero img,
-.post-hero .post-hero-img,
-.post-hero .wp-post-image {
-	width: 100% !important;
-	height: 600px;
-	max-height: 600px;
-	object-fit: cover;
+.post-hero img {
+	max-width: 100%;
+	height: auto;
 	display: block;
-	border-radius: 0 !important;
-	clip-path: none !important;
-	shape-outside: none !important;
-	margin: 0;
-	padding: 0;
+	margin: 0 auto;
 }
 
 /* === Single article === */
@@ -774,17 +764,6 @@
 
 /* === Responsive === */
 @media (max-width: 768px) {
-	.post-hero {
-		max-height: 400px;
-	}
-
-	.post-hero img,
-	.post-hero .post-hero-img,
-	.post-hero .wp-post-image {
-		height: 400px;
-		max-height: 400px;
-	}
-
 	.single-title {
 		font-size: 1.5rem;
 	}
@@ -804,17 +783,6 @@
 }
 
 @media (max-width: 480px) {
-	.post-hero {
-		max-height: 300px;
-	}
-
-	.post-hero img,
-	.post-hero .post-hero-img,
-	.post-hero .wp-post-image {
-		height: 300px;
-		max-height: 300px;
-	}
-
 	.single-article {
 		padding: 1.5rem 1rem 1rem;
 	}
@@ -875,13 +843,6 @@
 	}
 
 	.post-hero {
-		max-height: none;
 		break-inside: avoid;
-	}
-
-	.post-hero img,
-	.post-hero .post-hero-img,
-	.post-hero .wp-post-image {
-		height: auto;
 	}
 }
