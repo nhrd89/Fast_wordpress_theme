@@ -240,14 +240,166 @@ function pinlightning_build_pinterest_attrs( $post_id, $attachment_id ) {
 }
 
 /*--------------------------------------------------------------
- * 3b. CONTENT IMAGE DIMENSIONS & SRCSET
+ * 3b. CONTENT IMAGE DIMENSION CACHING
+ *
+ * Two-phase approach for external CDN images (myquickurl.com etc.):
+ *   Phase 1 (save_post): Pre-fetch dimensions via getimagesize()
+ *            and cache in post meta '_pinlightning_image_dims'.
+ *   Phase 2 (the_content): Read cached dims and inject width/height
+ *            attributes. NEVER calls getimagesize() during render.
  *--------------------------------------------------------------*/
 
 /**
- * Add missing width/height attributes and srcset/sizes to content images.
+ * Phase 1: Cache image dimensions when a post is saved.
  *
- * Finds <img> tags with a wp-image-{id} class that are missing dimensions
- * or responsive attributes and fills them in from the attachment metadata.
+ * Scans post_content for <img> tags, fetches dimensions for any
+ * that don't already have width/height, and stores results as
+ * post meta keyed by image src URL.
+ *
+ * @param int     $post_id The post ID.
+ * @param WP_Post $post    The post object.
+ */
+function pinlightning_cache_image_dims_on_save( $post_id, $post ) {
+	if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+		return;
+	}
+
+	if ( empty( $post->post_content ) ) {
+		return;
+	}
+
+	// Find all <img> tags in the raw post content.
+	if ( ! preg_match_all( '/<img\b[^>]+>/i', $post->post_content, $img_matches ) ) {
+		return;
+	}
+
+	// Load existing cached dimensions.
+	$cached = get_post_meta( $post_id, '_pinlightning_image_dims', true );
+	if ( ! is_array( $cached ) ) {
+		$cached = array();
+	}
+
+	$updated = false;
+
+	foreach ( $img_matches[0] as $img_tag ) {
+		// Extract src.
+		if ( ! preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $img_tag, $src_match ) ) {
+			continue;
+		}
+
+		$src = $src_match[1];
+
+		// Skip if already has both width and height in the markup.
+		if ( preg_match( '/\bwidth\s*=/', $img_tag ) && preg_match( '/\bheight\s*=/', $img_tag ) ) {
+			continue;
+		}
+
+		// Skip if already cached for this src.
+		$cache_key = md5( $src );
+		if ( isset( $cached[ $cache_key ] ) ) {
+			continue;
+		}
+
+		// Try WordPress attachment first (wp-image-{id} class).
+		$dims = pinlightning_get_wp_image_dims( $img_tag );
+
+		// Fall back to getimagesize() for external images.
+		if ( ! $dims ) {
+			$dims = pinlightning_fetch_remote_image_dims( $src );
+		}
+
+		if ( $dims ) {
+			$cached[ $cache_key ] = array(
+				'src'    => $src,
+				'width'  => $dims[0],
+				'height' => $dims[1],
+			);
+			$updated = true;
+		}
+	}
+
+	if ( $updated ) {
+		update_post_meta( $post_id, '_pinlightning_image_dims', $cached );
+	}
+}
+add_action( 'save_post', 'pinlightning_cache_image_dims_on_save', 15, 2 );
+
+/**
+ * Try to get dimensions for a WordPress library image from its wp-image-{id} class.
+ *
+ * @param string $img_tag The full <img> tag HTML.
+ * @return array|false [width, height] or false.
+ */
+function pinlightning_get_wp_image_dims( $img_tag ) {
+	if ( ! preg_match( '/\bwp-image-(\d+)\b/', $img_tag, $id_match ) ) {
+		return false;
+	}
+
+	$attachment_id = (int) $id_match[1];
+
+	// Determine size from class.
+	$size = 'full';
+	if ( preg_match( '/\bsize-(\S+)/', $img_tag, $size_match ) ) {
+		$size = $size_match[1];
+	}
+
+	$image_src = wp_get_attachment_image_src( $attachment_id, $size );
+	if ( $image_src && $image_src[1] && $image_src[2] ) {
+		return array( (int) $image_src[1], (int) $image_src[2] );
+	}
+
+	return false;
+}
+
+/**
+ * Fetch dimensions of a remote image via getimagesize() with timeout.
+ *
+ * Only called during save_post, never during page render.
+ *
+ * @param string $url The image URL.
+ * @return array|false [width, height] or false on failure.
+ */
+function pinlightning_fetch_remote_image_dims( $url ) {
+	if ( empty( $url ) ) {
+		return false;
+	}
+
+	// Stream context with 3-second timeout.
+	$context = stream_context_create( array(
+		'http' => array(
+			'timeout' => 3,
+			'header'  => "User-Agent: PinLightning/1.0\r\n",
+		),
+		'ssl' => array(
+			'verify_peer' => false,
+		),
+	) );
+
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+	$size = @getimagesize( $url, $info = array() );
+
+	if ( ! $size ) {
+		// Retry with stream context for URLs that need custom headers.
+		$tmp = @file_get_contents( $url, false, $context, 0, 32768 ); // phpcs:ignore
+		if ( $tmp ) {
+			$tmp_file = wp_tempnam( 'pl_img_' );
+			file_put_contents( $tmp_file, $tmp ); // phpcs:ignore
+			$size = @getimagesize( $tmp_file );
+			@unlink( $tmp_file );
+		}
+	}
+
+	if ( $size && $size[0] > 0 && $size[1] > 0 ) {
+		return array( (int) $size[0], (int) $size[1] );
+	}
+
+	return false;
+}
+
+/**
+ * Phase 2: Add width/height and sizes to content images at render time.
+ *
+ * Uses only cached dimensions from post meta. Never makes remote requests.
  *
  * @param string $content The post content.
  * @return string Modified content.
@@ -257,72 +409,107 @@ function pinlightning_content_image_dimensions( $content ) {
 		return $content;
 	}
 
+	$post_id = get_the_ID();
+	if ( ! $post_id ) {
+		return $content;
+	}
+
+	// Load cached dimensions.
+	$cached = get_post_meta( $post_id, '_pinlightning_image_dims', true );
+	if ( ! is_array( $cached ) ) {
+		$cached = array();
+	}
+
 	return preg_replace_callback(
 		'/<img\b([^>]*)>/i',
-		'pinlightning_fix_img_tag',
+		function ( $matches ) use ( $cached ) {
+			return pinlightning_fix_img_tag( $matches, $cached );
+		},
 		$content
 	);
 }
 add_filter( 'the_content', 'pinlightning_content_image_dimensions', 15 );
 
 /**
- * Fix a single <img> tag: add width/height and srcset/sizes if missing.
+ * Fix a single <img> tag: add width/height and sizes from cache.
+ *
+ * Works for both WP library images (wp-image-{id}) and external CDN images.
  *
  * @param array $matches Regex matches from preg_replace_callback.
+ * @param array $cached  Cached dimensions map from post meta.
  * @return string The fixed <img> tag.
  */
-function pinlightning_fix_img_tag( $matches ) {
-	$img  = $matches[0];
+function pinlightning_fix_img_tag( $matches, $cached ) {
+	$img = $matches[0];
 	$atts = $matches[1];
 
-	// Extract attachment ID from wp-image-{id} class.
-	if ( ! preg_match( '/\bwp-image-(\d+)\b/', $atts, $id_match ) ) {
-		return $img;
+	$has_width  = (bool) preg_match( '/\bwidth\s*=/', $atts );
+	$has_height = (bool) preg_match( '/\bheight\s*=/', $atts );
+
+	// Already has both — nothing to do except maybe add sizes.
+	if ( $has_width && $has_height ) {
+		return pinlightning_maybe_add_sizes( $img, $atts );
 	}
 
-	$attachment_id = (int) $id_match[1];
-	$meta          = wp_get_attachment_metadata( $attachment_id );
-	if ( ! $meta ) {
-		return $img;
-	}
+	$width  = 0;
+	$height = 0;
 
-	// Determine which size is being used from the class (e.g. size-large).
-	$size = 'full';
-	if ( preg_match( '/\bsize-(\S+)/', $atts, $size_match ) ) {
-		$size = $size_match[1];
-	}
+	// Strategy 1: WP library image — use attachment API.
+	if ( preg_match( '/\bwp-image-(\d+)\b/', $atts, $id_match ) ) {
+		$attachment_id = (int) $id_match[1];
+		$size = 'full';
+		if ( preg_match( '/\bsize-(\S+)/', $atts, $size_match ) ) {
+			$size = $size_match[1];
+		}
 
-	$image_src = wp_get_attachment_image_src( $attachment_id, $size );
-	if ( ! $image_src ) {
-		return $img;
-	}
+		$image_src = wp_get_attachment_image_src( $attachment_id, $size );
+		if ( $image_src ) {
+			$width  = (int) $image_src[1];
+			$height = (int) $image_src[2];
+		}
 
-	$width  = $image_src[1];
-	$height = $image_src[2];
-
-	// Add width if missing.
-	if ( $width && ! preg_match( '/\bwidth\s*=/', $atts ) ) {
-		$img = str_replace( '<img', '<img width="' . (int) $width . '"', $img );
-	}
-
-	// Add height if missing.
-	if ( $height && ! preg_match( '/\bheight\s*=/', $atts ) ) {
-		$img = str_replace( '<img', '<img height="' . (int) $height . '"', $img );
-	}
-
-	// Add srcset if missing.
-	if ( ! preg_match( '/\bsrcset\s*=/', $img ) ) {
-		$srcset = wp_get_attachment_image_srcset( $attachment_id, $size );
-		if ( $srcset ) {
-			$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '"', $img );
+		// Also add srcset for WP images.
+		if ( $width && ! preg_match( '/\bsrcset\s*=/', $img ) ) {
+			$srcset = wp_get_attachment_image_srcset( $attachment_id, $size );
+			if ( $srcset ) {
+				$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '"', $img );
+			}
 		}
 	}
 
-	// Add sizes if missing (article content is max 720px).
+	// Strategy 2: Cached dimensions (external CDN images).
+	if ( ! $width && preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $atts, $src_match ) ) {
+		$cache_key = md5( $src_match[1] );
+		if ( isset( $cached[ $cache_key ] ) ) {
+			$width  = (int) $cached[ $cache_key ]['width'];
+			$height = (int) $cached[ $cache_key ]['height'];
+		}
+	}
+
+	// Apply dimensions.
+	if ( $width && ! $has_width ) {
+		$img = str_replace( '<img', '<img width="' . $width . '"', $img );
+	}
+	if ( $height && ! $has_height ) {
+		$img = str_replace( '<img', '<img height="' . $height . '"', $img );
+	}
+
+	return pinlightning_maybe_add_sizes( $img, $atts );
+}
+
+/**
+ * Add sizes attribute if srcset is present but sizes is missing.
+ *
+ * Uses article max-width of 720px as the layout constraint.
+ *
+ * @param string $img The <img> tag HTML.
+ * @param string $atts The img attributes string.
+ * @return string Modified <img> tag.
+ */
+function pinlightning_maybe_add_sizes( $img, $atts ) {
 	if ( ! preg_match( '/\bsizes\s*=/', $img ) && preg_match( '/\bsrcset\s*=/', $img ) ) {
 		$img = str_replace( '<img', '<img sizes="(max-width: 720px) 100vw, 720px"', $img );
 	}
-
 	return $img;
 }
 
