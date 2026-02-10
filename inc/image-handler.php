@@ -240,6 +240,93 @@ function pinlightning_build_pinterest_attrs( $post_id, $attachment_id ) {
 }
 
 /*--------------------------------------------------------------
+ * 3b. CONTENT IMAGE DIMENSIONS & SRCSET
+ *--------------------------------------------------------------*/
+
+/**
+ * Add missing width/height attributes and srcset/sizes to content images.
+ *
+ * Finds <img> tags with a wp-image-{id} class that are missing dimensions
+ * or responsive attributes and fills them in from the attachment metadata.
+ *
+ * @param string $content The post content.
+ * @return string Modified content.
+ */
+function pinlightning_content_image_dimensions( $content ) {
+	if ( empty( $content ) || is_admin() || ! is_singular() ) {
+		return $content;
+	}
+
+	return preg_replace_callback(
+		'/<img\b([^>]*)>/i',
+		'pinlightning_fix_img_tag',
+		$content
+	);
+}
+add_filter( 'the_content', 'pinlightning_content_image_dimensions', 15 );
+
+/**
+ * Fix a single <img> tag: add width/height and srcset/sizes if missing.
+ *
+ * @param array $matches Regex matches from preg_replace_callback.
+ * @return string The fixed <img> tag.
+ */
+function pinlightning_fix_img_tag( $matches ) {
+	$img  = $matches[0];
+	$atts = $matches[1];
+
+	// Extract attachment ID from wp-image-{id} class.
+	if ( ! preg_match( '/\bwp-image-(\d+)\b/', $atts, $id_match ) ) {
+		return $img;
+	}
+
+	$attachment_id = (int) $id_match[1];
+	$meta          = wp_get_attachment_metadata( $attachment_id );
+	if ( ! $meta ) {
+		return $img;
+	}
+
+	// Determine which size is being used from the class (e.g. size-large).
+	$size = 'full';
+	if ( preg_match( '/\bsize-(\S+)/', $atts, $size_match ) ) {
+		$size = $size_match[1];
+	}
+
+	$image_src = wp_get_attachment_image_src( $attachment_id, $size );
+	if ( ! $image_src ) {
+		return $img;
+	}
+
+	$width  = $image_src[1];
+	$height = $image_src[2];
+
+	// Add width if missing.
+	if ( $width && ! preg_match( '/\bwidth\s*=/', $atts ) ) {
+		$img = str_replace( '<img', '<img width="' . (int) $width . '"', $img );
+	}
+
+	// Add height if missing.
+	if ( $height && ! preg_match( '/\bheight\s*=/', $atts ) ) {
+		$img = str_replace( '<img', '<img height="' . (int) $height . '"', $img );
+	}
+
+	// Add srcset if missing.
+	if ( ! preg_match( '/\bsrcset\s*=/', $img ) ) {
+		$srcset = wp_get_attachment_image_srcset( $attachment_id, $size );
+		if ( $srcset ) {
+			$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '"', $img );
+		}
+	}
+
+	// Add sizes if missing (article content is max 720px).
+	if ( ! preg_match( '/\bsizes\s*=/', $img ) && preg_match( '/\bsrcset\s*=/', $img ) ) {
+		$img = str_replace( '<img', '<img sizes="(max-width: 720px) 100vw, 720px"', $img );
+	}
+
+	return $img;
+}
+
+/*--------------------------------------------------------------
  * 4. DOMINANT COLOR PLACEHOLDER
  *--------------------------------------------------------------*/
 

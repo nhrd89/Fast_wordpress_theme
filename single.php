@@ -118,9 +118,7 @@ while ( have_posts() ) :
 
 <?php endwhile; ?>
 
-<script>
-(function(){var s=document.createElement('script');s.async=true;s.defer=true;s.src='//assets.pinterest.com/js/pinit.js';s.setAttribute('data-pin-hover',true);document.body.appendChild(s)})();
-</script>
+<script async defer src="//assets.pinterest.com/js/pinit.js" data-pin-hover="true"></script>
 
 <?php
 get_footer();
