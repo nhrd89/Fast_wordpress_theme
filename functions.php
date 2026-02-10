@@ -1,4 +1,5 @@
 <?php
+// Auto-deploy test
 /**
  * PinLightning theme functions and definitions.
  *
