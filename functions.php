@@ -114,3 +114,4 @@ require_once PINLIGHTNING_DIR . '/inc/template-tags.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer.php';
 require_once PINLIGHTNING_DIR . '/inc/performance.php';
 require_once PINLIGHTNING_DIR . '/inc/image-handler.php';
+require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
