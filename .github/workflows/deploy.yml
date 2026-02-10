@@ -6,6 +6,9 @@ on:
       - main
       - claude/setup-pinlightning-theme-5lwUG
 
+env:
+  TEST_URL: https://cheerfultalks.com/wanderweave2/capture-the-aesthetic-15-beautiful-mountain-landscapes-for-photography/
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -38,6 +41,7 @@ jobs:
             --exclude='.env' \
             --exclude='.env.example' \
             --exclude='deploy.sh' \
+            --exclude='wp-check.sh' \
             --exclude='package.json' \
             --exclude='package-lock.json' \
             --exclude='.github/' \
@@ -51,7 +55,110 @@ jobs:
             "${{ secrets.SITE_URL }}/wp-json/pinlightning/v1/flush-cache" \
             -H "X-Cache-Secret: ${{ secrets.CACHE_SECRET }}"
 
-      - name: Run PageSpeed test
+      - name: PageSpeed test — Mobile
+        id: psi_mobile
         run: |
-          curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${{ secrets.SITE_URL }}&strategy=mobile&key=${{ secrets.PAGESPEED_API_KEY }}" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Performance: {int(d[\"lighthouseResult\"][\"categories\"][\"performance\"][\"score\"]*100)}')"
+          echo "Testing mobile: $TEST_URL"
+          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL', safe=''))")&strategy=mobile&key=${{ secrets.PAGESPEED_API_KEY }}")
+
+          # Extract score
+          SCORE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(int(d['lighthouseResult']['categories']['performance']['score']*100))")
+          echo "Mobile Performance Score: $SCORE"
+          echo "mobile_score=$SCORE" >> "$GITHUB_OUTPUT"
+
+          # Extract metrics
+          echo "$RESPONSE" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          a = d['lighthouseResult']['audits']
+          print(f\"  FCP: {a['first-contentful-paint']['displayValue']}\")
+          print(f\"  LCP: {a['largest-contentful-paint']['displayValue']}\")
+          print(f\"  Speed Index: {a['speed-index']['displayValue']}\")
+          print(f\"  TBT: {a['total-blocking-time']['displayValue']}\")
+          print(f\"  CLS: {a['cumulative-layout-shift']['displayValue']}\")
+          "
+
+          # Extract screenshot
+          echo "$RESPONSE" | python3 -c "
+          import sys, json, base64
+          d = json.load(sys.stdin)
+          ss = d['lighthouseResult']['audits']['final-screenshot']['details']['data']
+          if ',' in ss:
+              ss = ss.split(',', 1)[1]
+          img = base64.b64decode(ss)
+          with open('screenshot-mobile.png', 'wb') as f:
+              f.write(img)
+          print(f'Saved screenshot-mobile.png ({len(img):,} bytes)')
+          "
+
+      - name: PageSpeed test — Desktop
+        id: psi_desktop
+        run: |
+          echo "Testing desktop: $TEST_URL"
+          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL', safe=''))")&strategy=desktop&key=${{ secrets.PAGESPEED_API_KEY }}")
+
+          # Extract score
+          SCORE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(int(d['lighthouseResult']['categories']['performance']['score']*100))")
+          echo "Desktop Performance Score: $SCORE"
+          echo "desktop_score=$SCORE" >> "$GITHUB_OUTPUT"
+
+          # Extract metrics
+          echo "$RESPONSE" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          a = d['lighthouseResult']['audits']
+          print(f\"  FCP: {a['first-contentful-paint']['displayValue']}\")
+          print(f\"  LCP: {a['largest-contentful-paint']['displayValue']}\")
+          print(f\"  Speed Index: {a['speed-index']['displayValue']}\")
+          print(f\"  TBT: {a['total-blocking-time']['displayValue']}\")
+          print(f\"  CLS: {a['cumulative-layout-shift']['displayValue']}\")
+          "
+
+          # Extract screenshot
+          echo "$RESPONSE" | python3 -c "
+          import sys, json, base64
+          d = json.load(sys.stdin)
+          ss = d['lighthouseResult']['audits']['final-screenshot']['details']['data']
+          if ',' in ss:
+              ss = ss.split(',', 1)[1]
+          img = base64.b64decode(ss)
+          with open('screenshot-desktop.png', 'wb') as f:
+              f.write(img)
+          print(f'Saved screenshot-desktop.png ({len(img):,} bytes)')
+          "
+
+      - name: Print score summary
+        run: |
+          echo "═══════════════════════════════════"
+          echo " Mobile Score:  ${{ steps.psi_mobile.outputs.mobile_score }}/100"
+          echo " Desktop Score: ${{ steps.psi_desktop.outputs.desktop_score }}/100"
+          echo "═══════════════════════════════════"
+
+      - name: Get active plugins
+        run: |
+          curl -s -u "${{ secrets.WP_USER }}:${{ secrets.WP_APP_PASSWORD }}" \
+            "${{ secrets.SITE_URL }}/wp-json/wp/v2/plugins" \
+            | python3 -c "
+          import sys, json
+          plugins = json.load(sys.stdin)
+          with open('active-plugins.txt', 'w') as f:
+              f.write('Active Plugins\n')
+              f.write('=' * 40 + '\n\n')
+              for p in plugins:
+                  status = p.get('status', 'unknown')
+                  name = p.get('name', 'Unknown')
+                  version = p.get('version', '?')
+                  f.write(f'[{status:>8}] {name} v{version}\n')
+              f.write(f'\nTotal: {len(plugins)} plugins\n')
+          print(open('active-plugins.txt').read())
+          "
+
+      - name: Upload screenshots and plugin list
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-report-${{ github.sha }}
+          path: |
+            screenshot-mobile.png
+            screenshot-desktop.png
+            active-plugins.txt
+          retention-days: 30
