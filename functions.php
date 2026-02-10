@@ -96,7 +96,7 @@ function pinlightning_scripts() {
 	// Theme script.
 	wp_enqueue_script(
 		'pinlightning-script',
-		PINLIGHTNING_URI . '/assets/js/main.js',
+		PINLIGHTNING_URI . '/assets/js/dist/core.js',
 		array(),
 		PINLIGHTNING_VERSION,
 		true

@@ -146,7 +146,10 @@ add_action( 'pre_ping', 'pinlightning_disable_self_pingbacks' );
  * Inline critical CSS in <head> and load main.css asynchronously.
  */
 function pinlightning_critical_css() {
-	$critical_file = PINLIGHTNING_DIR . '/assets/css/critical.css';
+	$critical_file = PINLIGHTNING_DIR . '/assets/css/dist/critical.css';
+	if ( ! file_exists( $critical_file ) ) {
+		$critical_file = PINLIGHTNING_DIR . '/assets/css/critical.css';
+	}
 
 	if ( file_exists( $critical_file ) ) {
 		$critical_css = file_get_contents( $critical_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
@@ -164,7 +167,7 @@ add_action( 'wp_head', 'pinlightning_critical_css', 1 );
  * then onload flips it to media="all" so it applies.
  */
 function pinlightning_async_css() {
-	$css_url = PINLIGHTNING_URI . '/assets/css/main.css?ver=' . PINLIGHTNING_VERSION;
+	$css_url = PINLIGHTNING_URI . '/assets/css/dist/main.css?ver=' . PINLIGHTNING_VERSION;
 	echo '<link rel="stylesheet" href="' . esc_url( $css_url ) . '" media="print" onload="this.media=\'all\'">' . "\n";
 	echo '<noscript><link rel="stylesheet" href="' . esc_url( $css_url ) . '"></noscript>' . "\n";
 }
