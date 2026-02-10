@@ -5,6 +5,8 @@
  * 1. Lazy loading with LCP-aware eager first image
  * 2. Responsive image sizes for fashion content
  * 3. Pinterest data attributes
+ * 3b. Content image dimension caching (WP + external CDN)
+ * 3c. CDN image rewriting (myquickurl.com resizer integration)
  * 4. Dominant color placeholder extraction
  * 5. WebP <picture> wrapper
  *
@@ -355,6 +357,7 @@ function pinlightning_get_wp_image_dims( $img_tag ) {
  * Fetch dimensions of a remote image via getimagesize() with timeout.
  *
  * Only called during save_post, never during page render.
+ * For myquickurl.com images, always fetches the original (non-resized) URL.
  *
  * @param string $url The image URL.
  * @return array|false [width, height] or false on failure.
@@ -362,6 +365,15 @@ function pinlightning_get_wp_image_dims( $img_tag ) {
 function pinlightning_fetch_remote_image_dims( $url ) {
 	if ( empty( $url ) ) {
 		return false;
+	}
+
+	// For myquickurl.com CDN URLs, normalize to the original image path.
+	if ( strpos( $url, 'myquickurl.com' ) !== false ) {
+		if ( preg_match( '/myquickurl\.com\/img\.php\?.*?src=([^&]+)/', $url, $m ) ) {
+			$url = 'https://myquickurl.com/' . urldecode( $m[1] );
+		} elseif ( preg_match( '/myquickurl\.com\/img\/(.+?)(?:\?|$)/', $url, $m ) ) {
+			$url = 'https://myquickurl.com/' . $m[1];
+		}
 	}
 
 	// Stream context with 3-second timeout.
@@ -510,6 +522,150 @@ function pinlightning_maybe_add_sizes( $img, $atts ) {
 	if ( ! preg_match( '/\bsizes\s*=/', $img ) && preg_match( '/\bsrcset\s*=/', $img ) ) {
 		$img = str_replace( '<img', '<img sizes="(max-width: 720px) 100vw, 720px"', $img );
 	}
+	return $img;
+}
+
+/*--------------------------------------------------------------
+ * 3c. CDN IMAGE REWRITING (myquickurl.com resizer)
+ *--------------------------------------------------------------*/
+
+/**
+ * Rewrite myquickurl.com images to use the on-demand resizer with srcset.
+ *
+ * Runs at priority 25 (after Pinterest attrs at 20 and dimensions at 15).
+ * Generates resized src + 3-width srcset through the img.php endpoint.
+ *
+ * @param string $content The post content.
+ * @return string Modified content.
+ */
+function pinlightning_rewrite_cdn_images( $content ) {
+	if ( empty( $content ) || is_admin() || ! is_singular() ) {
+		return $content;
+	}
+
+	$post_id = get_the_ID();
+	$cached  = array();
+	if ( $post_id ) {
+		$cached = get_post_meta( $post_id, '_pinlightning_image_dims', true );
+		if ( ! is_array( $cached ) ) {
+			$cached = array();
+		}
+	}
+
+	return preg_replace_callback(
+		'/<img\b([^>]*)>/i',
+		function ( $matches ) use ( $cached ) {
+			return pinlightning_rewrite_cdn_img( $matches, $cached );
+		},
+		$content
+	);
+}
+add_filter( 'the_content', 'pinlightning_rewrite_cdn_images', 25 );
+
+/**
+ * Rewrite a single CDN image tag.
+ *
+ * @param array $matches Regex matches.
+ * @param array $cached  Dimension cache from post meta.
+ * @return string Modified <img> tag.
+ */
+function pinlightning_rewrite_cdn_img( $matches, $cached ) {
+	$img = $matches[0];
+	$atts = $matches[1];
+
+	// Only process myquickurl.com images.
+	if ( strpos( $atts, 'myquickurl.com' ) === false ) {
+		return $img;
+	}
+
+	// Skip if already has srcset (already processed or manually set).
+	if ( preg_match( '/\bsrcset\s*=/', $atts ) ) {
+		return $img;
+	}
+
+	// Extract the current src.
+	if ( ! preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $atts, $src_match ) ) {
+		return $img;
+	}
+
+	$original_src = $src_match[1];
+
+	// Extract the path after myquickurl.com/ (handles various URL formats).
+	$cdn_path = '';
+	if ( preg_match( '/myquickurl\.com\/img\.php\?.*?src=([^&"\']+)/', $original_src, $m ) ) {
+		// Already a resizer URL — extract the original path.
+		$cdn_path = urldecode( $m[1] );
+	} elseif ( preg_match( '/myquickurl\.com\/img\/(.+?)(?:\?|$)/', $original_src, $m ) ) {
+		// Clean URL format.
+		$cdn_path = $m[1];
+	} elseif ( preg_match( '/myquickurl\.com\/(.+?)(?:\?|$)/', $original_src, $m ) ) {
+		// Direct file URL.
+		$cdn_path = $m[1];
+	}
+
+	if ( empty( $cdn_path ) ) {
+		return $img;
+	}
+
+	$cdn_path_encoded = rawurlencode( $cdn_path );
+	// Restore forward slashes (they're safe in the query string).
+	$cdn_path_encoded = str_replace( '%2F', '/', $cdn_path_encoded );
+
+	$base_url = 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded;
+
+	// Build resized src (720px for article width).
+	$new_src = $base_url . '&w=720&q=80';
+
+	// Build srcset with 3 widths.
+	$srcset = implode( ', ', array(
+		$base_url . '&w=480&q=80 480w',
+		$base_url . '&w=720&q=80 720w',
+		$base_url . '&w=1080&q=80 1080w',
+	) );
+
+	// Replace src.
+	$img = preg_replace(
+		'/\bsrc=["\'][^"\']+["\']/i',
+		'src="' . esc_url( $new_src ) . '"',
+		$img
+	);
+
+	// Add srcset and sizes.
+	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $img );
+
+	// Preserve original full-size URL as data-pin-media for Pinterest.
+	$original_full = 'https://myquickurl.com/' . $cdn_path;
+	if ( strpos( $img, 'data-pin-media' ) === false ) {
+		$img = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_full ) . '"', $img );
+	}
+
+	// Add width/height from dimension cache if missing.
+	if ( ! preg_match( '/\bwidth\s*=/', $img ) ) {
+		// Try cache with original src key first, then the CDN path key.
+		$dims = null;
+		foreach ( array( $original_src, $original_full ) as $try_src ) {
+			$key = md5( $try_src );
+			if ( isset( $cached[ $key ] ) ) {
+				$dims = $cached[ $key ];
+				break;
+			}
+		}
+
+		if ( $dims ) {
+			$orig_w = (int) $dims['width'];
+			$orig_h = (int) $dims['height'];
+			// Calculate dimensions at 720px width.
+			if ( $orig_w > 720 ) {
+				$display_w = 720;
+				$display_h = (int) round( $orig_h * ( 720 / $orig_w ) );
+			} else {
+				$display_w = $orig_w;
+				$display_h = $orig_h;
+			}
+			$img = str_replace( '<img', '<img width="' . $display_w . '" height="' . $display_h . '"', $img );
+		}
+	}
+
 	return $img;
 }
 
