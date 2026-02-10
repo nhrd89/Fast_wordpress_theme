@@ -88,16 +88,11 @@ add_action( 'widgets_init', 'pinlightning_widgets_init' );
 
 /**
  * Enqueue scripts and styles.
+ *
+ * Note: main.css is loaded asynchronously via inc/performance.php (critical CSS inlining).
+ * Do NOT enqueue main.css here — it would create a render-blocking request.
  */
 function pinlightning_scripts() {
-	// Main stylesheet.
-	wp_enqueue_style(
-		'pinlightning-style',
-		PINLIGHTNING_URI . '/assets/css/main.css',
-		array(),
-		PINLIGHTNING_VERSION
-	);
-
 	// Theme script.
 	wp_enqueue_script(
 		'pinlightning-script',
@@ -117,3 +112,4 @@ add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
 // Load helper files.
 require_once PINLIGHTNING_DIR . '/inc/template-tags.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer.php';
+require_once PINLIGHTNING_DIR . '/inc/performance.php';
