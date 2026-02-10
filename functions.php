@@ -113,3 +113,4 @@ add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
 require_once PINLIGHTNING_DIR . '/inc/template-tags.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer.php';
 require_once PINLIGHTNING_DIR . '/inc/performance.php';
+require_once PINLIGHTNING_DIR . '/inc/image-handler.php';
