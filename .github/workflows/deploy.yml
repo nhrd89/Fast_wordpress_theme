@@ -1,0 +1,57 @@
+name: Deploy PinLightning
+
+on:
+  push:
+    branches:
+      - main
+      - claude/setup-pinlightning-theme-5lwUG
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      - name: Deploy via rsync
+        run: |
+          sshpass -p '${{ secrets.SFTP_PASS }}' rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.SFTP_PORT }}" \
+            --exclude='.git/' \
+            --exclude='node_modules/' \
+            --exclude='.env' \
+            --exclude='.env.example' \
+            --exclude='deploy.sh' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='.github/' \
+            --exclude='*.md' \
+            --exclude='.gitignore' \
+            ./ ${{ secrets.SFTP_USER }}@${{ secrets.SFTP_HOST }}:${{ secrets.SFTP_REMOTE_PATH }}/
+
+      - name: Flush cache
+        run: |
+          curl -s -X POST \
+            "${{ secrets.SITE_URL }}/wp-json/pinlightning/v1/flush-cache" \
+            -H "X-Cache-Secret: ${{ secrets.CACHE_SECRET }}"
+
+      - name: Run PageSpeed test
+        run: |
+          curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${{ secrets.SITE_URL }}&strategy=mobile&key=${{ secrets.PAGESPEED_API_KEY }}" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Performance: {int(d[\"lighthouseResult\"][\"categories\"][\"performance\"][\"score\"]*100)}')"
