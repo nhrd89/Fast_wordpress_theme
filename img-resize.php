@@ -17,7 +17,7 @@
  */
 
 // ── Configuration ──────────────────────────────────────────────
-define( 'UPLOADS_DIR', dirname( dirname( __DIR__ ) ) . '/wp-content/uploads/' );
+define( 'UPLOADS_DIR', dirname( dirname( __DIR__ ) ) . '/uploads/' );
 define( 'CACHE_DIR', __DIR__ . '/img-cache/' );
 define( 'MAX_WIDTH', 2000 );
 define( 'MAX_HEIGHT', 2000 );
