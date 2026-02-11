@@ -182,14 +182,12 @@
 .post-hero picture {
 	display: block;
 	width: 100%;
-	height: 100%;
 }
 
 .post-hero img {
 	display: block;
 	width: 100%;
-	height: 100%;
-	object-fit: contain;
+	height: auto;
 }
 
 /* === Single article === */
