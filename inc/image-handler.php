@@ -5,8 +5,7 @@
  * 1. Lazy loading with LCP-aware eager first image
  * 2. Responsive image sizes for fashion content
  * 3. Pinterest data attributes
- * 3b. Content image dimension caching (WP + external CDN)
- * 3c. CDN image rewriting (myquickurl.com resizer integration)
+ * 3b. CDN image rewriting (myquickurl.com resizer + hardcoded dimensions)
  * 4. Dominant color placeholder extraction
  * 5. WebP <picture> wrapper
  *
@@ -242,298 +241,26 @@ function pinlightning_build_pinterest_attrs( $post_id, $attachment_id ) {
 }
 
 /*--------------------------------------------------------------
- * 3b. CONTENT IMAGE DIMENSION CACHING
+ * 3b. CDN IMAGE REWRITING (myquickurl.com resizer)
  *
- * Two-phase approach for external CDN images (myquickurl.com etc.):
- *   Phase 1 (save_post): Pre-fetch dimensions via getimagesize()
- *            and cache in post meta '_pinlightning_image_dims'.
- *   Phase 2 (the_content): Read cached dims and inject width/height
- *            attributes. NEVER calls getimagesize() during render.
+ * All external CDN images from myquickurl.com are 1080x1920.
+ * Dimensions are hardcoded — no per-post caching or remote
+ * lookups needed. Display width is 720px (article max-width),
+ * so display height = round(1920 * 720 / 1080) = 1280.
  *--------------------------------------------------------------*/
 
-/**
- * Phase 1: Cache image dimensions when a post is saved.
- *
- * Scans post_content for <img> tags, fetches dimensions for any
- * that don't already have width/height, and stores results as
- * post meta keyed by image src URL.
- *
- * @param int     $post_id The post ID.
- * @param WP_Post $post    The post object.
- */
-function pinlightning_cache_image_dims_on_save( $post_id, $post ) {
-	if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
-		return;
-	}
-
-	if ( empty( $post->post_content ) ) {
-		return;
-	}
-
-	// Find all <img> tags in the raw post content.
-	if ( ! preg_match_all( '/<img\b[^>]+>/i', $post->post_content, $img_matches ) ) {
-		return;
-	}
-
-	// Load existing cached dimensions.
-	$cached = get_post_meta( $post_id, '_pinlightning_image_dims', true );
-	if ( ! is_array( $cached ) ) {
-		$cached = array();
-	}
-
-	$updated = false;
-
-	foreach ( $img_matches[0] as $img_tag ) {
-		// Extract src.
-		if ( ! preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $img_tag, $src_match ) ) {
-			continue;
-		}
-
-		$src = $src_match[1];
-
-		// Skip if already has both width and height in the markup.
-		if ( preg_match( '/\bwidth\s*=/', $img_tag ) && preg_match( '/\bheight\s*=/', $img_tag ) ) {
-			continue;
-		}
-
-		// Skip if already cached for this src.
-		$cache_key = md5( $src );
-		if ( isset( $cached[ $cache_key ] ) ) {
-			continue;
-		}
-
-		// Try WordPress attachment first (wp-image-{id} class).
-		$dims = pinlightning_get_wp_image_dims( $img_tag );
-
-		// Fall back to getimagesize() for external images.
-		if ( ! $dims ) {
-			$dims = pinlightning_fetch_remote_image_dims( $src );
-		}
-
-		if ( $dims ) {
-			$cached[ $cache_key ] = array(
-				'src'    => $src,
-				'width'  => $dims[0],
-				'height' => $dims[1],
-			);
-			$updated = true;
-		}
-	}
-
-	if ( $updated ) {
-		update_post_meta( $post_id, '_pinlightning_image_dims', $cached );
-	}
-}
-add_action( 'save_post', 'pinlightning_cache_image_dims_on_save', 15, 2 );
-
-/**
- * Try to get dimensions for a WordPress library image from its wp-image-{id} class.
- *
- * @param string $img_tag The full <img> tag HTML.
- * @return array|false [width, height] or false.
- */
-function pinlightning_get_wp_image_dims( $img_tag ) {
-	if ( ! preg_match( '/\bwp-image-(\d+)\b/', $img_tag, $id_match ) ) {
-		return false;
-	}
-
-	$attachment_id = (int) $id_match[1];
-
-	// Determine size from class.
-	$size = 'full';
-	if ( preg_match( '/\bsize-(\S+)/', $img_tag, $size_match ) ) {
-		$size = $size_match[1];
-	}
-
-	$image_src = wp_get_attachment_image_src( $attachment_id, $size );
-	if ( $image_src && $image_src[1] && $image_src[2] ) {
-		return array( (int) $image_src[1], (int) $image_src[2] );
-	}
-
-	return false;
-}
-
-/**
- * Fetch dimensions of a remote image via getimagesize() with timeout.
- *
- * Only called during save_post, never during page render.
- * For myquickurl.com images, always fetches the original (non-resized) URL.
- *
- * @param string $url The image URL.
- * @return array|false [width, height] or false on failure.
- */
-function pinlightning_fetch_remote_image_dims( $url ) {
-	if ( empty( $url ) ) {
-		return false;
-	}
-
-	// For myquickurl.com CDN URLs, normalize to the original image path.
-	if ( strpos( $url, 'myquickurl.com' ) !== false ) {
-		if ( preg_match( '/myquickurl\.com\/img\.php\?.*?src=([^&]+)/', $url, $m ) ) {
-			$url = 'https://myquickurl.com/' . urldecode( $m[1] );
-		} elseif ( preg_match( '/myquickurl\.com\/img\/(.+?)(?:\?|$)/', $url, $m ) ) {
-			$url = 'https://myquickurl.com/' . $m[1];
-		}
-	}
-
-	// Stream context with 3-second timeout.
-	$context = stream_context_create( array(
-		'http' => array(
-			'timeout' => 3,
-			'header'  => "User-Agent: PinLightning/1.0\r\n",
-		),
-		'ssl' => array(
-			'verify_peer' => false,
-		),
-	) );
-
-	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-	$size = @getimagesize( $url, $info = array() );
-
-	if ( ! $size ) {
-		// Retry with stream context for URLs that need custom headers.
-		$tmp = @file_get_contents( $url, false, $context, 0, 32768 ); // phpcs:ignore
-		if ( $tmp ) {
-			$tmp_file = wp_tempnam( 'pl_img_' );
-			file_put_contents( $tmp_file, $tmp ); // phpcs:ignore
-			$size = @getimagesize( $tmp_file );
-			@unlink( $tmp_file );
-		}
-	}
-
-	if ( $size && $size[0] > 0 && $size[1] > 0 ) {
-		return array( (int) $size[0], (int) $size[1] );
-	}
-
-	return false;
-}
-
-/**
- * Phase 2: Add width/height and sizes to content images at render time.
- *
- * Uses only cached dimensions from post meta. Never makes remote requests.
- *
- * @param string $content The post content.
- * @return string Modified content.
- */
-function pinlightning_content_image_dimensions( $content ) {
-	if ( empty( $content ) || is_admin() || ! is_singular() ) {
-		return $content;
-	}
-
-	$post_id = get_the_ID();
-	if ( ! $post_id ) {
-		return $content;
-	}
-
-	// Load cached dimensions.
-	$cached = get_post_meta( $post_id, '_pinlightning_image_dims', true );
-	if ( ! is_array( $cached ) ) {
-		$cached = array();
-	}
-
-	return preg_replace_callback(
-		'/<img\b([^>]*)>/i',
-		function ( $matches ) use ( $cached ) {
-			return pinlightning_fix_img_tag( $matches, $cached );
-		},
-		$content
-	);
-}
-add_filter( 'the_content', 'pinlightning_content_image_dimensions', 15 );
-
-/**
- * Fix a single <img> tag: add width/height and sizes from cache.
- *
- * Works for both WP library images (wp-image-{id}) and external CDN images.
- *
- * @param array $matches Regex matches from preg_replace_callback.
- * @param array $cached  Cached dimensions map from post meta.
- * @return string The fixed <img> tag.
- */
-function pinlightning_fix_img_tag( $matches, $cached ) {
-	$img = $matches[0];
-	$atts = $matches[1];
-
-	$has_width  = (bool) preg_match( '/\bwidth\s*=/', $atts );
-	$has_height = (bool) preg_match( '/\bheight\s*=/', $atts );
-
-	// Already has both — nothing to do except maybe add sizes.
-	if ( $has_width && $has_height ) {
-		return pinlightning_maybe_add_sizes( $img, $atts );
-	}
-
-	$width  = 0;
-	$height = 0;
-
-	// Strategy 1: WP library image — use attachment API.
-	if ( preg_match( '/\bwp-image-(\d+)\b/', $atts, $id_match ) ) {
-		$attachment_id = (int) $id_match[1];
-		$size = 'full';
-		if ( preg_match( '/\bsize-(\S+)/', $atts, $size_match ) ) {
-			$size = $size_match[1];
-		}
-
-		$image_src = wp_get_attachment_image_src( $attachment_id, $size );
-		if ( $image_src ) {
-			$width  = (int) $image_src[1];
-			$height = (int) $image_src[2];
-		}
-
-		// Also add srcset for WP images.
-		if ( $width && ! preg_match( '/\bsrcset\s*=/', $img ) ) {
-			$srcset = wp_get_attachment_image_srcset( $attachment_id, $size );
-			if ( $srcset ) {
-				$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '"', $img );
-			}
-		}
-	}
-
-	// Strategy 2: Cached dimensions (external CDN images).
-	if ( ! $width && preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $atts, $src_match ) ) {
-		$cache_key = md5( $src_match[1] );
-		if ( isset( $cached[ $cache_key ] ) ) {
-			$width  = (int) $cached[ $cache_key ]['width'];
-			$height = (int) $cached[ $cache_key ]['height'];
-		}
-	}
-
-	// Apply dimensions.
-	if ( $width && ! $has_width ) {
-		$img = str_replace( '<img', '<img width="' . $width . '"', $img );
-	}
-	if ( $height && ! $has_height ) {
-		$img = str_replace( '<img', '<img height="' . $height . '"', $img );
-	}
-
-	return pinlightning_maybe_add_sizes( $img, $atts );
-}
-
-/**
- * Add sizes attribute if srcset is present but sizes is missing.
- *
- * Uses article max-width of 720px as the layout constraint.
- *
- * @param string $img The <img> tag HTML.
- * @param string $atts The img attributes string.
- * @return string Modified <img> tag.
- */
-function pinlightning_maybe_add_sizes( $img, $atts ) {
-	if ( ! preg_match( '/\bsizes\s*=/', $img ) && preg_match( '/\bsrcset\s*=/', $img ) ) {
-		$img = str_replace( '<img', '<img sizes="(max-width: 720px) 100vw, 720px"', $img );
-	}
-	return $img;
-}
-
-/*--------------------------------------------------------------
- * 3c. CDN IMAGE REWRITING (myquickurl.com resizer)
- *--------------------------------------------------------------*/
+// CDN image originals: 1080x1920 (9:16 portrait).
+define( 'PINLIGHTNING_CDN_ORIG_W', 1080 );
+define( 'PINLIGHTNING_CDN_ORIG_H', 1920 );
+define( 'PINLIGHTNING_CDN_DISPLAY_W', 720 );
+define( 'PINLIGHTNING_CDN_DISPLAY_H', (int) round( 1920 * 720 / 1080 ) ); // 1280
 
 /**
  * Rewrite myquickurl.com images to use the on-demand resizer with srcset.
  *
- * Runs at priority 25 (after Pinterest attrs at 20 and dimensions at 15).
+ * Runs at priority 25 (after Pinterest attrs at 20).
  * Generates resized src + 3-width srcset through the img.php endpoint.
+ * Adds hardcoded width/height based on known 1080x1920 originals.
  *
  * @param string $content The post content.
  * @return string Modified content.
@@ -543,20 +270,9 @@ function pinlightning_rewrite_cdn_images( $content ) {
 		return $content;
 	}
 
-	$post_id = get_the_ID();
-	$cached  = array();
-	if ( $post_id ) {
-		$cached = get_post_meta( $post_id, '_pinlightning_image_dims', true );
-		if ( ! is_array( $cached ) ) {
-			$cached = array();
-		}
-	}
-
 	return preg_replace_callback(
 		'/<img\b([^>]*)>/i',
-		function ( $matches ) use ( $cached ) {
-			return pinlightning_rewrite_cdn_img( $matches, $cached );
-		},
+		'pinlightning_rewrite_cdn_img',
 		$content
 	);
 }
@@ -566,10 +282,9 @@ add_filter( 'the_content', 'pinlightning_rewrite_cdn_images', 25 );
  * Rewrite a single CDN image tag.
  *
  * @param array $matches Regex matches.
- * @param array $cached  Dimension cache from post meta.
  * @return string Modified <img> tag.
  */
-function pinlightning_rewrite_cdn_img( $matches, $cached ) {
+function pinlightning_rewrite_cdn_img( $matches ) {
 	$img = $matches[0];
 	$atts = $matches[1];
 
@@ -593,13 +308,10 @@ function pinlightning_rewrite_cdn_img( $matches, $cached ) {
 	// Extract the path after myquickurl.com/ (handles various URL formats).
 	$cdn_path = '';
 	if ( preg_match( '/myquickurl\.com\/img\.php\?.*?src=([^&"\']+)/', $original_src, $m ) ) {
-		// Already a resizer URL — extract the original path.
 		$cdn_path = urldecode( $m[1] );
 	} elseif ( preg_match( '/myquickurl\.com\/img\/(.+?)(?:\?|$)/', $original_src, $m ) ) {
-		// Clean URL format.
 		$cdn_path = $m[1];
 	} elseif ( preg_match( '/myquickurl\.com\/(.+?)(?:\?|$)/', $original_src, $m ) ) {
-		// Direct file URL.
 		$cdn_path = $m[1];
 	}
 
@@ -608,7 +320,6 @@ function pinlightning_rewrite_cdn_img( $matches, $cached ) {
 	}
 
 	$cdn_path_encoded = rawurlencode( $cdn_path );
-	// Restore forward slashes (they're safe in the query string).
 	$cdn_path_encoded = str_replace( '%2F', '/', $cdn_path_encoded );
 
 	$base_url = 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded;
@@ -639,31 +350,9 @@ function pinlightning_rewrite_cdn_img( $matches, $cached ) {
 		$img = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_full ) . '"', $img );
 	}
 
-	// Add width/height from dimension cache if missing.
+	// Hardcoded dimensions: all CDN images are 1080x1920, displayed at 720px width.
 	if ( ! preg_match( '/\bwidth\s*=/', $img ) ) {
-		// Try cache with original src key first, then the CDN path key.
-		$dims = null;
-		foreach ( array( $original_src, $original_full ) as $try_src ) {
-			$key = md5( $try_src );
-			if ( isset( $cached[ $key ] ) ) {
-				$dims = $cached[ $key ];
-				break;
-			}
-		}
-
-		if ( $dims ) {
-			$orig_w = (int) $dims['width'];
-			$orig_h = (int) $dims['height'];
-			// Calculate dimensions at 720px width.
-			if ( $orig_w > 720 ) {
-				$display_w = 720;
-				$display_h = (int) round( $orig_h * ( 720 / $orig_w ) );
-			} else {
-				$display_w = $orig_w;
-				$display_h = $orig_h;
-			}
-			$img = str_replace( '<img', '<img width="' . $display_w . '" height="' . $display_h . '"', $img );
-		}
+		$img = str_replace( '<img', '<img width="' . PINLIGHTNING_CDN_DISPLAY_W . '" height="' . PINLIGHTNING_CDN_DISPLAY_H . '"', $img );
 	}
 
 	return $img;
@@ -851,62 +540,3 @@ function pinlightning_webp_picture_wrap( $html, $attachment_id, $size, $icon, $a
 }
 add_filter( 'wp_get_attachment_image', 'pinlightning_webp_picture_wrap', 10, 5 );
 
-/*--------------------------------------------------------------
- * 6. BULK IMAGE DIMENSION CACHE BUILDER
- *--------------------------------------------------------------*/
-
-/**
- * Bulk-cache image dimensions for all published posts.
- *
- * Triggered via: /wp-admin/admin-post.php?action=pinlightning_cache_all_images&token=SECRET
- * Streams progress as plain text for real-time monitoring.
- */
-function pinlightning_bulk_cache_images() {
-	if ( ! isset( $_GET['token'] ) || ! defined( 'PINLIGHTNING_CACHE_SECRET' ) || $_GET['token'] !== PINLIGHTNING_CACHE_SECRET ) {
-		wp_die( 'Unauthorized' );
-	}
-
-	set_time_limit( 0 );
-
-	header( 'Content-Type: text/plain; charset=utf-8' );
-
-	$posts = get_posts( array(
-		'post_type'      => 'post',
-		'post_status'    => 'publish',
-		'posts_per_page' => -1,
-		'fields'         => 'ids',
-	) );
-
-	$total = count( $posts );
-	echo "Starting bulk image dimension cache for $total posts...\n\n";
-	if ( ob_get_level() ) {
-		ob_flush();
-	}
-	flush();
-
-	$total_cached = 0;
-
-	foreach ( $posts as $i => $post_id ) {
-		$title = get_the_title( $post_id );
-		$post  = get_post( $post_id );
-
-		if ( $post ) {
-			pinlightning_cache_image_dims_on_save( $post_id, $post );
-		}
-
-		$dims  = get_post_meta( $post_id, '_pinlightning_image_dims', true );
-		$count = is_array( $dims ) ? count( $dims ) : 0;
-		$total_cached += $count;
-
-		$num = $i + 1;
-		echo "[$num/$total] $title — cached $count images\n";
-		if ( ob_get_level() ) {
-			ob_flush();
-		}
-		flush();
-	}
-
-	echo "\nDone! Cached dimensions for $total_cached images across $total posts.\n";
-	exit;
-}
-add_action( 'admin_post_pinlightning_cache_all_images', 'pinlightning_bulk_cache_images' );
