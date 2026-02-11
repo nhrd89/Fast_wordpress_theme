@@ -258,27 +258,54 @@ function pinlightning_minify_html( $html ) {
  *--------------------------------------------------------------*/
 
 /**
- * Add resource hints: dns-prefetch, preconnect, and LCP image preload.
+ * Add resource hints: dns-prefetch and preconnect.
  */
 function pinlightning_resource_hints() {
 	// DNS prefetch for external domains.
 	echo '<link rel="dns-prefetch" href="//pinterest.com">' . "\n";
 	echo '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
+	echo '<link rel="dns-prefetch" href="//myquickurl.com">' . "\n";
 
-	// Preconnect to own domain (CDN or self).
+	// Preconnect to own domain and CDN.
 	$site_domain = wp_parse_url( home_url(), PHP_URL_HOST );
 	echo '<link rel="preconnect" href="' . esc_url( '//' . $site_domain ) . '" crossorigin>' . "\n";
-
-	// Preload LCP image on singular posts with a featured image.
-	if ( is_singular() && has_post_thumbnail() ) {
-		$thumbnail_id  = get_post_thumbnail_id();
-		$thumbnail_url = wp_get_attachment_image_url( $thumbnail_id, 'large' );
-		if ( $thumbnail_url ) {
-			echo '<link rel="preload" as="image" href="' . esc_url( $thumbnail_url ) . '">' . "\n";
-		}
-	}
+	echo '<link rel="preconnect" href="https://myquickurl.com" crossorigin>' . "\n";
 }
 add_action( 'wp_head', 'pinlightning_resource_hints', 1 );
+
+/**
+ * Preload the LCP hero image with fetchpriority and srcset support.
+ *
+ * Runs at priority 2 so it appears early in <head>, right after critical CSS.
+ */
+function pinlightning_preload_lcp_image() {
+	if ( ! is_singular() || ! has_post_thumbnail() ) {
+		return;
+	}
+
+	$thumbnail_id  = get_post_thumbnail_id();
+	$thumbnail_url = wp_get_attachment_image_url( $thumbnail_id, 'large' );
+	if ( ! $thumbnail_url ) {
+		return;
+	}
+
+	// Build the preload tag.
+	$attrs = 'rel="preload" as="image" href="' . esc_url( $thumbnail_url ) . '" fetchpriority="high"';
+
+	// Add imagesrcset if available.
+	$srcset = wp_get_attachment_image_srcset( $thumbnail_id, 'large' );
+	if ( $srcset ) {
+		$attrs .= ' imagesrcset="' . esc_attr( $srcset ) . '"';
+
+		$sizes = wp_get_attachment_image_sizes( $thumbnail_id, 'large' );
+		if ( $sizes ) {
+			$attrs .= ' imagesizes="' . esc_attr( $sizes ) . '"';
+		}
+	}
+
+	echo '<link ' . $attrs . '>' . "\n";
+}
+add_action( 'wp_head', 'pinlightning_preload_lcp_image', 2 );
 
 /*--------------------------------------------------------------
  * 5. SCRIPT OPTIMIZATION

@@ -850,3 +850,63 @@ function pinlightning_webp_picture_wrap( $html, $attachment_id, $size, $icon, $a
 		. '</picture>';
 }
 add_filter( 'wp_get_attachment_image', 'pinlightning_webp_picture_wrap', 10, 5 );
+
+/*--------------------------------------------------------------
+ * 6. BULK IMAGE DIMENSION CACHE BUILDER
+ *--------------------------------------------------------------*/
+
+/**
+ * Bulk-cache image dimensions for all published posts.
+ *
+ * Triggered via: /wp-admin/admin-post.php?action=pinlightning_cache_all_images&token=SECRET
+ * Streams progress as plain text for real-time monitoring.
+ */
+function pinlightning_bulk_cache_images() {
+	if ( ! isset( $_GET['token'] ) || ! defined( 'PINLIGHTNING_CACHE_SECRET' ) || $_GET['token'] !== PINLIGHTNING_CACHE_SECRET ) {
+		wp_die( 'Unauthorized' );
+	}
+
+	set_time_limit( 0 );
+
+	header( 'Content-Type: text/plain; charset=utf-8' );
+
+	$posts = get_posts( array(
+		'post_type'      => 'post',
+		'post_status'    => 'publish',
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+	) );
+
+	$total = count( $posts );
+	echo "Starting bulk image dimension cache for $total posts...\n\n";
+	if ( ob_get_level() ) {
+		ob_flush();
+	}
+	flush();
+
+	$total_cached = 0;
+
+	foreach ( $posts as $i => $post_id ) {
+		$title = get_the_title( $post_id );
+		$post  = get_post( $post_id );
+
+		if ( $post ) {
+			pinlightning_cache_image_dims_on_save( $post_id, $post );
+		}
+
+		$dims  = get_post_meta( $post_id, '_pinlightning_image_dims', true );
+		$count = is_array( $dims ) ? count( $dims ) : 0;
+		$total_cached += $count;
+
+		$num = $i + 1;
+		echo "[$num/$total] $title — cached $count images\n";
+		if ( ob_get_level() ) {
+			ob_flush();
+		}
+		flush();
+	}
+
+	echo "\nDone! Cached dimensions for $total_cached images across $total posts.\n";
+	exit;
+}
+add_action( 'admin_post_pinlightning_cache_all_images', 'pinlightning_bulk_cache_images' );
