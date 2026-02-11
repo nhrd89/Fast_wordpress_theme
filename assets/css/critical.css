@@ -49,3 +49,12 @@ a:hover{text-decoration:underline}
 .single-title{font-size:2rem;font-weight:700;line-height:1.25;margin-bottom:.75rem}
 .single-meta{font-size:.8125rem}
 .single-content{font-size:1.0625rem;line-height:1.75}
+.single-content p{margin-bottom:1.5rem}
+.single-content h2{font-size:1.5rem;margin:2.5rem 0 1rem}
+.single-content h3{font-size:1.25rem;margin:2rem 0 .75rem}
+.single-content img{margin:2rem 0}
+.single-content ul,.single-content ol{margin:0 0 1.5rem 1.5rem}
+.single-content li{margin-bottom:.5rem}
+.single-content blockquote{margin:2rem 0;padding:1rem 0 1rem 1.5rem}
+.single-content figure{margin:2rem 0}
+.meta-sep{margin:0 .4rem}

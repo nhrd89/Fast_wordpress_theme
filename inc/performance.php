@@ -174,13 +174,18 @@ function pinlightning_async_css() {
 add_action( 'wp_head', 'pinlightning_async_css', 2 );
 
 /*--------------------------------------------------------------
- * 3. HTML MINIFICATION WITH GZIP
+ * 3. GZIP COMPRESSION
  *--------------------------------------------------------------*/
 
 /**
- * Start output buffering with optional gzip and HTML minification.
+ * Start gzip output buffering.
+ *
+ * HTML minification was removed because it requires full-page buffering
+ * (ob_start callback), which prevents streaming and inflates TTFB.
+ * Gzip alone provides excellent compression and allows chunked delivery
+ * so the browser can start parsing <head> while the body is still generating.
  */
-function pinlightning_start_html_minify() {
+function pinlightning_start_gzip() {
 	// Skip in admin, REST, AJAX, or CLI contexts.
 	if ( is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
 		return;
@@ -194,64 +199,8 @@ function pinlightning_start_html_minify() {
 	) {
 		ob_start( 'ob_gzhandler' );
 	}
-
-	// Start minification buffer.
-	ob_start( 'pinlightning_minify_html' );
 }
-add_action( 'template_redirect', 'pinlightning_start_html_minify', -1 );
-
-/**
- * Minify HTML output.
- *
- * Preserves content inside <pre>, <code>, <script>, and <textarea> tags
- * by extracting them before minification and restoring them after.
- *
- * @param string $html The full HTML output.
- * @return string Minified HTML.
- */
-function pinlightning_minify_html( $html ) {
-	if ( empty( $html ) ) {
-		return $html;
-	}
-
-	// Don't minify non-HTML responses (feeds, XML sitemaps, etc.).
-	if ( ! preg_match( '/<!doctype\s+html/i', substr( $html, 0, 200 ) ) ) {
-		return $html;
-	}
-
-	// Preserve content inside protected tags.
-	$preserved = array();
-	$index     = 0;
-
-	$html = preg_replace_callback(
-		'#<(pre|code|script|textarea|style)[\s>].*?</\1>#si',
-		function( $match ) use ( &$preserved, &$index ) {
-			$placeholder = '<!--PINLIGHTNING_PRESERVE_' . $index . '-->';
-			$preserved[ $placeholder ] = $match[0];
-			$index++;
-			return $placeholder;
-		},
-		$html
-	);
-
-	// Remove HTML comments (but not IE conditionals or preserved placeholders).
-	$html = preg_replace( '/<!--(?!\[|PINLIGHTNING_PRESERVE_).*?-->/s', '', $html );
-
-	// Collapse whitespace.
-	$html = preg_replace( '/\s+/', ' ', $html );
-
-	// Remove spaces around HTML tags.
-	$html = preg_replace( '/>\s+</', '> <', $html );
-	$html = preg_replace( '/>\s+/', '>', $html );
-	$html = preg_replace( '/\s+</', ' <', $html );
-
-	// Restore preserved content.
-	if ( ! empty( $preserved ) ) {
-		$html = str_replace( array_keys( $preserved ), array_values( $preserved ), $html );
-	}
-
-	return trim( $html );
-}
+add_action( 'template_redirect', 'pinlightning_start_gzip', -1 );
 
 /*--------------------------------------------------------------
  * 4. RESOURCE HINTS
