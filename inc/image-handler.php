@@ -5,7 +5,7 @@
  * 1. Lazy loading with LCP-aware eager first image
  * 2. Responsive image sizes for fashion content
  * 3. Pinterest data attributes
- * 3a. Featured image CDN rewrite (post_thumbnail_html → myquickurl.com)
+ * 3a. Featured image local resizer (post_thumbnail_html → img-resize.php)
  * 3b. CDN content image rewriting (the_content → myquickurl.com resizer)
  * 4. Dominant color placeholder extraction
  * 5. WebP <picture> wrapper
@@ -173,14 +173,14 @@ function pinlightning_pinterest_thumbnail_attrs( $html, $post_id, $post_thumbnai
 add_filter( 'post_thumbnail_html', 'pinlightning_pinterest_thumbnail_attrs', 10, 5 );
 
 /*--------------------------------------------------------------
- * 3a. FEATURED IMAGE CDN REWRITE
+ * 3a. FEATURED IMAGE LOCAL RESIZER
  *
- * Rewrites featured image src from cheerfultalks.com/wp-content/uploads/
- * to go through the myquickurl.com CDN resizer.
+ * Rewrites featured image src to go through the theme's local
+ * img-resize.php (no cross-server dependency on myquickurl.com).
  *--------------------------------------------------------------*/
 
 /**
- * Rewrite featured image to use CDN resizer with srcset.
+ * Rewrite featured image to use the local resizer with srcset.
  *
  * Runs at priority 20 on post_thumbnail_html (after Pinterest attrs at 10).
  *
@@ -203,25 +203,23 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 
 	$original_src = $src_match[1];
 
-	// Only process cheerfultalks.com/wp-content/uploads/ images.
-	if ( strpos( $original_src, 'cheerfultalks.com/wp-content/uploads/' ) === false ) {
+	// Only process images from wp-content/uploads/.
+	if ( strpos( $original_src, '/wp-content/uploads/' ) === false ) {
 		return $html;
 	}
 
-	// Skip if already rewritten to CDN.
-	if ( strpos( $original_src, 'myquickurl.com' ) !== false ) {
+	// Skip if already rewritten.
+	if ( strpos( $original_src, 'img-resize.php' ) !== false ) {
 		return $html;
 	}
 
-	// Extract the path: cheerfultalks.com/wp-content/uploads/...
-	if ( ! preg_match( '#(cheerfultalks\.com/wp-content/uploads/.+?)(?:\?|$)#', $original_src, $path_match ) ) {
+	// Extract the uploads-relative path (e.g. 2024/10/image-1024x536.webp).
+	if ( ! preg_match( '#/wp-content/uploads/(.+?)(?:\?|$)#', $original_src, $path_match ) ) {
 		return $html;
 	}
 
-	$cdn_path         = $path_match[1];
-	$cdn_path_encoded = rawurlencode( $cdn_path );
-	$cdn_path_encoded = str_replace( '%2F', '/', $cdn_path_encoded );
-	$base_url         = 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded;
+	$uploads_path = $path_match[1];
+	$base_url     = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
 
 	// Build resized src (720px default).
 	$new_src = $base_url . '&w=720&q=80';
@@ -244,13 +242,12 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	$html = preg_replace( '/\bsrcset="[^"]*"/i', '', $html );
 	$html = preg_replace( '/\bsizes="[^"]*"/i', '', $html );
 
-	// Add CDN srcset and sizes.
+	// Add resizer srcset and sizes.
 	$html = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $html );
 
 	// Keep original full-size URL as data-pin-media if not already set.
-	$original_full = 'https://' . $cdn_path;
 	if ( strpos( $html, 'data-pin-media' ) === false ) {
-		$html = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_full ) . '"', $html );
+		$html = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_src ) . '"', $html );
 	}
 
 	return $html;

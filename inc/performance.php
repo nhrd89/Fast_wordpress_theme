@@ -277,7 +277,7 @@ add_action( 'wp_head', 'pinlightning_resource_hints', 1 );
  * Preload the LCP hero image with fetchpriority and srcset support.
  *
  * Runs at priority 2 so it appears early in <head>, right after critical CSS.
- * If the featured image is on cheerfultalks.com, rewrites to CDN URLs.
+ * If the featured image is in wp-content/uploads/, rewrites to local resizer.
  */
 function pinlightning_preload_lcp_image() {
 	if ( ! is_singular() || ! has_post_thumbnail() ) {
@@ -290,16 +290,14 @@ function pinlightning_preload_lcp_image() {
 		return;
 	}
 
-	// Check if featured image should go through CDN.
-	$use_cdn = ( strpos( $thumbnail_url, 'cheerfultalks.com/wp-content/uploads/' ) !== false );
+	// Check if featured image can go through local resizer.
+	$use_resizer = ( strpos( $thumbnail_url, '/wp-content/uploads/' ) !== false );
 
-	if ( $use_cdn ) {
-		// Extract path and build CDN URLs.
-		preg_match( '#(cheerfultalks\.com/wp-content/uploads/.+?)(?:\?|$)#', $thumbnail_url, $pm );
-		$cdn_path         = isset( $pm[1] ) ? $pm[1] : '';
-		$cdn_path_encoded = rawurlencode( $cdn_path );
-		$cdn_path_encoded = str_replace( '%2F', '/', $cdn_path_encoded );
-		$base_url         = 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded;
+	if ( $use_resizer ) {
+		// Extract uploads-relative path and build local resizer URLs.
+		preg_match( '#/wp-content/uploads/(.+?)(?:\?|$)#', $thumbnail_url, $pm );
+		$uploads_path = isset( $pm[1] ) ? $pm[1] : '';
+		$base_url     = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
 
 		$href   = $base_url . '&w=720&q=80';
 		$srcset = implode( ', ', array(
@@ -313,7 +311,7 @@ function pinlightning_preload_lcp_image() {
 		$attrs .= ' imagesrcset="' . esc_attr( $srcset ) . '"';
 		$attrs .= ' imagesizes="' . esc_attr( $sizes ) . '"';
 	} else {
-		// Standard WordPress preload.
+		// Standard WordPress preload (non-local images).
 		$attrs = 'rel="preload" as="image" href="' . esc_url( $thumbnail_url ) . '" fetchpriority="high"';
 
 		$srcset = wp_get_attachment_image_srcset( $thumbnail_id, 'large' );

@@ -21,5 +21,8 @@ node_modules/
 assets/css/dist/
 assets/js/dist/
 
+# Local image resizer cache
+img-cache/
+
 # Screenshots from wp-check.sh
 screenshot*.png
