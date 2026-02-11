@@ -417,11 +417,11 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 	// Build resized src (720px for article width).
 	$new_src = $base_url . '&w=720&q=80';
 
-	// Build srcset with 3 widths.
+	// Build srcset with 3 widths (capped at 720 to avoid full-size on high-DPR mobile).
 	$srcset = implode( ', ', array(
+		$base_url . '&w=360&q=80 360w',
 		$base_url . '&w=480&q=80 480w',
 		$base_url . '&w=720&q=80 720w',
-		$base_url . '&w=1080&q=80 1080w',
 	) );
 
 	// Replace src.
@@ -432,7 +432,7 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 	);
 
 	// Add srcset and sizes.
-	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $img );
+	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 480px) 100vw, (max-width: 720px) 100vw, 720px"', $img );
 
 	// Preserve original full-size URL as data-pin-media for Pinterest.
 	$original_full = 'https://myquickurl.com/' . $cdn_path;
