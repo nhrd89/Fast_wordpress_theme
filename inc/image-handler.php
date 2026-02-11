@@ -231,15 +231,29 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	// Build resized src (720px default).
 	$new_src = $base_url . '&w=720&q=80';
 
-	// Build srcset with featured image widths.
+	// Build srcset — 400w and 720w only (no 1024w to prevent high-DPR overfetch).
 	$srcset = implode( ', ', array(
 		$base_url . '&w=400&q=80 400w',
 		$base_url . '&w=720&q=80 720w',
-		$base_url . '&w=1024&q=80 1024w',
 	) );
+
+	// Calculate display dimensions (720px max content width).
+	$display_w = 720;
+	$display_h = 377; // fallback
+	if ( preg_match( '/\bwidth=["\'](\d+)["\']/i', $img, $wm ) && preg_match( '/\bheight=["\'](\d+)["\']/i', $img, $hm ) ) {
+		$orig_w = (int) $wm[1];
+		$orig_h = (int) $hm[1];
+		if ( $orig_w > 0 ) {
+			$display_h = (int) round( $orig_h * $display_w / $orig_w );
+		}
+	}
 
 	// Replace src.
 	$img = preg_replace( '/\bsrc=["\'][^"\']+["\']/i', 'src="' . esc_url( $new_src ) . '"', $img );
+
+	// Replace width/height with display dimensions.
+	$img = preg_replace( '/\bwidth=["\']\d+["\']/i', 'width="' . $display_w . '"', $img );
+	$img = preg_replace( '/\bheight=["\']\d+["\']/i', 'height="' . $display_h . '"', $img );
 
 	// Strip WP-generated srcset/sizes (pointing to origin).
 	$img = preg_replace( '/\bsrcset="[^"]*"/i', '', $img );

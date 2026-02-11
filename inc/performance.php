@@ -303,7 +303,6 @@ function pinlightning_preload_lcp_image() {
 		$srcset = implode( ', ', array(
 			$base_url . '&w=400&q=80 400w',
 			$base_url . '&w=720&q=80 720w',
-			$base_url . '&w=1024&q=80 1024w',
 		) );
 		$sizes = '(max-width: 720px) 100vw, 720px';
 
