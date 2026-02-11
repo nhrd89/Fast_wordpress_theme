@@ -168,8 +168,10 @@ add_action( 'wp_head', 'pinlightning_critical_css', 1 );
  */
 function pinlightning_async_css() {
 	$css_url = PINLIGHTNING_URI . '/assets/css/dist/main.css?ver=' . PINLIGHTNING_VERSION;
-	echo '<link rel="stylesheet" href="' . esc_url( $css_url ) . '" media="print" onload="this.media=\'all\'">' . "\n";
-	echo '<noscript><link rel="stylesheet" href="' . esc_url( $css_url ) . '"></noscript>' . "\n";
+	// NUCLEAR TEST: blocking CSS to isolate CLS source.
+	// If CLS drops to 0, the async loading (media=print onload) is causing it.
+	// If CLS stays ~0.097, the cause is not CSS at all.
+	echo '<link rel="stylesheet" href="' . esc_url( $css_url ) . '">' . "\n";
 }
 add_action( 'wp_head', 'pinlightning_async_css', 2 );
 
