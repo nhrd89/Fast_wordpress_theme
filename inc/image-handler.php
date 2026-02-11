@@ -196,8 +196,15 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 		return $html;
 	}
 
-	// Extract src from the img tag.
-	if ( ! preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $html, $src_match ) ) {
+	// Extract just the <img> tag (strip <picture>/<source> wrapper if present).
+	// img-resize.php serves WebP automatically via Accept header, so <picture> is redundant.
+	if ( ! preg_match( '/<img\b[^>]*>/i', $html, $img_match ) ) {
+		return $html;
+	}
+	$img = $img_match[0];
+
+	// Extract src.
+	if ( ! preg_match( '/\bsrc=["\']([^"\']+)["\']/i', $img, $src_match ) ) {
 		return $html;
 	}
 
@@ -231,33 +238,23 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 		$base_url . '&w=1024&q=80 1024w',
 	) );
 
-	// Rewrite the <img> tag only (preserve <source> elements inside <picture>).
-	$html = preg_replace_callback(
-		'/<img\b[^>]*>/i',
-		function( $m ) use ( $new_src, $srcset, $original_src ) {
-			$tag = $m[0];
+	// Replace src.
+	$img = preg_replace( '/\bsrc=["\'][^"\']+["\']/i', 'src="' . esc_url( $new_src ) . '"', $img );
 
-			// Replace src.
-			$tag = preg_replace( '/\bsrc=["\'][^"\']+["\']/i', 'src="' . esc_url( $new_src ) . '"', $tag );
+	// Strip WP-generated srcset/sizes (pointing to origin).
+	$img = preg_replace( '/\bsrcset="[^"]*"/i', '', $img );
+	$img = preg_replace( '/\bsizes="[^"]*"/i', '', $img );
 
-			// Strip WP-generated srcset/sizes (pointing to origin).
-			$tag = preg_replace( '/\bsrcset="[^"]*"/i', '', $tag );
-			$tag = preg_replace( '/\bsizes="[^"]*"/i', '', $tag );
+	// Add resizer srcset and sizes.
+	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $img );
 
-			// Add resizer srcset and sizes.
-			$tag = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $tag );
+	// Keep original full-size URL as data-pin-media.
+	if ( strpos( $img, 'data-pin-media' ) === false ) {
+		$img = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_src ) . '"', $img );
+	}
 
-			// Keep original full-size URL as data-pin-media.
-			if ( strpos( $tag, 'data-pin-media' ) === false ) {
-				$tag = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_src ) . '"', $tag );
-			}
-
-			return $tag;
-		},
-		$html
-	);
-
-	return $html;
+	// Return clean <img> without <picture> wrapper.
+	return $img;
 }
 add_filter( 'post_thumbnail_html', 'pinlightning_rewrite_featured_image_cdn', 20, 5 );
 
