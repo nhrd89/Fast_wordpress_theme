@@ -90,8 +90,8 @@ add_action( 'widgets_init', 'pinlightning_widgets_init' );
 /**
  * Enqueue scripts and styles.
  *
- * Note: main.css is loaded asynchronously via inc/performance.php (critical CSS inlining).
- * Do NOT enqueue main.css here — it would create a render-blocking request.
+ * Note: ALL CSS is inlined in <head> via inc/performance.php (critical + main).
+ * Do NOT enqueue CSS here — it would create an external render-blocking request.
  */
 function pinlightning_scripts() {
 	// Theme script.
@@ -109,6 +109,21 @@ function pinlightning_scripts() {
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
+
+/**
+ * Output a dynamic meta description for single posts.
+ */
+function pinlightning_meta_description() {
+	if ( is_singular() ) {
+		$excerpt = get_the_excerpt();
+		if ( $excerpt ) {
+			$desc = wp_strip_all_tags( $excerpt );
+			$desc = mb_substr( $desc, 0, 160 );
+			echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
+		}
+	}
+}
+add_action( 'wp_head', 'pinlightning_meta_description', 1 );
 
 // Load helper files.
 require_once PINLIGHTNING_DIR . '/inc/template-tags.php';

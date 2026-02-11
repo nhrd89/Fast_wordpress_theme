@@ -9,7 +9,7 @@
 
 /* === Variables (duplicate for async load) === */
 :root {
-	--pl-accent: #e91e63;
+	--pl-accent: #d81b60;
 	--pl-text: #1a1a1a;
 	--pl-text-light: #666;
 	--pl-bg: #fff;
@@ -49,7 +49,6 @@
 	color: var(--pl-text);
 	white-space: nowrap;
 	text-decoration: none;
-	transition: all .15s;
 }
 
 .cat-pill:hover,
@@ -344,7 +343,6 @@
 	padding: .25rem .65rem;
 	border: 1px solid var(--pl-border);
 	border-radius: 3px;
-	transition: all .15s;
 }
 
 .tag-link:hover {
@@ -563,7 +561,6 @@
 	font-family: inherit;
 	color: var(--pl-text);
 	background: var(--pl-bg);
-	transition: border-color .15s;
 }
 
 .comment-form textarea:focus,
@@ -803,17 +800,6 @@
 	.error-code {
 		font-size: 4rem;
 	}
-}
-
-/* === Smooth hover transitions === */
-.card-title a,
-.cat-pill,
-.tag-link,
-.social-link,
-.footer-links a,
-.posts-nav a,
-.copyright a {
-	transition: color .15s;
 }
 
 /* === Print styles === */

@@ -1,5 +1,5 @@
 /* PinLightning Critical CSS — inlined in <head>, keep under 3KB */
-:root{--pl-accent:#e91e63;--pl-text:#1a1a1a;--pl-bg:#fff;--pl-border:#eee;--pl-max:1200px;--pl-content:720px}
+:root{--pl-accent:#d81b60;--pl-text:#1a1a1a;--pl-bg:#fff;--pl-border:#eee;--pl-max:1200px;--pl-content:720px}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:1rem;line-height:1.6;color:var(--pl-text);background:var(--pl-bg);-webkit-font-smoothing:antialiased}
 img{max-width:100%;height:auto;display:block}

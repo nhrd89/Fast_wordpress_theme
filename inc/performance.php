@@ -161,19 +161,27 @@ function pinlightning_critical_css() {
 add_action( 'wp_head', 'pinlightning_critical_css', 1 );
 
 /**
- * Output async main.css loader and noscript fallback.
+ * Inline main.css in <head> as a second style block.
  *
- * Uses media="print" trick: browser fetches the stylesheet at low priority,
- * then onload flips it to media="all" so it applies.
+ * At ~2.7 KiB gzipped, main.css is small enough to inline. This eliminates:
+ * - The external CSS request (saves one round-trip)
+ * - CLS from async media="print" onload trick (which caused ~0.097 CLS)
+ * - Render-blocking from synchronous <link> loading
  */
-function pinlightning_async_css() {
-	$css_url = PINLIGHTNING_URI . '/assets/css/dist/main.css?ver=' . PINLIGHTNING_VERSION;
-	// NUCLEAR TEST: blocking CSS to isolate CLS source.
-	// If CLS drops to 0, the async loading (media=print onload) is causing it.
-	// If CLS stays ~0.097, the cause is not CSS at all.
-	echo '<link rel="stylesheet" href="' . esc_url( $css_url ) . '">' . "\n";
+function pinlightning_inline_main_css() {
+	$main_file = PINLIGHTNING_DIR . '/assets/css/dist/main.css';
+	if ( ! file_exists( $main_file ) ) {
+		$main_file = PINLIGHTNING_DIR . '/assets/css/main.css';
+	}
+
+	if ( file_exists( $main_file ) ) {
+		$main_css = file_get_contents( $main_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( $main_css ) {
+			echo '<style id="pinlightning-main">' . $main_css . '</style>' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		}
+	}
 }
-add_action( 'wp_head', 'pinlightning_async_css', 2 );
+add_action( 'wp_head', 'pinlightning_inline_main_css', 2 );
 
 /*--------------------------------------------------------------
  * 3. GZIP COMPRESSION
@@ -227,8 +235,8 @@ add_action( 'wp_head', 'pinlightning_resource_hints', 1 );
 /**
  * Preload the LCP hero image with fetchpriority and srcset support.
  *
- * Runs at priority 2 so it appears early in <head>, right after critical CSS.
- * If the featured image is in wp-content/uploads/, rewrites to local resizer.
+ * Runs at priority 0 so it appears first in <head> (before CSS), starting
+ * the image download as early as possible to reduce LCP resource load delay.
  */
 function pinlightning_preload_lcp_image() {
 	if ( ! is_singular() || ! has_post_thumbnail() ) {
@@ -277,7 +285,7 @@ function pinlightning_preload_lcp_image() {
 
 	echo '<link ' . $attrs . '>' . "\n";
 }
-add_action( 'wp_head', 'pinlightning_preload_lcp_image', 2 );
+add_action( 'wp_head', 'pinlightning_preload_lcp_image', 0 );
 
 /*--------------------------------------------------------------
  * 5. SCRIPT OPTIMIZATION
