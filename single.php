@@ -20,17 +20,8 @@ while ( have_posts() ) :
 
 ?>
 
-	<?php if ( has_post_thumbnail() ) :
-		$hero_img = wp_get_attachment_image_src( get_post_thumbnail_id(), 'large' );
-		$hero_style = '';
-		if ( $hero_img && $hero_img[1] && $hero_img[2] ) {
-			// Use display dimensions (720px max content width) for aspect-ratio.
-			$display_w = 720;
-			$display_h = (int) round( (int) $hero_img[2] * $display_w / (int) $hero_img[1] );
-			$hero_style = ' style="aspect-ratio: ' . $display_w . ' / ' . $display_h . '"';
-		}
-	?>
-		<div class="post-hero"<?php echo $hero_style; ?>>
+	<?php if ( has_post_thumbnail() ) : ?>
+		<div class="post-hero">
 			<?php the_post_thumbnail( 'large', array( 'class' => 'post-hero-img' ) ); ?>
 		</div>
 	<?php endif; ?>

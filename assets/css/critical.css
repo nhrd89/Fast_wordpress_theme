@@ -1,5 +1,5 @@
 /* PinLightning Critical CSS — inlined in <head>, keep under 3KB */
-:root{--pl-accent:#e91e63;--pl-text:#1a1a1a;--pl-text-light:#666;--pl-bg:#fff;--pl-bg-alt:#fafafa;--pl-border:#eee;--pl-max:1200px;--pl-content:720px}
+:root{--pl-accent:#e91e63;--pl-text:#1a1a1a;--pl-bg:#fff;--pl-border:#eee;--pl-max:1200px;--pl-content:720px}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:1rem;line-height:1.6;color:var(--pl-text);background:var(--pl-bg);-webkit-font-smoothing:antialiased}
 img{max-width:100%;height:auto;display:block}
@@ -45,22 +45,21 @@ a:hover{text-decoration:underline}
 .single-article{max-width:var(--pl-content);margin:0 auto;padding:2.5rem 1rem 1rem}
 .single-header{margin-bottom:2rem}
 .single-cats{display:flex;gap:.5rem;margin-bottom:.75rem}
-.cat-label{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--pl-accent)}
+.cat-label{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .single-title{font-size:2rem;font-weight:700;line-height:1.25;margin-bottom:.75rem}
-.single-meta{font-size:.8125rem;color:var(--pl-text-light)}
+.single-meta{font-size:.8125rem}
 .single-content{font-size:1.0625rem;line-height:1.75}
 .single-content p{margin-bottom:1.5rem}
 .single-content h2{font-size:1.5rem;margin:2.5rem 0 1rem}
 .single-content h3{font-size:1.25rem;margin:2rem 0 .75rem}
 .single-content h4{font-size:1.0625rem;margin:1.5rem 0 .5rem}
-.single-content img{border-radius:6px;margin:2rem 0}
+.single-content img{margin:2rem 0}
 .single-content ul,.single-content ol{margin:0 0 1.5rem 1.5rem}
 .single-content li{margin-bottom:.5rem}
-.single-content blockquote{margin:2rem 0;padding:1rem 0 1rem 1.5rem;border-left:3px solid var(--pl-accent);font-style:italic;color:var(--pl-text-light)}
-.single-content a{text-decoration:underline;text-decoration-color:var(--pl-accent);text-underline-offset:2px}
+.single-content blockquote{margin:2rem 0;padding:1rem 0 1rem 1.5rem}
 .single-content figure{margin:2rem 0}
-.single-content figcaption{font-size:.8125rem;color:var(--pl-text-light);text-align:center;margin-top:.5rem}
-.single-content pre{background:var(--pl-bg-alt);border:1px solid var(--pl-border);border-radius:6px;padding:1.25rem;overflow-x:auto;font-size:.875rem;margin:1.5rem 0}
-.single-content code{background:var(--pl-bg-alt);padding:.15rem .35rem;border-radius:3px;font-size:.875em}
-.single-content pre code{background:none;padding:0}
+.single-content figcaption{font-size:.8125rem;text-align:center;margin-top:.5rem}
+.single-content pre{padding:1.25rem;overflow-x:auto;font-size:.875rem;margin:1.5rem 0}
+.single-content code{padding:.15rem .35rem;font-size:.875em}
+.single-content pre code{padding:0}
 .meta-sep{margin:0 .4rem}

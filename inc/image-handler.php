@@ -262,6 +262,11 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	// Add resizer srcset and sizes.
 	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $img );
 
+	// Add inline aspect-ratio on the img element for CLS prevention.
+	// This reserves vertical space before the image loads, avoiding layout shift.
+	// Placed on the img (not the container) to avoid box-sizing/padding conflicts.
+	$img = str_replace( '<img', '<img style="aspect-ratio:' . $display_w . '/' . $display_h . '"', $img );
+
 	// Keep original full-size URL as data-pin-media.
 	if ( strpos( $img, 'data-pin-media' ) === false ) {
 		$img = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_src ) . '"', $img );
