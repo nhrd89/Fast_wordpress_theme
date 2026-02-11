@@ -231,24 +231,31 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 		$base_url . '&w=1024&q=80 1024w',
 	) );
 
-	// Replace src.
-	$html = preg_replace(
-		'/\bsrc=["\'][^"\']+["\']/i',
-		'src="' . esc_url( $new_src ) . '"',
+	// Rewrite the <img> tag only (preserve <source> elements inside <picture>).
+	$html = preg_replace_callback(
+		'/<img\b[^>]*>/i',
+		function( $m ) use ( $new_src, $srcset, $original_src ) {
+			$tag = $m[0];
+
+			// Replace src.
+			$tag = preg_replace( '/\bsrc=["\'][^"\']+["\']/i', 'src="' . esc_url( $new_src ) . '"', $tag );
+
+			// Strip WP-generated srcset/sizes (pointing to origin).
+			$tag = preg_replace( '/\bsrcset="[^"]*"/i', '', $tag );
+			$tag = preg_replace( '/\bsizes="[^"]*"/i', '', $tag );
+
+			// Add resizer srcset and sizes.
+			$tag = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $tag );
+
+			// Keep original full-size URL as data-pin-media.
+			if ( strpos( $tag, 'data-pin-media' ) === false ) {
+				$tag = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_src ) . '"', $tag );
+			}
+
+			return $tag;
+		},
 		$html
 	);
-
-	// Remove existing srcset/sizes (WP-generated, pointing to origin).
-	$html = preg_replace( '/\bsrcset="[^"]*"/i', '', $html );
-	$html = preg_replace( '/\bsizes="[^"]*"/i', '', $html );
-
-	// Add resizer srcset and sizes.
-	$html = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $html );
-
-	// Keep original full-size URL as data-pin-media if not already set.
-	if ( strpos( $html, 'data-pin-media' ) === false ) {
-		$html = str_replace( '<img', '<img data-pin-media="' . esc_url( $original_src ) . '"', $html );
-	}
 
 	return $html;
 }
@@ -616,8 +623,15 @@ function pinlightning_webp_picture_wrap( $html, $attachment_id, $size, $icon, $a
 		$sizes_attr = ' sizes="' . esc_attr( $sizes_data ) . '"';
 	}
 
+	// Extract width/height from the <img> tag for the <source> element (CLS prevention).
+	$dim_attrs = '';
+	$img_meta  = wp_get_attachment_image_src( $attachment_id, $size );
+	if ( $img_meta && ! empty( $img_meta[1] ) && ! empty( $img_meta[2] ) ) {
+		$dim_attrs = ' width="' . (int) $img_meta[1] . '" height="' . (int) $img_meta[2] . '"';
+	}
+
 	return '<picture>'
-		. '<source type="image/webp"' . $webp_srcset . $sizes_attr . '>'
+		. '<source type="image/webp"' . $webp_srcset . $sizes_attr . $dim_attrs . '>'
 		. $html
 		. '</picture>';
 }
