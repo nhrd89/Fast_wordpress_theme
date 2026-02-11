@@ -1,6 +1,6 @@
 <?php
 /**
- * PinLightning CDN — On-demand image resizer.
+ * PinLightning CDN — On-demand image resizer with proxy mode.
  *
  * Deploy to: myquickurl.com/public_html/img.php
  *
@@ -10,16 +10,28 @@
  * Clean URL (via .htaccess):
  *   /img/cheerfultalks.com/path/image.webp?w=720&q=80
  *
+ * Source resolution order:
+ *   1. Local file: public_html/{src}
+ *   2. Mirror cache: img-mirror/{src} (if < 7 days old)
+ *   3. Remote fetch: https://{src} (whitelisted domains only)
+ *
+ * X-Source response header: local | mirror | cache
+ *
  * @package PinLightning CDN
- * @since 1.0.0
+ * @since 1.1.0
  */
 
 // ── Configuration ──────────────────────────────────────────────
 define( 'IMG_CACHE_DIR', __DIR__ . '/img-cache/' );
+define( 'IMG_MIRROR_DIR', __DIR__ . '/img-mirror/' );
 define( 'IMG_MAX_WIDTH', 2000 );
 define( 'IMG_MAX_HEIGHT', 2000 );
 define( 'IMG_DEFAULT_QUALITY', 80 );
 define( 'IMG_ALLOWED_EXTENSIONS', array( 'jpg', 'jpeg', 'png', 'webp', 'gif' ) );
+define( 'IMG_MIRROR_TTL', 7 * 24 * 3600 ); // 7 days before re-fetch.
+
+// Domains allowed for remote proxy fetching.
+$PROXY_DOMAINS = array( 'cheerfultalks.com' );
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -126,10 +138,64 @@ if ( ! in_array( $ext, IMG_ALLOWED_EXTENSIONS, true ) ) {
 	serve_error( 400, 'Invalid file extension: ' . $ext );
 }
 
-// Resolve source file (relative to public_html/).
+// ── Resolve source file ────────────────────────────────────────
+
 $source_path = dirname( __DIR__ ) . '/' . $src;
+$img_source  = 'local';
+
 if ( ! file_exists( $source_path ) ) {
-	serve_error( 404, 'Source not found: ' . $src );
+	// Local file not found — try proxy mode.
+
+	// Extract the domain from the src path (first path segment).
+	$first_slash = strpos( $src, '/' );
+	$src_domain  = ( $first_slash !== false ) ? substr( $src, 0, $first_slash ) : $src;
+
+	if ( ! in_array( $src_domain, $PROXY_DOMAINS, true ) ) {
+		serve_error( 404, 'Source not found: ' . $src );
+	}
+
+	// Check mirror directory for a previously fetched copy.
+	$mirror_path = IMG_MIRROR_DIR . $src;
+	$need_fetch  = true;
+
+	if ( file_exists( $mirror_path ) ) {
+		$mirror_age = time() - filemtime( $mirror_path );
+		if ( $mirror_age < IMG_MIRROR_TTL ) {
+			// Mirror is fresh enough — use it.
+			$need_fetch = false;
+		}
+	}
+
+	if ( $need_fetch ) {
+		// Fetch from remote origin.
+		$remote_url = 'https://' . $src;
+		$ctx        = stream_context_create( array(
+			'http' => array(
+				'timeout'         => 10,
+				'follow_location' => 1,
+				'max_redirects'   => 3,
+				'user_agent'      => 'PinLightning-CDN/1.0',
+			),
+			'ssl' => array(
+				'verify_peer' => false,
+			),
+		) );
+
+		$remote_data = @file_get_contents( $remote_url, false, $ctx );
+		if ( $remote_data === false || empty( $remote_data ) ) {
+			serve_error( 404, 'Remote fetch failed: ' . $remote_url );
+		}
+
+		// Save to mirror directory.
+		$mirror_dir = dirname( $mirror_path );
+		if ( ! is_dir( $mirror_dir ) ) {
+			mkdir( $mirror_dir, 0755, true );
+		}
+		file_put_contents( $mirror_path, $remote_data );
+	}
+
+	$source_path = $mirror_path;
+	$img_source  = 'mirror';
 }
 
 // Parse dimensions and quality.
@@ -139,6 +205,7 @@ $q = isset( $_GET['q'] ) ? max( 1, min( 100, (int) $_GET['q'] ) ) : IMG_DEFAULT_
 
 // No resize needed — redirect to original.
 if ( $w <= 0 && $h <= 0 ) {
+	header( 'X-Source: ' . $img_source );
 	header( 'Location: /' . $src, true, 302 );
 	exit;
 }
@@ -161,6 +228,7 @@ $cache_path  = IMG_CACHE_DIR . $cache_subdir . '/' . $size_key . '/' . $cache_na
 
 // Check cache: exists AND newer than source.
 if ( file_exists( $cache_path ) && filemtime( $cache_path ) >= filemtime( $source_path ) ) {
+	header( 'X-Source: cache' );
 	serve_file( $cache_path, $output_mime );
 }
 
@@ -302,6 +370,7 @@ ini_set( 'memory_limit', $old_limit );
 // ── Serve the cached file ──────────────────────────────────────
 
 if ( file_exists( $cache_path ) ) {
+	header( 'X-Source: ' . $img_source );
 	serve_file( $cache_path, $output_mime );
 } else {
 	serve_error( 500, 'Failed to write cache file' );
