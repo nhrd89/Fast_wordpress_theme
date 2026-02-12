@@ -24,5 +24,8 @@ assets/js/dist/
 # Local image resizer cache
 img-cache/
 
+# CDN proxy cache
+cdn-cache/
+
 # Screenshots from wp-check.sh
 screenshot*.png
