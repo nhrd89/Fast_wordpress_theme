@@ -233,13 +233,13 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	$cdn_encoded  = str_replace( '%2F', '/', $cdn_encoded );
 	$base_url     = 'https://myquickurl.com/img.php?src=' . $cdn_encoded;
 
-	// Build resized src (720px default).
-	$new_src = $base_url . '&w=720&q=80';
+	// Build resized src (720px default, q=75 for faster LCP download).
+	$new_src = $base_url . '&w=720&q=75';
 
 	// Build srcset — 400w and 720w only (no 1024w to prevent high-DPR overfetch).
 	$srcset = implode( ', ', array(
-		$base_url . '&w=400&q=80 400w',
-		$base_url . '&w=720&q=80 720w',
+		$base_url . '&w=400&q=75 400w',
+		$base_url . '&w=720&q=75 720w',
 	) );
 
 	// Calculate display dimensions (720px max content width).
@@ -464,6 +464,16 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 	// Hardcoded dimensions: all CDN images are 1080x1920, displayed at 720px width.
 	if ( ! preg_match( '/\bwidth\s*=/', $img ) ) {
 		$img = str_replace( '<img', '<img width="' . PINLIGHTNING_CDN_DISPLAY_W . '" height="' . PINLIGHTNING_CDN_DISPLAY_H . '"', $img );
+	}
+
+	// Deprioritize content images so they don't compete with hero LCP image.
+	if ( ! preg_match( '/\bfetchpriority\s*=/', $img ) ) {
+		$img = str_replace( '<img', '<img fetchpriority="low"', $img );
+	}
+
+	// Ensure content images are lazy-loaded.
+	if ( ! preg_match( '/\bloading\s*=/', $img ) ) {
+		$img = str_replace( '<img', '<img loading="lazy"', $img );
 	}
 
 	return $img;

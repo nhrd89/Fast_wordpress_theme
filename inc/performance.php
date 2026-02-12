@@ -217,17 +217,23 @@ add_action( 'template_redirect', 'pinlightning_start_gzip', -1 );
  *--------------------------------------------------------------*/
 
 /**
+ * Preconnect to CDN as early as possible (before preload, before CSS).
+ */
+function pinlightning_early_preconnect() {
+	echo '<link rel="preconnect" href="https://myquickurl.com" crossorigin>' . "\n";
+}
+add_action( 'wp_head', 'pinlightning_early_preconnect', -1 );
+
+/**
  * Add resource hints: dns-prefetch and preconnect.
  */
 function pinlightning_resource_hints() {
 	// DNS prefetch for external domains.
 	echo '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
-	echo '<link rel="dns-prefetch" href="//myquickurl.com">' . "\n";
 
-	// Preconnect to own domain and CDN.
+	// Preconnect to own domain.
 	$site_domain = wp_parse_url( home_url(), PHP_URL_HOST );
 	echo '<link rel="preconnect" href="' . esc_url( '//' . $site_domain ) . '" crossorigin>' . "\n";
-	echo '<link rel="preconnect" href="https://myquickurl.com" crossorigin>' . "\n";
 }
 add_action( 'wp_head', 'pinlightning_resource_hints', 1 );
 
@@ -260,10 +266,10 @@ function pinlightning_preload_lcp_image() {
 		$cdn_encoded  = str_replace( '%2F', '/', $cdn_encoded );
 		$base_url     = 'https://myquickurl.com/img.php?src=' . $cdn_encoded;
 
-		$href   = $base_url . '&w=720&q=80';
+		$href   = $base_url . '&w=720&q=75';
 		$srcset = implode( ', ', array(
-			$base_url . '&w=400&q=80 400w',
-			$base_url . '&w=720&q=80 720w',
+			$base_url . '&w=400&q=75 400w',
+			$base_url . '&w=720&q=75 720w',
 		) );
 		$sizes = '(max-width: 720px) 100vw, 720px';
 
