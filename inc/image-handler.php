@@ -430,15 +430,14 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 
 	$base_url = 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded;
 
-	// Build resized src (720px for article width).
-	$new_src = $base_url . '&w=720&q=80';
+	// Build resized src (665px — max content display width).
+	$new_src = $base_url . '&w=665&q=80';
 
-	// Build srcset with 4 widths (665w matches actual mobile display width).
+	// Build srcset with 3 widths (665w cap eliminates oversized downloads).
 	$srcset = implode( ', ', array(
 		$base_url . '&w=360&q=80 360w',
 		$base_url . '&w=480&q=80 480w',
 		$base_url . '&w=665&q=80 665w',
-		$base_url . '&w=720&q=80 720w',
 	) );
 
 	// Replace src.
