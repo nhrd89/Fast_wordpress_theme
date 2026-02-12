@@ -196,6 +196,12 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 		return $html;
 	}
 
+	// Only rewrite the hero image (large/full size), not related post card thumbnails.
+	// Card thumbnails use 'card-thumb' size and are styled by CSS object-fit/aspect-ratio.
+	if ( is_string( $size ) && in_array( $size, array( 'card-thumb', 'card-thumb-lg', 'thumbnail', 'medium' ), true ) ) {
+		return $html;
+	}
+
 	// Extract just the <img> tag (strip <picture>/<source> wrapper if present).
 	// img-resize.php serves WebP automatically via Accept header, so <picture> is redundant.
 	if ( ! preg_match( '/<img\b[^>]*>/i', $html, $img_match ) ) {
