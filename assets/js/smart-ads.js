@@ -1,338 +1,384 @@
 /**
  * PinLightning Smart Ad Engine — Phase 1
  *
- * Systems:
- * 1. Smart Injector — IntersectionObserver-based ad injection
- * 2. Viewability Tracker — Per-ad IAB viewability measurement
- * 3. Debug Overlay — Real-time metrics visualization
+ * 1. Smart Injector (scroll-speed aware, IntersectionObserver)
+ * 2. Viewability Tracker (per-zone IAB measurement)
+ * 3. Data Recorder (sends session data to server via sendBeacon)
  */
 (function() {
-	'use strict';
+    'use strict';
 
-	// ========================================
-	// CONFIG (merged with PHP-provided config)
-	// ========================================
-	var C = {
-		dummyMode: true,
-		debug: true,
-		maxAds: 8,
-		viewableThreshold: 0.5,
-		viewableTimeMs: 1000,
-		maxScrollSpeed: 800,
-		minReadTimeMs: 2000
-	};
+    // ========== CONFIG ==========
+    var C = {
+        dummy: true,
+        debug: false,
+        record: true,
+        maxAds: 6,
+        viewThreshold: 0.5,
+        viewTimeMs: 1000,
+        maxScrollSpeed: 800,
+        minReadMs: 1500,
+        recordEndpoint: '',
+        nonce: '',
+        postId: 0,
+        postSlug: ''
+    };
+    if (window.plAds) {
+        for (var k in window.plAds) {
+            if (window.plAds.hasOwnProperty(k)) C[k] = window.plAds[k];
+        }
+    }
 
-	// Merge PHP config
-	if (window.plAdsConfig) {
-		for (var key in window.plAdsConfig) {
-			if (window.plAdsConfig.hasOwnProperty(key)) {
-				C[key] = window.plAdsConfig[key];
-			}
-		}
-	}
+    // ========== STATE ==========
+    var S = {
+        speed: 0,
+        speeds: [],          // rolling window for avg calculation
+        dir: 'down',
+        lastY: 0,
+        lastT: 0,
+        reading: true,
+        depth: 0,
+        loadT: Date.now(),
+        injected: 0,
+        zones: {},
+        dbgEl: null
+    };
 
-	// ========================================
-	// STATE
-	// ========================================
-	var S = {
-		scrollSpeed: 0,
-		scrollDir: 'down',
-		lastY: 0,
-		lastT: 0,
-		reading: false,
-		depth: 0,
-		loadTime: Date.now(),
-		injected: 0,
-		zones: {},      // zoneId -> { el, visible, since, totalMs, sessionMs, impressions, ratio }
-		debugEl: null
-	};
+    // ========== DUMMY AD SPECS ==========
+    var SPEC = {
+        '300x250': { w:300, h:250, l:'300\u00d7250', bg:'#f0f4ff', bc:'#4a90d9' },
+        '970x250': { w:970, h:250, l:'970\u00d7250', bg:'#fff8f0', bc:'#d98a4a' },
+        '728x90':  { w:728, h:90,  l:'728\u00d790',  bg:'#fff4f0', bc:'#d94a4a' },
+        '320x100': { w:320, h:100, l:'320\u00d7100', bg:'#f0fff4', bc:'#4ad94a' },
+        '300x600': { w:300, h:600, l:'300\u00d7600', bg:'#fff0f8', bc:'#d94a90' },
+        '336x280': { w:336, h:280, l:'336\u00d7280', bg:'#f4f0ff', bc:'#6a4ad9' }
+    };
 
-	// ========================================
-	// DUMMY AD SPECS
-	// ========================================
-	var SPECS = {
-		'300x250': { w: 300, h: 250, label: '300\u00d7250', bg: '#f0f4ff', bc: '#4a90d9' },
-		'728x90':  { w: 728, h: 90,  label: '728\u00d790',  bg: '#fff4f0', bc: '#d94a4a' },
-		'320x100': { w: 320, h: 100, label: '320\u00d7100', bg: '#f0fff4', bc: '#4ad94a' },
-		'300x600': { w: 300, h: 600, label: '300\u00d7600', bg: '#fff0f8', bc: '#d94a90' }
-	};
+    // ========== 1. SCROLL TRACKER ==========
+    function trackScroll() {
+        var timer = null;
+        window.addEventListener('scroll', function() {
+            var now = Date.now();
+            var y = window.scrollY;
+            var dt = now - S.lastT;
+            if (dt > 0 && dt < 500) {
+                var spd = (Math.abs(y - S.lastY) / dt) * 1000;
+                S.speed = spd;
+                S.dir = y > S.lastY ? 'down' : 'up';
+                S.reading = spd < C.maxScrollSpeed;
+                // Rolling avg (keep last 20)
+                S.speeds.push(spd);
+                if (S.speeds.length > 20) S.speeds.shift();
+            }
+            var dh = document.documentElement.scrollHeight - window.innerHeight;
+            if (dh > 0) S.depth = Math.min(100, (y / dh) * 100);
+            S.lastY = y;
+            S.lastT = now;
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(function() { S.speed = 0; S.reading = true; }, 200);
+        }, { passive: true });
+    }
 
-	// ========================================
-	// 1. SCROLL SPEED TRACKER
-	// ========================================
-	function trackScroll() {
-		var timer = null;
-		window.addEventListener('scroll', function() {
-			var now = Date.now();
-			var y = window.scrollY;
-			var dt = now - S.lastT;
-			if (dt > 0) {
-				S.scrollSpeed = (Math.abs(y - S.lastY) / dt) * 1000;
-				S.scrollDir = y > S.lastY ? 'down' : 'up';
-				S.reading = S.scrollSpeed < C.maxScrollSpeed;
-			}
-			var dh = document.documentElement.scrollHeight - window.innerHeight;
-			if (dh > 0) S.depth = (y / dh) * 100;
-			S.lastY = y;
-			S.lastT = now;
-			if (timer) clearTimeout(timer);
-			timer = setTimeout(function() { S.scrollSpeed = 0; S.reading = true; }, 150);
-		}, { passive: true });
-	}
+    function getAvgSpeed() {
+        if (!S.speeds.length) return 0;
+        var sum = 0;
+        for (var i = 0; i < S.speeds.length; i++) sum += S.speeds[i];
+        return sum / S.speeds.length;
+    }
 
-	// ========================================
-	// 2. SMART INJECTOR
-	// ========================================
-	function initInjector() {
-		var zones = document.querySelectorAll('.ad-zone[data-injected="false"]');
-		if (!zones.length) return;
+    function getScrollPattern() {
+        var avg = getAvgSpeed();
+        var timeOnPage = Date.now() - S.loadT;
+        if (timeOnPage < 10000 && S.depth < 30) return 'bouncer';
+        if (avg > 600) return 'scanner';
+        return 'reader';
+    }
 
-		var obs = new IntersectionObserver(function(entries) {
-			entries.forEach(function(entry) {
-				if (!entry.isIntersecting) return;
+    // ========== 2. SMART INJECTOR ==========
+    function initInjector() {
+        var zones = document.querySelectorAll('.ad-zone[data-injected="false"]');
+        if (!zones.length) return;
 
-				var el = entry.target;
-				if (el.getAttribute('data-injected') === 'true') return;
+        var obs = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                var el = entry.target;
+                if (el.getAttribute('data-injected') === 'true') return;
+                if ((Date.now() - S.loadT) < C.minReadMs) return;
+                if (!S.reading && S.speed > 0) return;
+                if (S.injected >= C.maxAds) return;
+                inject(el);
+                obs.unobserve(el);
+            });
+        }, { rootMargin: '400px 0px', threshold: [0.1] });
 
-				// Check conditions
-				var elapsed = Date.now() - S.loadTime;
-				if (elapsed < C.minReadTimeMs) return;       // Too early
-				if (!S.reading && S.scrollSpeed > 0) return; // Scrolling too fast
-				if (S.injected >= C.maxAds) return;           // Max reached
+        zones.forEach(function(z) { obs.observe(z); });
 
-				// Inject
-				inject(el);
-				obs.unobserve(el);
-			});
-		}, {
-			rootMargin: '300px 0px',  // Start loading 300px before visible
-			threshold: [0.1]
-		});
+        // Re-check for zones missed due to fast scrolling
+        setInterval(function() {
+            if (!S.reading) return;
+            var pending = document.querySelectorAll('.ad-zone[data-injected="false"]');
+            pending.forEach(function(z) {
+                var r = z.getBoundingClientRect();
+                if (r.top < window.innerHeight + 400 && r.bottom > -200 &&
+                    S.injected < C.maxAds && (Date.now() - S.loadT) >= C.minReadMs) {
+                    inject(z);
+                    obs.unobserve(z);
+                }
+            });
+        }, 800);
+    }
 
-		zones.forEach(function(z) { obs.observe(z); });
+    function inject(el) {
+        var zid = el.getAttribute('data-zone-id');
+        var mobile = window.innerWidth < 768;
+        var size = mobile
+            ? el.getAttribute('data-size-mobile')
+            : el.getAttribute('data-size-desktop');
+        if (!size) size = '300x250';
 
-		// Re-check zones that weren't injected due to speed
-		// (user might have slowed down)
-		setInterval(function() {
-			if (!S.reading) return;
-			document.querySelectorAll('.ad-zone[data-injected="false"]').forEach(function(z) {
-				var rect = z.getBoundingClientRect();
-				var inView = rect.top < window.innerHeight + 300 && rect.bottom > -300;
-				if (inView && S.injected < C.maxAds && (Date.now() - S.loadTime) >= C.minReadTimeMs) {
-					inject(z);
-					obs.unobserve(z);
-				}
-			});
-		}, 1000);
-	}
+        el.setAttribute('data-injected', 'true');
+        el.setAttribute('data-ad-size', size);
+        S.injected++;
 
-	function inject(el) {
-		var zoneId = el.getAttribute('data-zone-id');
-		var size = el.getAttribute('data-ad-size');
+        if (C.dummy) {
+            renderDummy(el, zid, size);
+        }
+        // Real ads: Phase 2
 
-		el.setAttribute('data-injected', 'true');
-		S.injected++;
+        // Smooth expand (zero CLS)
+        el.style.overflow = 'hidden';
+        el.style.maxHeight = '0';
+        el.style.transition = 'max-height 0.4s ease, margin 0.3s ease';
+        requestAnimationFrame(function() {
+            var sp = SPEC[size] || SPEC['300x250'];
+            el.style.maxHeight = (sp.h + 24) + 'px';
+            el.style.margin = '1.5rem 0';
+        });
+        el.classList.add('ad-zone-active');
 
-		// Resolve responsive size
-		var mobile = window.innerWidth < 768;
-		var resolvedSize = size;
-		if (size === 'responsive') {
-			resolvedSize = mobile ? '320x100' : '728x90';
-		}
+        // Start viewability tracking
+        trackViewability(el, zid, size);
+    }
 
-		if (C.dummyMode) {
-			injectDummy(el, zoneId, resolvedSize);
-		} else {
-			injectReal(el, zoneId, resolvedSize);
-		}
+    function renderDummy(el, zid, size) {
+        var sp = SPEC[size] || SPEC['300x250'];
+        var mobile = window.innerWidth < 768;
+        var w = mobile ? Math.min(sp.w, window.innerWidth - 32) : sp.w;
+        var h = w < sp.w ? Math.round((w / sp.w) * sp.h) : sp.h;
 
-		// Smooth expand animation (prevent CLS)
-		el.style.overflow = 'hidden';
-		el.style.maxHeight = '0';
-		el.style.transition = 'max-height 0.4s ease, margin 0.3s ease';
+        el.innerHTML =
+            '<div style="width:' + w + 'px;height:' + h + 'px;' +
+            'background:' + sp.bg + ';border:2px dashed ' + sp.bc + ';' +
+            'display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;' +
+            'margin:0 auto;border-radius:8px;font-family:system-ui,sans-serif;position:relative;">' +
+            '<div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:1px;">Advertisement</div>' +
+            '<div style="font-weight:700;color:' + sp.bc + ';font-size:14px;">' + sp.l + '</div>' +
+            '<div style="font-size:10px;color:#888;">' + zid + '</div>' +
+            '<div id="vb-' + zid + '" style="position:absolute;bottom:4px;right:4px;' +
+            'padding:2px 6px;border-radius:4px;font-size:10px;background:#eee;color:#666;">0.0s</div>' +
+            '</div>';
+    }
 
-		requestAnimationFrame(function() {
-			var spec = SPECS[resolvedSize];
-			var targetH = spec ? spec.h + 20 : 270;
-			el.style.maxHeight = targetH + 'px';
-			el.style.margin = '1.5rem 0';
-		});
+    // ========== 3. VIEWABILITY TRACKER ==========
+    function trackViewability(el, zid, size) {
+        S.zones[zid] = {
+            el: el,
+            size: size,
+            visible: false,
+            since: null,
+            totalMs: 0,
+            sessMs: 0,
+            impressions: 0,
+            ratio: 0,
+            maxRatio: 0,
+            ratioSamples: [],
+            firstViewT: null,
+            injectedAtDepth: S.depth,
+            injectedAtSpeed: S.speed
+        };
 
-		el.classList.add('ad-zone-active');
+        var vo = new IntersectionObserver(function(entries) {
+            var e = entries[0];
+            var z = S.zones[zid];
+            z.ratio = e.intersectionRatio;
+            if (e.intersectionRatio > z.maxRatio) z.maxRatio = e.intersectionRatio;
+            z.ratioSamples.push(e.intersectionRatio);
+            if (z.ratioSamples.length > 100) z.ratioSamples.shift();
 
-		// Start viewability tracking
-		trackViewability(el, zoneId);
-	}
+            if (e.intersectionRatio >= C.viewThreshold) {
+                if (!z.visible) {
+                    z.visible = true;
+                    z.since = Date.now();
+                    if (!z.firstViewT) z.firstViewT = Date.now() - S.loadT;
+                }
+            } else {
+                if (z.visible && z.since) {
+                    var dur = Date.now() - z.since;
+                    z.totalMs += dur;
+                    if (dur >= C.viewTimeMs) z.impressions++;
+                    z.visible = false;
+                    z.since = null;
+                }
+            }
+        }, { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1.0] });
 
-	function injectDummy(el, zoneId, size) {
-		var spec = SPECS[size] || SPECS['300x250'];
-		var mobile = window.innerWidth < 768;
-		var w = mobile ? Math.min(spec.w, window.innerWidth - 32) : spec.w;
-		var h = (w < spec.w) ? Math.round((w / spec.w) * spec.h) : spec.h;
+        vo.observe(el);
+    }
 
-		el.innerHTML =
-			'<div class="pl-dummy-ad" style="' +
-				'width:' + w + 'px;height:' + h + 'px;' +
-				'background:' + spec.bg + ';border:2px dashed ' + spec.bc + ';' +
-				'display:flex;align-items:center;justify-content:center;' +
-				'flex-direction:column;gap:4px;margin:0 auto;border-radius:8px;' +
-				'font-family:system-ui,sans-serif;position:relative;">' +
-				'<div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:1px;">Advertisement</div>' +
-				'<div style="font-weight:700;color:' + spec.bc + ';font-size:14px;">' + spec.label + '</div>' +
-				'<div style="font-size:10px;color:#888;">' + zoneId + '</div>' +
-				'<div class="pl-ad-badge" id="vb-' + zoneId + '" ' +
-					'style="position:absolute;bottom:4px;right:4px;padding:2px 6px;' +
-					'border-radius:4px;font-size:10px;background:#eee;color:#666;">0.0s</div>' +
-			'</div>';
-	}
+    function tickViewability() {
+        var ids = Object.keys(S.zones);
+        for (var i = 0; i < ids.length; i++) {
+            var z = S.zones[ids[i]];
+            z.sessMs = (z.visible && z.since) ? (Date.now() - z.since) : 0;
+            var total = z.totalMs + z.sessMs;
 
-	function injectReal(el, zoneId, size) {
-		// Phase 2: AdPlus GPT integration
-		// Will load GPT once, define slots per zone, and display
-	}
+            // Update dummy badge
+            if (C.dummy) {
+                var badge = document.getElementById('vb-' + ids[i]);
+                if (badge) {
+                    badge.textContent = (total / 1000).toFixed(1) + 's';
+                    badge.style.background = total >= C.viewTimeMs ? '#4caf50' : (z.visible ? '#ff9800' : '#eee');
+                    badge.style.color = total >= C.viewTimeMs ? '#fff' : (z.visible ? '#fff' : '#666');
+                }
+            }
+        }
+    }
 
-	// ========================================
-	// 3. VIEWABILITY TRACKER
-	// ========================================
-	function trackViewability(el, zoneId) {
-		S.zones[zoneId] = {
-			el: el,
-			visible: false,
-			since: null,
-			totalMs: 0,
-			sessionMs: 0,
-			impressions: 0,
-			ratio: 0
-		};
+    // ========== 4. DATA RECORDER ==========
+    function sendData() {
+        if (!C.record || !C.recordEndpoint) return;
 
-		var vObs = new IntersectionObserver(function(entries) {
-			var e = entries[0];
-			var z = S.zones[zoneId];
-			z.ratio = e.intersectionRatio;
+        var ids = Object.keys(S.zones);
+        var totalViewable = 0;
+        var zonesData = [];
 
-			if (e.intersectionRatio >= C.viewableThreshold) {
-				if (!z.visible) {
-					z.visible = true;
-					z.since = Date.now();
-				}
-			} else {
-				if (z.visible && z.since) {
-					var dur = Date.now() - z.since;
-					z.totalMs += dur;
-					if (dur >= C.viewableTimeMs) z.impressions++;
-					z.visible = false;
-					z.since = null;
-				}
-			}
-		}, { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1.0] });
+        for (var i = 0; i < ids.length; i++) {
+            var z = S.zones[ids[i]];
+            var totalMs = z.totalMs + z.sessMs;
+            if (totalMs >= C.viewTimeMs) totalViewable++;
 
-		vObs.observe(el);
-	}
+            var avgRatio = 0;
+            if (z.ratioSamples.length) {
+                var sum = 0;
+                for (var j = 0; j < z.ratioSamples.length; j++) sum += z.ratioSamples[j];
+                avgRatio = Math.round((sum / z.ratioSamples.length) * 100) / 100;
+            }
 
-	// Update session timers + badges every 200ms
-	function tickViewability() {
-		var ids = Object.keys(S.zones);
-		ids.forEach(function(id) {
-			var z = S.zones[id];
-			z.sessionMs = (z.visible && z.since) ? (Date.now() - z.since) : 0;
+            zonesData.push({
+                zoneId: ids[i],
+                adSize: z.size,
+                totalVisibleMs: Math.round(z.totalMs + z.sessMs),
+                viewableImpressions: z.impressions + (z.sessMs >= C.viewTimeMs ? 1 : 0),
+                maxRatio: Math.round(z.maxRatio * 100) / 100,
+                avgRatio: avgRatio,
+                timeToFirstView: z.firstViewT ? Math.round(z.firstViewT) : -1,
+                injectedAtDepth: Math.round(z.injectedAtDepth * 10) / 10,
+                scrollSpeedAtInjection: Math.round(z.injectedAtSpeed)
+            });
+        }
 
-			var total = z.totalMs + z.sessionMs;
-			var badge = document.getElementById('vb-' + id);
-			if (badge) {
-				badge.textContent = (total / 1000).toFixed(1) + 's';
-				if (total >= C.viewableTimeMs) {
-					badge.style.background = '#4caf50';
-					badge.style.color = '#fff';
-				} else if (z.visible) {
-					badge.style.background = '#ff9800';
-					badge.style.color = '#fff';
-				} else {
-					badge.style.background = '#eee';
-					badge.style.color = '#666';
-				}
-			}
-		});
-	}
+        var payload = {
+            session: true,
+            postId: C.postId,
+            postSlug: C.postSlug,
+            device: window.innerWidth < 768 ? 'mobile' : (window.innerWidth < 1024 ? 'tablet' : 'desktop'),
+            viewportW: window.innerWidth,
+            viewportH: window.innerHeight,
+            timeOnPage: Date.now() - S.loadT,
+            maxDepth: Math.round(S.depth * 10) / 10,
+            avgScrollSpeed: Math.round(getAvgSpeed()),
+            scrollPattern: getScrollPattern(),
+            totalAdsInjected: S.injected,
+            totalViewable: totalViewable,
+            viewabilityRate: S.injected > 0 ? Math.round((totalViewable / S.injected) * 100) : 0,
+            zones: zonesData
+        };
 
-	// ========================================
-	// 4. DEBUG OVERLAY
-	// ========================================
-	function initDebug() {
-		if (!C.debug) return;
+        // Use sendBeacon (non-blocking, survives page unload)
+        if (navigator.sendBeacon) {
+            var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            navigator.sendBeacon(C.recordEndpoint, blob);
+        } else {
+            // Fallback: sync XHR on unload
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', C.recordEndpoint, false);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify(payload));
+        }
+    }
 
-		var el = document.createElement('div');
-		el.id = 'pl-ad-debug';
-		el.style.cssText =
-			'position:fixed;bottom:60px;left:8px;z-index:9999;' +
-			'background:rgba(0,0,0,0.88);color:#0f0;font-family:monospace;' +
-			'font-size:10px;padding:8px 10px;border-radius:8px;' +
-			'max-width:260px;pointer-events:none;line-height:1.5;' +
-			'backdrop-filter:blur(4px);';
-		document.body.appendChild(el);
-		S.debugEl = el;
-	}
+    // ========== 5. DEBUG OVERLAY (optional) ==========
+    function initDebug() {
+        if (!C.debug) return;
+        var el = document.createElement('div');
+        el.id = 'pl-ad-dbg';
+        el.style.cssText =
+            'position:fixed;bottom:60px;left:8px;z-index:9999;background:rgba(0,0,0,.88);' +
+            'color:#0f0;font:10px/1.5 monospace;padding:8px 10px;border-radius:8px;' +
+            'max-width:260px;pointer-events:none;backdrop-filter:blur(4px);';
+        document.body.appendChild(el);
+        S.dbgEl = el;
+    }
 
-	function tickDebug() {
-		if (!S.debugEl) return;
+    function tickDebug() {
+        if (!S.dbgEl) return;
+        var ids = Object.keys(S.zones);
+        var tv = 0, ta = ids.length;
+        for (var i = 0; i < ids.length; i++) {
+            var z = S.zones[ids[i]];
+            if ((z.totalMs + z.sessMs) >= C.viewTimeMs) tv++;
+        }
+        var lines = [
+            '<b style="color:#ff0">\u26a1 PinLightning Ads</b>',
+            '\ud83d\udd04 ' + Math.round(S.speed) + 'px/s ' + (S.reading ? '\ud83d\udcd6' : '\ud83d\udca8') + ' ' + S.dir,
+            '\ud83d\udcca Depth:' + Math.round(S.depth) + '% Ads:' + S.injected + '/' + C.maxAds,
+            '\ud83d\udc41 Viewability: ' + (ta > 0 ? Math.round(tv / ta * 100) : 0) + '% (' + tv + '/' + ta + ')',
+            '\ud83e\udde0 Pattern: ' + getScrollPattern(),
+            '\u2014'
+        ];
+        for (var i = 0; i < ids.length; i++) {
+            var z = S.zones[ids[i]];
+            var t = z.totalMs + z.sessMs;
+            lines.push(
+                (z.visible ? '\ud83d\udfe2' : '\u26aa') + ' ' + ids[i] + ': ' +
+                (t / 1000).toFixed(1) + 's ' + Math.round(z.ratio * 100) + '% \u2713' + z.impressions
+            );
+        }
+        S.dbgEl.innerHTML = lines.join('<br>');
+    }
 
-		var lines = [
-			'<b style="color:#ff0">PinLightning Ads</b>',
-			Math.round(S.scrollSpeed) + 'px/s ' + (S.reading ? 'reading' : 'fast') + ' ' + S.scrollDir,
-			'Depth: ' + Math.round(S.depth) + '% | Ads: ' + S.injected + '/' + C.maxAds,
-			'---'
-		];
+    // ========== MAIN ==========
+    function tick() {
+        tickViewability();
+        if (C.debug) tickDebug();
+    }
 
-		var totalViewable = 0;
-		var totalAds = 0;
+    function init() {
+        trackScroll();
+        initInjector();
+        if (C.debug) initDebug();
+        setInterval(tick, 250);
 
-		Object.keys(S.zones).forEach(function(id) {
-			var z = S.zones[id];
-			var total = z.totalMs + z.sessionMs;
-			var pct = Math.round(z.ratio * 100);
-			var icon = z.visible ? '[on]' : '[--]';
-			totalAds++;
-			if (total >= C.viewableTimeMs) totalViewable++;
+        // Record data on page unload
+        if (C.record) {
+            // Send data when user leaves
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'hidden') sendData();
+            });
+            // Backup: also send on unload
+            window.addEventListener('pagehide', sendData);
+            // Also send periodically every 30 seconds (in case user stays long)
+            setInterval(sendData, 30000);
+        }
+    }
 
-			lines.push(
-				icon + ' ' + id + ': ' +
-				(total / 1000).toFixed(1) + 's ' +
-				'(' + pct + '%) ' +
-				'x' + z.impressions
-			);
-		});
-
-		if (totalAds > 0) {
-			var viewRate = Math.round((totalViewable / totalAds) * 100);
-			lines.splice(3, 0, 'Viewability: ' + viewRate + '% (' + totalViewable + '/' + totalAds + ')');
-		}
-
-		S.debugEl.innerHTML = lines.join('<br>');
-	}
-
-	// ========================================
-	// MAIN TICK (200ms interval)
-	// ========================================
-	function tick() {
-		tickViewability();
-		tickDebug();
-	}
-
-	// ========================================
-	// INIT
-	// ========================================
-	function init() {
-		trackScroll();
-		initInjector();
-		initDebug();
-		setInterval(tick, 200);
-	}
-
-	// PinLightning performance pattern
-	if (document.body.classList.contains('single')) {
-		if ('requestIdleCallback' in window) {
-			requestIdleCallback(init);
-		} else {
-			setTimeout(init, 200);
-		}
-	}
+    // PinLightning performance rules
+    if (document.body.classList.contains('single')) {
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(init);
+        } else {
+            setTimeout(init, 200);
+        }
+    }
 })();

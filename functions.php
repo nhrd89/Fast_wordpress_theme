@@ -156,3 +156,4 @@ require_once PINLIGHTNING_DIR . '/inc/image-handler.php';
 require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
 require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
