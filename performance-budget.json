@@ -1,0 +1,36 @@
+{
+    "budgets": {
+        "performance": 95,
+        "accessibility": 95,
+        "best-practices": 95,
+        "seo": 95
+    },
+    "metrics": {
+        "first-contentful-paint": 1500,
+        "largest-contentful-paint": 1500,
+        "total-blocking-time": 50,
+        "cumulative-layout-shift": 0.05,
+        "speed-index": 2000
+    },
+    "test_urls": [
+        "https://cheerfultalks.com/chic-comfort-19-outfits-to-rock-your-linen-pants/",
+        "https://cheerfultalks.com/wanderweave2/capture-the-aesthetic-15-beautiful-mountain-landscapes-for-photography/"
+    ],
+    "baseline": {
+        "date": "2026-02-12",
+        "tag": "v1.0-baseline",
+        "scores": {
+            "performance": 100,
+            "accessibility": 100,
+            "best-practices": 100,
+            "seo": 100
+        },
+        "metrics": {
+            "FCP": "0.9s",
+            "LCP": "1.0s",
+            "TBT": "0ms",
+            "CLS": "0",
+            "SI": "1.3s"
+        }
+    }
+}
