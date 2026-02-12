@@ -81,11 +81,12 @@ while ( have_posts() ) :
 		</footer>
 	</article>
 
-	<?php
-	if ( comments_open() || get_comments_number() ) :
-		comments_template();
-	endif;
-	?>
+	<?php if ( comments_open() || get_comments_number() ) : ?>
+		<details class="comments-toggle">
+			<summary><?php echo get_comments_number() > 0 ? sprintf( esc_html__( 'Comments (%d)', 'pinlightning' ), get_comments_number() ) : esc_html__( 'Leave a Comment', 'pinlightning' ); ?></summary>
+			<?php comments_template(); ?>
+		</details>
+	<?php endif; ?>
 
 	<?php
 	// Related posts: same category, 3 posts.
