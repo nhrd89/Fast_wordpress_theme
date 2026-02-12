@@ -793,6 +793,76 @@
 	border-radius: 8px;
 }
 
+/* === Desktop sidebar === */
+.sidebar {
+	display: none;
+}
+
+.sidebar-ad-slot {
+	margin-bottom: 1.5rem;
+}
+
+.sidebar-ad-placeholder {
+	background: #f5f5f5;
+	border: 2px dashed #ddd;
+	border-radius: 8px;
+	padding: 2rem;
+	text-align: center;
+	color: #999;
+	font-size: 0.85rem;
+	min-height: 250px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.sidebar-widget {
+	margin-bottom: 1.5rem;
+}
+
+.sidebar-widget-title {
+	font-size: 0.9rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-bottom: 1rem;
+	padding-bottom: 0.5rem;
+	border-bottom: 2px solid #e91e63;
+}
+
+.sidebar-post {
+	display: flex;
+	gap: 0.75rem;
+	align-items: center;
+	padding: 0.75rem 0;
+	border-bottom: 1px solid #f0f0f0;
+	text-decoration: none;
+	color: inherit;
+}
+
+.sidebar-post:last-child {
+	border-bottom: none;
+}
+
+.sidebar-post:hover .sidebar-post-title {
+	color: #e91e63;
+}
+
+.sidebar-post-img {
+	width: 60px;
+	height: 60px;
+	object-fit: cover;
+	border-radius: 6px;
+	flex-shrink: 0;
+}
+
+.sidebar-post-title {
+	font-size: 0.85rem;
+	font-weight: 600;
+	line-height: 1.3;
+	transition: color 0.2s;
+}
+
 /* === WordPress alignment === */
 .alignwide {
 	max-width: var(--pl-max);
@@ -828,6 +898,32 @@
 	font-size: .875rem;
 	font-weight: 600;
 	margin-top: 2rem;
+}
+
+/* === Desktop sidebar layout === */
+@media (min-width: 1024px) {
+	.single-layout {
+		display: grid;
+		grid-template-columns: 1fr 300px;
+		gap: 2.5rem;
+		max-width: 1080px;
+		margin: 0 auto;
+		padding: 0 1rem;
+	}
+
+	.single-layout article {
+		max-width: none;
+		min-width: 0;
+	}
+
+	.sidebar {
+		display: block;
+		position: sticky;
+		top: 2rem;
+		align-self: start;
+		max-height: calc(100vh - 4rem);
+		overflow-y: auto;
+	}
 }
 
 /* === Responsive === */
