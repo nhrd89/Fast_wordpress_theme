@@ -266,12 +266,13 @@ function pinlightning_preload_lcp_image() {
 		$cdn_encoded  = str_replace( '%2F', '/', $cdn_encoded );
 		$base_url     = 'https://myquickurl.com/img.php?src=' . $cdn_encoded;
 
-		$href   = $base_url . '&w=720&q=75';
+		$href   = $base_url . '&w=480&q=65';
 		$srcset = implode( ', ', array(
-			$base_url . '&w=400&q=75 400w',
-			$base_url . '&w=720&q=75 720w',
+			$base_url . '&w=360&q=65 360w',
+			$base_url . '&w=480&q=65 480w',
+			$base_url . '&w=720&q=65 720w',
 		) );
-		$sizes = '(max-width: 720px) 100vw, 720px';
+		$sizes = '(max-width: 480px) 100vw, 720px';
 
 		$attrs = 'rel="preload" as="image" href="' . esc_url( $href ) . '" fetchpriority="high"';
 		$attrs .= ' imagesrcset="' . esc_attr( $srcset ) . '"';

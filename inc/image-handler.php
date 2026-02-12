@@ -233,13 +233,14 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	$cdn_encoded  = str_replace( '%2F', '/', $cdn_encoded );
 	$base_url     = 'https://myquickurl.com/img.php?src=' . $cdn_encoded;
 
-	// Build resized src (720px default, q=75 for faster LCP download).
-	$new_src = $base_url . '&w=720&q=75';
+	// Build resized src (720px default, q=65 for faster LCP download).
+	$new_src = $base_url . '&w=720&q=65';
 
-	// Build srcset — 400w and 720w only (no 1024w to prevent high-DPR overfetch).
+	// Build srcset — 360w, 480w, 720w. 480w serves mobile (412px Moto G).
 	$srcset = implode( ', ', array(
-		$base_url . '&w=400&q=75 400w',
-		$base_url . '&w=720&q=75 720w',
+		$base_url . '&w=360&q=65 360w',
+		$base_url . '&w=480&q=65 480w',
+		$base_url . '&w=720&q=65 720w',
 	) );
 
 	// Calculate display dimensions (720px max content width).
@@ -264,8 +265,8 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	$img = preg_replace( '/\bsrcset="[^"]*"/i', '', $img );
 	$img = preg_replace( '/\bsizes="[^"]*"/i', '', $img );
 
-	// Add resizer srcset and sizes.
-	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 720px) 100vw, 720px"', $img );
+	// Add resizer srcset and sizes. Mobile (≤480px) picks 480w, desktop picks 720w.
+	$img = str_replace( '<img', '<img srcset="' . esc_attr( $srcset ) . '" sizes="(max-width: 480px) 100vw, 720px"', $img );
 
 	// Add inline aspect-ratio on the img element for CLS prevention.
 	// This reserves vertical space before the image loads, avoiding layout shift.
