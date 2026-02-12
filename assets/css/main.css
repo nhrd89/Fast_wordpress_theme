@@ -380,7 +380,7 @@
 }
 
 .related-grid .card-image {
-	aspect-ratio: 2 / 3;
+	aspect-ratio: 16 / 9;
 	overflow: hidden;
 	border-radius: 8px;
 }
