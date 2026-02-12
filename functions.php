@@ -117,6 +117,9 @@ function pinlightning_scripts() {
 			PINLIGHTNING_VERSION,
 			true
 		);
+		wp_localize_script( 'pinlightning-infinite-scroll', 'plInfinite', array(
+			'endpoint' => esc_url_raw( rest_url( 'pinlightning/v1/random-posts' ) ),
+		) );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );

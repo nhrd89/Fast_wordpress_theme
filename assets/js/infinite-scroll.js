@@ -10,7 +10,11 @@
 (function () {
 	'use strict';
 
-	var endpoint = '/wp-json/pinlightning/v1/random-posts';
+	// REST endpoint URL passed from PHP via wp_localize_script.
+	var endpoint = (typeof plInfinite !== 'undefined' && plInfinite.endpoint)
+		? plInfinite.endpoint
+		: '/wp-json/pinlightning/v1/random-posts';
+
 	var container;
 	var sentinel;
 	var seenIds = [];
@@ -19,6 +23,8 @@
 	var maxBatches = 10;
 
 	function init() {
+		console.log('Infinite scroll init');
+
 		// Read current post ID from the data attribute.
 		container = document.querySelector('.infinite-posts');
 		if (!container) return;
@@ -44,7 +50,8 @@
 		loading = true;
 		batchCount++;
 
-		var url = endpoint + '?exclude=' + seenIds.join(',');
+		var sep = endpoint.indexOf('?') === -1 ? '?' : '&';
+		var url = endpoint + sep + 'exclude=' + seenIds.join(',');
 
 		fetch(url)
 			.then(function (res) { return res.json(); })

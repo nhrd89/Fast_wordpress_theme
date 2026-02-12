@@ -2,7 +2,7 @@
 /**
  * The template for displaying single posts.
  *
- * Hero image, reading time, clean article typography, sidebar, related posts, infinite scroll.
+ * Hero image, reading time, clean article typography, related posts, infinite scroll.
  *
  * @package PinLightning
  * @since 1.0.0
@@ -26,112 +26,67 @@ while ( have_posts() ) :
 		</div>
 	<?php endif; ?>
 
-	<div class="single-layout">
-		<div class="single-main">
-			<article id="post-<?php the_ID(); ?>" <?php post_class( 'single-article' ); ?>>
-				<header class="single-header">
-					<?php
-					$categories = get_the_category();
-					if ( $categories ) :
-						?>
-						<div class="single-cats">
-							<?php foreach ( $categories as $cat ) : ?>
-								<a href="<?php echo esc_url( get_category_link( $cat->term_id ) ); ?>" class="cat-label"><?php echo esc_html( $cat->name ); ?></a>
-							<?php endforeach; ?>
-						</div>
-					<?php endif; ?>
-
-					<h1 class="single-title"><?php the_title(); ?></h1>
-
-					<div class="single-meta">
-						<time datetime="<?php echo esc_attr( get_the_date( 'c' ) ); ?>"><?php echo esc_html( get_the_date() ); ?></time>
-						<span class="meta-sep">&middot;</span>
-						<span class="read-time">
-							<?php
-							printf(
-								/* translators: %d: number of minutes */
-								esc_html( _n( '%d min read', '%d min read', $read_time, 'pinlightning' ) ),
-								$read_time
-							);
-							?>
-						</span>
-					</div>
-				</header>
-
-				<div class="single-content">
-					<?php
-					the_content();
-
-					wp_link_pages( array(
-						'before' => '<div class="page-links">' . esc_html__( 'Pages:', 'pinlightning' ),
-						'after'  => '</div>',
-					) );
-					?>
+	<article id="post-<?php the_ID(); ?>" <?php post_class( 'single-article' ); ?>>
+		<header class="single-header">
+			<?php
+			$categories = get_the_category();
+			if ( $categories ) :
+				?>
+				<div class="single-cats">
+					<?php foreach ( $categories as $cat ) : ?>
+						<a href="<?php echo esc_url( get_category_link( $cat->term_id ) ); ?>" class="cat-label"><?php echo esc_html( $cat->name ); ?></a>
+					<?php endforeach; ?>
 				</div>
-
-				<footer class="single-footer">
-					<?php
-					$tags = get_the_tags();
-					if ( $tags ) :
-						?>
-						<div class="single-tags">
-							<?php foreach ( $tags as $tag ) : ?>
-								<a href="<?php echo esc_url( get_tag_link( $tag->term_id ) ); ?>" class="tag-link">#<?php echo esc_html( $tag->name ); ?></a>
-							<?php endforeach; ?>
-						</div>
-					<?php endif; ?>
-				</footer>
-			</article>
-
-			<?php if ( comments_open() || get_comments_number() ) : ?>
-				<details class="comments-toggle">
-					<summary><?php echo get_comments_number() > 0 ? sprintf( esc_html__( 'Comments (%d)', 'pinlightning' ), get_comments_number() ) : esc_html__( 'Leave a Comment', 'pinlightning' ); ?></summary>
-					<?php comments_template(); ?>
-				</details>
 			<?php endif; ?>
+
+			<h1 class="single-title"><?php the_title(); ?></h1>
+
+			<div class="single-meta">
+				<time datetime="<?php echo esc_attr( get_the_date( 'c' ) ); ?>"><?php echo esc_html( get_the_date() ); ?></time>
+				<span class="meta-sep">&middot;</span>
+				<span class="read-time">
+					<?php
+					printf(
+						/* translators: %d: number of minutes */
+						esc_html( _n( '%d min read', '%d min read', $read_time, 'pinlightning' ) ),
+						$read_time
+					);
+					?>
+				</span>
+			</div>
+		</header>
+
+		<div class="single-content">
+			<?php
+			the_content();
+
+			wp_link_pages( array(
+				'before' => '<div class="page-links">' . esc_html__( 'Pages:', 'pinlightning' ),
+				'after'  => '</div>',
+			) );
+			?>
 		</div>
 
-		<aside class="sidebar">
+		<footer class="single-footer">
 			<?php
-			// Popular Posts by comment count.
-			$popular_query = new WP_Query( array(
-				'posts_per_page'      => 5,
-				'orderby'             => 'comment_count',
-				'order'               => 'DESC',
-				'post__not_in'        => array( get_the_ID() ),
-				'ignore_sticky_posts' => true,
-				'no_found_rows'       => true,
-			) );
-
-			if ( $popular_query->have_posts() ) :
+			$tags = get_the_tags();
+			if ( $tags ) :
 				?>
-				<div class="sidebar-widget">
-					<h3 class="sidebar-title"><?php esc_html_e( 'Popular Posts', 'pinlightning' ); ?></h3>
-					<ul class="sidebar-popular">
-						<?php
-						while ( $popular_query->have_posts() ) :
-							$popular_query->the_post();
-							?>
-							<li class="sidebar-popular-item">
-								<?php if ( has_post_thumbnail() ) : ?>
-									<a href="<?php the_permalink(); ?>" class="sidebar-popular-thumb">
-										<?php the_post_thumbnail( 'thumbnail', array( 'loading' => 'lazy' ) ); ?>
-									</a>
-								<?php endif; ?>
-								<div class="sidebar-popular-info">
-									<a href="<?php the_permalink(); ?>" class="sidebar-popular-link"><?php the_title(); ?></a>
-									<time class="sidebar-popular-date" datetime="<?php echo esc_attr( get_the_date( 'c' ) ); ?>"><?php echo esc_html( get_the_date() ); ?></time>
-								</div>
-							</li>
-						<?php endwhile; ?>
-					</ul>
+				<div class="single-tags">
+					<?php foreach ( $tags as $tag ) : ?>
+						<a href="<?php echo esc_url( get_tag_link( $tag->term_id ) ); ?>" class="tag-link">#<?php echo esc_html( $tag->name ); ?></a>
+					<?php endforeach; ?>
 				</div>
-				<?php
-				wp_reset_postdata();
-			endif;
-			?>
-		</aside>
-	</div>
+			<?php endif; ?>
+		</footer>
+	</article>
+
+	<?php if ( comments_open() || get_comments_number() ) : ?>
+		<details class="comments-toggle">
+			<summary><?php echo get_comments_number() > 0 ? sprintf( esc_html__( 'Comments (%d)', 'pinlightning' ), get_comments_number() ) : esc_html__( 'Leave a Comment', 'pinlightning' ); ?></summary>
+			<?php comments_template(); ?>
+		</details>
+	<?php endif; ?>
 
 	<?php
 	// Related posts: same category, 3 posts.
