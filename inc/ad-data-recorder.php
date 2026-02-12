@@ -25,8 +25,9 @@ add_action('rest_api_init', function() {
         'methods' => 'GET',
         'callback' => 'pinlightning_get_ad_data',
         'permission_callback' => function() {
-            // Only allow with valid secret key (passed as query param)
-            return isset($_GET['key']) && $_GET['key'] === PL_ADS_DATA_KEY;
+            // Allow with secret key OR authenticated admin
+            if (isset($_GET['key']) && $_GET['key'] === PL_ADS_DATA_KEY) return true;
+            return current_user_can('manage_options');
         },
     ));
 });
