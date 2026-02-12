@@ -1017,3 +1017,28 @@
 		break-inside: avoid;
 	}
 }
+
+/* ============================
+   Smart Ad Engine
+   ============================ */
+.ad-zone {
+	width: 100%;
+	display: flex;
+	justify-content: center;
+	margin: 0;
+	max-height: 0;
+	overflow: hidden;
+	transition: max-height 0.4s ease, margin 0.3s ease;
+}
+
+.ad-zone[data-injected="false"] {
+	/* Invisible until injected — zero CLS impact */
+	max-height: 0;
+	margin: 0;
+	padding: 0;
+	border: none;
+}
+
+.ad-zone-active {
+	overflow: visible;
+}

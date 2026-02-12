@@ -57,6 +57,8 @@ while ( have_posts() ) :
 				</div>
 			</header>
 
+			<?php echo pinlightning_ad_zone('post-top', 'responsive'); ?>
+
 			<div class="single-content">
 				<?php
 				the_content();
@@ -82,6 +84,8 @@ while ( have_posts() ) :
 			</footer>
 		</article>
 	</div>
+
+	<?php echo pinlightning_ad_zone('post-bottom', '300x250'); ?>
 
 	<?php if ( comments_open() || get_comments_number() ) : ?>
 		<details class="comments-toggle">

@@ -120,6 +120,15 @@ function pinlightning_scripts() {
 		wp_localize_script( 'pinlightning-infinite-scroll', 'plInfinite', array(
 			'endpoint' => esc_url_raw( rest_url( 'pinlightning/v1/random-posts' ) ),
 		) );
+
+		// Smart ad engine (defer + requestIdleCallback = zero TBT).
+		wp_enqueue_script(
+			'pinlightning-smart-ads',
+			PINLIGHTNING_URI . '/assets/js/smart-ads.js',
+			array(),
+			PINLIGHTNING_VERSION,
+			true
+		);
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
@@ -146,3 +155,4 @@ require_once PINLIGHTNING_DIR . '/inc/performance.php';
 require_once PINLIGHTNING_DIR . '/inc/image-handler.php';
 require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
 require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
