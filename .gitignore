@@ -17,9 +17,9 @@ Thumbs.db
 # Node
 node_modules/
 
-# Build output
-assets/css/dist/
-assets/js/dist/
+# Build output (committed so they deploy via git push)
+# assets/css/dist/
+# assets/js/dist/
 
 # Local image resizer cache
 img-cache/

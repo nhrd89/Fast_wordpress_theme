@@ -1,0 +1,1 @@
+!function(){"use strict";var e=document.getElementById("menu-toggle");if(e)for(var n=document.querySelectorAll(".main-navigation a"),t=0;t<n.length;t++)n[t].addEventListener("click",function(){e.checked=!1})}();
