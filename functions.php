@@ -107,6 +107,17 @@ function pinlightning_scripts() {
 	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) ) {
 		wp_enqueue_script( 'comment-reply' );
 	}
+
+	// Infinite scroll on single posts (defer + requestIdleCallback = zero TBT).
+	if ( is_singular( 'post' ) ) {
+		wp_enqueue_script(
+			'pinlightning-infinite-scroll',
+			PINLIGHTNING_URI . '/assets/js/infinite-scroll.js',
+			array(),
+			PINLIGHTNING_VERSION,
+			true
+		);
+	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
 
@@ -131,3 +142,4 @@ require_once PINLIGHTNING_DIR . '/inc/customizer.php';
 require_once PINLIGHTNING_DIR . '/inc/performance.php';
 require_once PINLIGHTNING_DIR . '/inc/image-handler.php';
 require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
+require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
