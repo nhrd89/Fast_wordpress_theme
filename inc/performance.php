@@ -221,7 +221,6 @@ add_action( 'template_redirect', 'pinlightning_start_gzip', -1 );
  */
 function pinlightning_resource_hints() {
 	// DNS prefetch for external domains.
-	echo '<link rel="dns-prefetch" href="//pinterest.com">' . "\n";
 	echo '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
 	echo '<link rel="dns-prefetch" href="//myquickurl.com">' . "\n";
 
