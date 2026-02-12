@@ -900,30 +900,41 @@
 	margin-top: 2rem;
 }
 
-/* === Desktop sidebar layout === */
-@media (min-width: 1024px) {
-	.single-layout {
-		display: grid;
-		grid-template-columns: 1fr 300px;
-		gap: 2.5rem;
-		max-width: 1080px;
-		margin: 0 auto;
-		padding: 0 1rem;
-	}
-
-	.single-layout article {
-		max-width: none;
-		min-width: 0;
-	}
-
+/* === Desktop sidebar layout (fixed on viewport) === */
+/* Virtual container: 720 content + 60 gap + 280 sidebar = 1060px */
+@media (min-width: 1200px) {
 	.sidebar {
 		display: block;
-		position: sticky;
-		top: 2rem;
-		align-self: start;
-		max-height: calc(100vh - 4rem);
+		position: fixed;
+		top: 80px;
+		right: max(1rem, calc((100vw - 1060px) / 2));
+		width: 280px;
+		max-height: calc(100vh - 100px);
 		overflow-y: auto;
+		z-index: 10;
 	}
+
+	/* Align content to left edge of virtual container */
+	.single-article,
+	.post-hero,
+	.comments-toggle,
+	.comment-respond,
+	.comments-area,
+	.infinite-posts,
+	.related-posts {
+		margin-left: max(1rem, calc((100vw - 1060px) / 2));
+		margin-right: auto;
+		max-width: var(--pl-content);
+	}
+}
+
+.sidebar::-webkit-scrollbar {
+	width: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+	background: #ddd;
+	border-radius: 4px;
 }
 
 /* === Responsive === */

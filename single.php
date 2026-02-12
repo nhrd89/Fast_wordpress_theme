@@ -81,49 +81,6 @@ while ( have_posts() ) :
 				<?php endif; ?>
 			</footer>
 		</article>
-
-		<aside class="sidebar" aria-label="Sidebar">
-			<!-- Ad slot placeholder - replace with ad code later -->
-			<div class="sidebar-ad-slot">
-				<div class="sidebar-ad-placeholder">Ad Space</div>
-			</div>
-
-			<!-- Popular Posts as temporary content -->
-			<div class="sidebar-widget">
-				<h3 class="sidebar-widget-title">Popular Posts</h3>
-				<?php
-				$popular = new WP_Query( array(
-					'posts_per_page' => 5,
-					'orderby'        => 'rand',
-					'post_status'    => 'publish',
-					'post__not_in'   => array( get_the_ID() ),
-				) );
-				if ( $popular->have_posts() ) :
-					while ( $popular->have_posts() ) :
-						$popular->the_post();
-				?>
-					<a href="<?php the_permalink(); ?>" class="sidebar-post">
-						<?php if ( has_post_thumbnail() ) : ?>
-							<img src="<?php echo esc_url( get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' ) ); ?>"
-								alt="<?php echo esc_attr( get_the_title() ); ?>"
-								class="sidebar-post-img"
-								loading="lazy"
-								width="60" height="60">
-						<?php endif; ?>
-						<span class="sidebar-post-title"><?php the_title(); ?></span>
-					</a>
-				<?php
-					endwhile;
-					wp_reset_postdata();
-				endif;
-				?>
-			</div>
-
-			<!-- Second ad slot placeholder -->
-			<div class="sidebar-ad-slot">
-				<div class="sidebar-ad-placeholder">Ad Space</div>
-			</div>
-		</aside>
 	</div>
 
 	<?php if ( comments_open() || get_comments_number() ) : ?>
@@ -161,6 +118,49 @@ while ( have_posts() ) :
 			</section>
 		<?php endif; ?>
 	<?php endif; ?>
+
+	<aside class="sidebar" aria-label="Sidebar">
+		<!-- Ad slot placeholder - replace with ad code later -->
+		<div class="sidebar-ad-slot">
+			<div class="sidebar-ad-placeholder">Ad Space</div>
+		</div>
+
+		<!-- Popular Posts as temporary content -->
+		<div class="sidebar-widget">
+			<h3 class="sidebar-widget-title">Popular Posts</h3>
+			<?php
+			$popular = new WP_Query( array(
+				'posts_per_page' => 5,
+				'orderby'        => 'rand',
+				'post_status'    => 'publish',
+				'post__not_in'   => array( get_the_ID() ),
+			) );
+			if ( $popular->have_posts() ) :
+				while ( $popular->have_posts() ) :
+					$popular->the_post();
+			?>
+				<a href="<?php the_permalink(); ?>" class="sidebar-post">
+					<?php if ( has_post_thumbnail() ) : ?>
+						<img src="<?php echo esc_url( get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' ) ); ?>"
+							alt="<?php echo esc_attr( get_the_title() ); ?>"
+							class="sidebar-post-img"
+							loading="lazy"
+							width="60" height="60">
+					<?php endif; ?>
+					<span class="sidebar-post-title"><?php the_title(); ?></span>
+				</a>
+			<?php
+				endwhile;
+				wp_reset_postdata();
+			endif;
+			?>
+		</div>
+
+		<!-- Second ad slot placeholder -->
+		<div class="sidebar-ad-slot">
+			<div class="sidebar-ad-placeholder">Ad Space</div>
+		</div>
+	</aside>
 
 <?php endwhile; ?>
 
