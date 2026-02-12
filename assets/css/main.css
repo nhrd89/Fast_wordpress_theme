@@ -736,74 +736,61 @@
 	color: var(--pl-accent);
 }
 
-/* === Infinite scroll === */
+/* === Infinite scroll full posts === */
 .infinite-posts {
-	max-width: var(--pl-max);
-	margin: 0 auto;
-	padding: 0 1rem 3rem;
+	max-width: var(--pl-content);
+	margin: 3rem auto 0;
+	padding: 0 1rem;
 }
 
-.infinite-card {
-	border-bottom: 1px solid var(--pl-border);
-	padding: 1.25rem 0;
-}
-
-.infinite-card:first-child {
+.infinite-divider {
+	border: none;
 	border-top: 1px solid var(--pl-border);
+	margin: 3rem 0;
 }
 
-.infinite-card-link {
-	display: flex;
-	gap: 1rem;
-	text-decoration: none;
-	color: var(--pl-text);
+.infinite-post {
+	margin-bottom: 2rem;
 }
 
-.infinite-card-image {
-	flex-shrink: 0;
-	width: 120px;
-	height: 80px;
-	border-radius: 6px;
+.infinite-post-header {
+	margin-bottom: 2rem;
+}
+
+.infinite-post-hero {
+	margin-bottom: 1.5rem;
+	border-radius: 8px;
 	overflow: hidden;
-	position: relative;
 }
 
-.infinite-card-image .card-cat {
-	font-size: .5625rem;
-	padding: .15rem .4rem;
-	top: .4rem;
-	left: .4rem;
-}
-
-.infinite-card-img {
+.infinite-post-hero-img {
 	width: 100%;
-	height: 100%;
+	height: auto;
+	display: block;
+	aspect-ratio: 16 / 9;
 	object-fit: cover;
 }
 
-.infinite-card-body {
-	min-width: 0;
+.infinite-post-title {
+	font-size: 1.75rem;
+	font-weight: 800;
+	line-height: 1.2;
+	margin: .75rem 0 .5rem;
 }
 
-.infinite-card-title {
-	font-size: .9375rem;
-	font-weight: 600;
-	line-height: 1.35;
-	margin-bottom: .25rem;
+.infinite-post-title a {
+	color: inherit;
+	text-decoration: none;
 }
 
-.infinite-card-link:hover .infinite-card-title {
+.infinite-post-title a:hover {
 	color: var(--pl-accent);
 }
 
-.infinite-card-excerpt {
-	font-size: .8125rem;
-	color: var(--pl-text-light);
-	line-height: 1.5;
-	display: -webkit-box;
-	-webkit-line-clamp: 2;
-	-webkit-box-orient: vertical;
-	overflow: hidden;
+.infinite-post-content img {
+	max-width: 100%;
+	height: auto;
+	border-radius: 8px;
 }
 
 /* === WordPress alignment === */
@@ -864,6 +851,10 @@
 
 	.related-grid {
 		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.infinite-post-title {
+		font-size: 1.4rem;
 	}
 }
 

@@ -117,8 +117,6 @@ while ( have_posts() ) :
 		<?php endif; ?>
 	<?php endif; ?>
 
-	<div class="infinite-posts" data-current-post="<?php echo esc_attr( get_the_ID() ); ?>"></div>
-
 <?php endwhile; ?>
 
 <?php

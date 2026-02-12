@@ -1,8 +1,8 @@
 /**
- * Infinite scroll — loads random posts via REST API.
+ * Infinite scroll — loads full articles at 70% read trigger.
  *
  * Zero TBT: uses IntersectionObserver + requestIdleCallback.
- * Loaded with defer, initialised in idle time only.
+ * Loads ONE full post at a time when user reaches 70% of current article.
  *
  * @package PinLightning
  * @since 1.0.0
@@ -10,40 +10,72 @@
 (function () {
 	'use strict';
 
+	var loading = false;
+	var loadedIds = [];
+	var container = null;
+	var batchCount = 0;
+	var maxBatches = 5;
+
 	// REST endpoint URL passed from PHP via wp_localize_script.
 	var endpoint = (typeof plInfinite !== 'undefined' && plInfinite.endpoint)
 		? plInfinite.endpoint
 		: '/wp-json/pinlightning/v1/random-posts';
 
-	var container;
-	var sentinel;
-	var seenIds = [];
-	var loading = false;
-	var batchCount = 0;
-	var maxBatches = 10;
+	// Get current post ID from the original article.
+	var articleEl = document.querySelector('article[id^="post-"]');
+	if (articleEl) {
+		loadedIds.push(parseInt(articleEl.id.replace('post-', ''), 10));
+	}
 
 	function init() {
 		console.log('Infinite scroll init');
 
-		// Read current post ID from the data attribute.
-		container = document.querySelector('.infinite-posts');
-		if (!container) return;
+		container = document.createElement('div');
+		container.className = 'infinite-posts';
 
-		var currentId = container.getAttribute('data-current-post');
-		if (currentId) seenIds.push(parseInt(currentId, 10));
+		var mainContent = document.querySelector('main');
+		if (!mainContent) return;
+		mainContent.appendChild(container);
 
-		// Create sentinel element for IntersectionObserver.
-		sentinel = document.createElement('div');
-		sentinel.className = 'infinite-sentinel';
-		container.appendChild(sentinel);
+		// Start observing the original article at 70%.
+		observeLastArticle();
+	}
+
+	function observeLastArticle() {
+		// Find the last article (either the original or the last infinite-loaded one).
+		var articles = document.querySelectorAll('article, .infinite-post');
+		var lastArticle = articles[articles.length - 1];
+		if (!lastArticle) return;
+
+		// Create a marker at 70% height of the last article.
+		var marker = document.createElement('div');
+		marker.className = 'infinite-trigger';
+		marker.style.cssText = 'height:1px;position:absolute;left:0;width:1px;pointer-events:none;';
+		lastArticle.style.position = 'relative';
+
+		function positionMarker() {
+			marker.style.top = (lastArticle.scrollHeight * 0.7) + 'px';
+		}
+		positionMarker();
+		lastArticle.appendChild(marker);
+
+		// Reposition after images load (article height changes).
+		var images = lastArticle.querySelectorAll('img');
+		for (var i = 0; i < images.length; i++) {
+			if (!images[i].complete) {
+				images[i].addEventListener('load', positionMarker);
+			}
+		}
 
 		var observer = new IntersectionObserver(function (entries) {
 			if (entries[0].isIntersecting && !loading && batchCount < maxBatches) {
+				observer.disconnect();
+				marker.remove();
 				loadMore();
 			}
-		}, { rootMargin: '600px' });
+		});
 
-		observer.observe(sentinel);
+		observer.observe(marker);
 	}
 
 	function loadMore() {
@@ -51,41 +83,49 @@
 		batchCount++;
 
 		var sep = endpoint.indexOf('?') === -1 ? '?' : '&';
-		var url = endpoint + sep + 'exclude=' + seenIds.join(',');
+		var url = endpoint + sep + 'per_page=1&exclude=' + loadedIds.join(',');
 
 		fetch(url)
-			.then(function (res) { return res.json(); })
+			.then(function (r) { return r.json(); })
 			.then(function (data) {
-				if (!data.html) {
+				if (!data.posts || !data.posts.length) {
 					loading = false;
 					return;
 				}
 
-				// Track returned IDs.
-				if (data.ids) {
-					for (var i = 0; i < data.ids.length; i++) {
-						seenIds.push(data.ids[i]);
-					}
-				}
+				data.posts.forEach(function (post) {
+					loadedIds.push(post.id);
 
-				// Insert HTML before sentinel.
-				var temp = document.createElement('div');
-				temp.innerHTML = data.html;
-				while (temp.firstChild) {
-					container.insertBefore(temp.firstChild, sentinel);
-				}
+					// Divider between posts.
+					var divider = document.createElement('hr');
+					divider.className = 'infinite-divider';
+					container.appendChild(divider);
+
+					// Insert the full post HTML.
+					var wrapper = document.createElement('div');
+					wrapper.innerHTML = post.html;
+					while (wrapper.firstChild) {
+						container.appendChild(wrapper.firstChild);
+					}
+				});
 
 				loading = false;
+
+				// Observe the newly loaded article at 70% for the next batch.
+				observeLastArticle();
 			})
-			.catch(function () {
+			.catch(function (err) {
+				console.error('Infinite scroll error:', err);
 				loading = false;
 			});
 	}
 
-	// Initialise in idle time to avoid blocking main thread.
-	if ('requestIdleCallback' in window) {
-		requestIdleCallback(init);
-	} else {
-		setTimeout(init, 200);
+	// Only init on single posts.
+	if (document.body.classList.contains('single-post')) {
+		if ('requestIdleCallback' in window) {
+			requestIdleCallback(init);
+		} else {
+			setTimeout(init, 200);
+		}
 	}
 })();

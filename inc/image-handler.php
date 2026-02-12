@@ -301,7 +301,10 @@ add_filter( 'post_thumbnail_html', 'pinlightning_rewrite_featured_image_cdn', 20
  * @return string Modified content.
  */
 function pinlightning_pinterest_content_images( $content ) {
-	if ( empty( $content ) || is_admin() || ! is_singular() ) {
+	if ( empty( $content ) || is_admin() ) {
+		return $content;
+	}
+	if ( ! is_singular() && empty( $GLOBALS['pinlightning_rest_content'] ) ) {
 		return $content;
 	}
 
@@ -386,7 +389,10 @@ define( 'PINLIGHTNING_CDN_DISPLAY_H', (int) round( 1920 * 720 / 1080 ) ); // 128
  * @return string Modified content.
  */
 function pinlightning_rewrite_cdn_images( $content ) {
-	if ( empty( $content ) || is_admin() || ! is_singular() ) {
+	if ( empty( $content ) || is_admin() ) {
+		return $content;
+	}
+	if ( ! is_singular() && empty( $GLOBALS['pinlightning_rest_content'] ) ) {
 		return $content;
 	}
 
