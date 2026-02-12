@@ -2,7 +2,7 @@
 /**
  * The footer template.
  *
- * 3-column footer with back-to-top button (pure CSS).
+ * 3-column footer.
  *
  * @package PinLightning
  * @since 1.0.0
@@ -59,7 +59,6 @@
 		</div>
 	</div>
 
-	<a href="#top" class="back-to-top" aria-label="<?php esc_attr_e( 'Back to top', 'pinlightning' ); ?>">&uarr;</a>
 </footer>
 
 <?php wp_footer(); ?>
