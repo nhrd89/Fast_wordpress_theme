@@ -196,9 +196,14 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 		return $html;
 	}
 
-	// Only rewrite the hero image (large/full size), not related post card thumbnails.
-	// Card thumbnails use 'card-thumb' size and are styled by CSS object-fit/aspect-ratio.
-	if ( is_string( $size ) && in_array( $size, array( 'card-thumb', 'card-thumb-lg', 'thumbnail', 'medium' ), true ) ) {
+	// Only rewrite hero image sizes (large/full). Skip card thumbnails and other sizes
+	// — they use CSS object-fit/aspect-ratio for consistent cropping.
+	$hero_sizes = array( 'large', 'full', 'post-hero' );
+	if ( is_string( $size ) && ! in_array( $size, $hero_sizes, true ) ) {
+		return $html;
+	}
+	// Also skip if WordPress resolved the size to an array (e.g. [400, 600]).
+	if ( is_array( $size ) ) {
 		return $html;
 	}
 
