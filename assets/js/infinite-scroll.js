@@ -120,8 +120,8 @@
 			});
 	}
 
-	// Only init on single posts.
-	if (document.body.classList.contains('single-post')) {
+	// Only init on single views (body has 'single' class on all single post types).
+	if (document.body.classList.contains('single')) {
 		if ('requestIdleCallback' in window) {
 			requestIdleCallback(init);
 		} else {

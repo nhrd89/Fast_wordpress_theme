@@ -109,7 +109,7 @@ function pinlightning_scripts() {
 	}
 
 	// Infinite scroll on single posts (defer + requestIdleCallback = zero TBT).
-	if ( is_singular( 'post' ) ) {
+	if ( is_singular() ) {
 		wp_enqueue_script(
 			'pinlightning-infinite-scroll',
 			PINLIGHTNING_URI . '/assets/js/infinite-scroll.js',
