@@ -25,9 +25,22 @@ add_action('rest_api_init', function() {
         'methods' => 'GET',
         'callback' => 'pinlightning_get_ad_data',
         'permission_callback' => function() {
-            // Allow with secret key OR authenticated admin
+            // Allow with secret key OR authenticated admin (app password)
             if (isset($_GET['key']) && $_GET['key'] === PL_ADS_DATA_KEY) return true;
-            return current_user_can('manage_options');
+            if (is_user_logged_in() && current_user_can('manage_options')) return true;
+            return false;
+        },
+    ));
+
+    // Temporary: reveal data key via cache secret auth
+    register_rest_route('pinlightning/v1', '/ad-data-key', array(
+        'methods' => 'GET',
+        'callback' => function() {
+            return new WP_REST_Response(array('key' => PL_ADS_DATA_KEY), 200);
+        },
+        'permission_callback' => function() {
+            $secret = isset($_SERVER['HTTP_X_CACHE_SECRET']) ? $_SERVER['HTTP_X_CACHE_SECRET'] : '';
+            return defined('PINLIGHTNING_CACHE_SECRET') && $secret === PINLIGHTNING_CACHE_SECRET;
         },
     ));
 });
