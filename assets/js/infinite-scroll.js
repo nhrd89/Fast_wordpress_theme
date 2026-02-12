@@ -21,8 +21,8 @@
 		? plInfinite.endpoint
 		: '/wp-json/pinlightning/v1/random-posts';
 
-	// Get current post ID from the original article.
-	var articleEl = document.querySelector('article[id^="post-"]');
+	// Get current post ID from the main article (not related-post cards).
+	var articleEl = document.querySelector('article.single-article');
 	if (articleEl) {
 		loadedIds.push(parseInt(articleEl.id.replace('post-', ''), 10));
 	}
@@ -42,8 +42,8 @@
 	}
 
 	function observeLastArticle() {
-		// Find the last article (either the original or the last infinite-loaded one).
-		var articles = document.querySelectorAll('article, .infinite-post');
+		// Find the last article (main or infinite-loaded — excludes related-post cards).
+		var articles = document.querySelectorAll('article.single-article, .infinite-post');
 		var lastArticle = articles[articles.length - 1];
 		if (!lastArticle) return;
 
