@@ -227,10 +227,8 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 
 	$uploads_path = $path_match[1];
 
-	// Route through same-origin cdn-proxy.php to eliminate cross-origin LCP penalty.
-	// cdn-proxy.php fetches from myquickurl.com and caches locally.
-	$cdn_src  = 'cheerfultalks.com/wp-content/uploads/' . $uploads_path;
-	$base_url = PINLIGHTNING_URI . '/cdn-proxy.php?src=' . rawurlencode( $cdn_src );
+	// Route through local img-resize.php (resizes from wp-content/uploads/).
+	$base_url = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
 
 	// Build resized src (720px default, q=65 for faster LCP download).
 	$new_src = $base_url . '&w=720&q=65';

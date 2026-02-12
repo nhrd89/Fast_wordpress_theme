@@ -258,13 +258,10 @@ function pinlightning_preload_lcp_image() {
 	$use_resizer = ( strpos( $thumbnail_url, '/wp-content/uploads/' ) !== false );
 
 	if ( $use_resizer ) {
-		// Extract uploads-relative path and build same-origin proxy URLs.
-		// cdn-proxy.php fetches from myquickurl.com and caches locally,
-		// eliminating the cross-origin DNS+TCP+TLS penalty for LCP.
+		// Extract uploads-relative path and build local resizer URLs.
 		preg_match( '#/wp-content/uploads/(.+?)(?:\?|$)#', $thumbnail_url, $pm );
 		$uploads_path = isset( $pm[1] ) ? $pm[1] : '';
-		$cdn_src      = 'cheerfultalks.com/wp-content/uploads/' . $uploads_path;
-		$base_url     = PINLIGHTNING_URI . '/cdn-proxy.php?src=' . rawurlencode( $cdn_src );
+		$base_url     = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
 
 		$href   = $base_url . '&w=480&q=65';
 		$srcset = implode( ', ', array(
