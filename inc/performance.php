@@ -95,8 +95,52 @@ function pinlightning_remove_bloat_styles() {
 		wp_dequeue_style( 'dashicons' );
 		wp_deregister_style( 'dashicons' );
 	}
+
+	// Dequeue render-blocking third-party plugin CSS.
+	// These are re-added as non-blocking via style_loader_tag filter below.
+	$defer_styles = array(
+		'smpush-smiotooltipster',   // Smart Notification / SMIO Push
+		'wp-block-paragraph',       // WP core block paragraph
+	);
+	foreach ( $defer_styles as $handle ) {
+		if ( wp_style_is( $handle, 'enqueued' ) ) {
+			wp_style_add_data( $handle, 'media', 'print' );
+		}
+	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_remove_bloat_styles', 100 );
+
+/**
+ * Convert deferred plugin stylesheets to non-blocking via media="print" onload trick.
+ */
+function pinlightning_defer_plugin_styles( $tag, $handle, $src ) {
+	if ( is_admin() ) {
+		return $tag;
+	}
+
+	$defer_handles = array(
+		'smpush-smiotooltipster',
+		'wp-block-paragraph',
+	);
+
+	if ( in_array( $handle, $defer_handles, true ) ) {
+		// media="print" onload="this.media='all'" — loads after render, no flash.
+		$tag = str_replace(
+			"media='all'",
+			"media='print' onload=\"this.media='all'\"",
+			$tag
+		);
+		// Also handle double-quote variant.
+		$tag = str_replace(
+			'media="all"',
+			'media="print" onload="this.media=\'all\'"',
+			$tag
+		);
+	}
+
+	return $tag;
+}
+add_filter( 'style_loader_tag', 'pinlightning_defer_plugin_styles', 10, 3 );
 
 /**
  * Remove various wp_head bloat.
