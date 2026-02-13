@@ -488,11 +488,15 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 
 	if ( $is_lcp ) {
 		// LCP image: eager load + high priority.
-		if ( ! preg_match( '/\bfetchpriority\s*=/', $img ) ) {
-			$img = str_replace( '<img', '<img fetchpriority="high"', $img );
-		}
+		// Must replace existing attributes (WP core may have added loading="lazy" at priority 10).
+		$img = preg_replace( '/\bloading=["\'][^"\']*["\']/i', 'loading="eager"', $img );
+		$img = preg_replace( '/\bfetchpriority=["\'][^"\']*["\']/i', 'fetchpriority="high"', $img );
+		// Add if not present at all.
 		if ( ! preg_match( '/\bloading\s*=/', $img ) ) {
 			$img = str_replace( '<img', '<img loading="eager"', $img );
+		}
+		if ( ! preg_match( '/\bfetchpriority\s*=/', $img ) ) {
+			$img = str_replace( '<img', '<img fetchpriority="high"', $img );
 		}
 	} else {
 		// Deprioritize content images so they don't compete with LCP.

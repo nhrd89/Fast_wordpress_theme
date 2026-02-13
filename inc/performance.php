@@ -323,7 +323,8 @@ function pinlightning_preload_featured_image() {
 		$uploads_path = isset( $pm[1] ) ? $pm[1] : '';
 		$base_url     = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
 
-		$href   = $base_url . '&w=480&q=65';
+		// href must match the rendered img src (720w) for preload to hit cache.
+		$href   = $base_url . '&w=720&q=65';
 		$srcset = implode( ', ', array(
 			$base_url . '&w=360&q=65 360w',
 			$base_url . '&w=480&q=65 480w',
@@ -417,7 +418,8 @@ function pinlightning_preload_first_content_image() {
 		}
 		$base_url = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
 
-		$href   = $base_url . '&w=480&q=65';
+		// href must match the rendered img src (720w) for preload to hit cache.
+		$href   = $base_url . '&w=720&q=65';
 		$srcset = implode( ', ', array(
 			$base_url . '&w=360&q=65 360w',
 			$base_url . '&w=480&q=65 480w',
@@ -442,7 +444,7 @@ function pinlightning_preload_first_content_image() {
  *--------------------------------------------------------------*/
 
 /**
- * Deregister jQuery on frontend and move scripts to footer.
+ * Deregister jQuery on frontend, dequeue unused scripts.
  */
 function pinlightning_optimize_scripts() {
 	if ( is_admin() ) {
@@ -453,6 +455,11 @@ function pinlightning_optimize_scripts() {
 	wp_deregister_script( 'jquery-core' );
 	wp_deregister_script( 'jquery-migrate' );
 	wp_deregister_script( 'jquery' );
+
+	// Dequeue comment-reply unless the post actually needs threaded comments.
+	if ( ! is_singular() || ! comments_open() || ! get_option( 'thread_comments' ) ) {
+		wp_dequeue_script( 'comment-reply' );
+	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_optimize_scripts', 100 );
 
@@ -521,8 +528,8 @@ function pinlightning_cache_headers() {
 		return;
 	}
 
-	// HTML pages: short cache for CDN, revalidate for browsers.
-	header( 'Cache-Control: public, max-age=0, s-maxage=600, must-revalidate' );
+	// HTML pages: 1-hour browser cache + stale-while-revalidate for instant repeat visits.
+	header( 'Cache-Control: public, max-age=3600, stale-while-revalidate=86400' );
 }
 add_action( 'send_headers', 'pinlightning_cache_headers' );
 
