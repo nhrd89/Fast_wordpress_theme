@@ -121,14 +121,14 @@ function pinlightning_scripts() {
 			'endpoint' => esc_url_raw( rest_url( 'pinlightning/v1/random-posts' ) ),
 		) );
 
-		// Smart ad engine (defer + requestIdleCallback = zero TBT).
-		wp_enqueue_script(
-			'pinlightning-smart-ads',
-			PINLIGHTNING_URI . '/assets/js/smart-ads.js',
-			array(),
-			PINLIGHTNING_VERSION,
-			true
-		);
+		// Smart ad engine — disabled until Phase 3.
+		// wp_enqueue_script(
+		// 	'pinlightning-smart-ads',
+		// 	PINLIGHTNING_URI . '/assets/js/smart-ads.js',
+		// 	array(),
+		// 	PINLIGHTNING_VERSION,
+		// 	true
+		// );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
