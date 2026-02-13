@@ -7,7 +7,7 @@
 // === Configuration ===
 define('PL_ADS_ENABLED', true);
 define('PL_ADS_DUMMY_MODE', true);      // true = colored placeholder boxes, false = real AdPlus GPT
-define('PL_ADS_DEBUG_OVERLAY', true);    // Visual debug overlay (off in production)
+define('PL_ADS_DEBUG_OVERLAY', false);   // Visual debug overlay (off in production)
 define('PL_ADS_RECORD_DATA', true);      // Log viewability data to server
 define('PL_ADS_MIN_PARAGRAPHS', 3);     // Skip first N paragraphs before any ad
 define('PL_ADS_MIN_GAP', 3);            // Minimum paragraphs between ad zones
@@ -177,7 +177,7 @@ function pinlightning_ads_enqueue() {
 
     wp_localize_script('pinlightning-smart-ads', 'plAds', array(
         'dummy' => PL_ADS_DUMMY_MODE,
-        'debug' => PL_ADS_DEBUG_OVERLAY,
+        'debug' => PL_ADS_DEBUG_OVERLAY || isset($_GET['pl_debug']) || current_user_can('manage_options'),
         'record' => PL_ADS_RECORD_DATA,
         'maxAds' => PL_ADS_MAX_PER_POST,
         'recordEndpoint' => rest_url('pinlightning/v1/ad-data'),
