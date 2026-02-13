@@ -171,14 +171,14 @@ jobs:
 
       - name: Create remote directory — cheerlives.com
         run: |
-          sshpass -p "${{ secrets.SFTP_PASS }}" ssh -o StrictHostKeyChecking=no \
+          sshpass -p "${{ secrets.SFTP_PASS_CHEERLIVES }}" ssh -o StrictHostKeyChecking=no \
             -p ${{ secrets.SFTP_PORT }} \
-            ${{ secrets.SFTP_USER }}@${{ secrets.SFTP_HOST }} \
+            ${{ secrets.SFTP_USER_CHEERLIVES }}@${{ secrets.SFTP_HOST }} \
             "mkdir -p ${{ secrets.SFTP_REMOTE_PATH_CHEERLIVES }}"
 
       - name: Deploy to cheerlives.com
         run: |
-          sshpass -p '${{ secrets.SFTP_PASS }}' rsync -avz --delete \
+          sshpass -p '${{ secrets.SFTP_PASS_CHEERLIVES }}' rsync -avz --delete \
             -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.SFTP_PORT }}" \
             --exclude='.git/' \
             --exclude='node_modules/' \
@@ -191,7 +191,7 @@ jobs:
             --exclude='.github/' \
             --exclude='*.md' \
             --exclude='.gitignore' \
-            ./ ${{ secrets.SFTP_USER }}@${{ secrets.SFTP_HOST }}:${{ secrets.SFTP_REMOTE_PATH_CHEERLIVES }}/
+            ./ ${{ secrets.SFTP_USER_CHEERLIVES }}@${{ secrets.SFTP_HOST }}:${{ secrets.SFTP_REMOTE_PATH_CHEERLIVES }}/
 
       - name: Flush cache — cheerlives.com
         continue-on-error: true
