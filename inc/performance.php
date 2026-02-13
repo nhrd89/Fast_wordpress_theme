@@ -286,12 +286,28 @@ add_action( 'wp_head', 'pinlightning_resource_hints', 1 );
  *
  * Runs at priority 0 so it appears first in <head> (before CSS), starting
  * the image download as early as possible to reduce LCP resource load delay.
+ *
+ * Handles two cases:
+ * 1. Post has a featured image → preload the resized featured image.
+ * 2. Post has no featured image → scan content for the first image and preload it.
  */
 function pinlightning_preload_lcp_image() {
-	if ( ! is_singular() || ! has_post_thumbnail() ) {
+	if ( ! is_singular() ) {
 		return;
 	}
 
+	if ( has_post_thumbnail() ) {
+		pinlightning_preload_featured_image();
+	} else {
+		pinlightning_preload_first_content_image();
+	}
+}
+add_action( 'wp_head', 'pinlightning_preload_lcp_image', 0 );
+
+/**
+ * Preload a featured image (post thumbnail) as LCP.
+ */
+function pinlightning_preload_featured_image() {
 	$thumbnail_id  = get_post_thumbnail_id();
 	$thumbnail_url = wp_get_attachment_image_url( $thumbnail_id, 'large' );
 	if ( ! $thumbnail_url ) {
@@ -335,7 +351,91 @@ function pinlightning_preload_lcp_image() {
 
 	echo '<link ' . $attrs . '>' . "\n";
 }
-add_action( 'wp_head', 'pinlightning_preload_lcp_image', 0 );
+
+/**
+ * Preload the first content image as LCP when no featured image is set.
+ *
+ * Parses raw post content to find the first <img> src, then builds a
+ * preload link matching the CDN resizer URLs that pinlightning_rewrite_cdn_img
+ * will produce at render time.
+ */
+function pinlightning_preload_first_content_image() {
+	$post = get_queried_object();
+	if ( ! $post || empty( $post->post_content ) ) {
+		return;
+	}
+
+	// Find the first <img> src in raw post content.
+	if ( ! preg_match( '/<img\b[^>]*\bsrc=["\']([^"\']+)["\']/i', $post->post_content, $m ) ) {
+		return;
+	}
+
+	$first_src = $m[1];
+
+	// Handle myquickurl.com CDN images (most common on cheerlives.com).
+	if ( strpos( $first_src, 'myquickurl.com' ) !== false ) {
+		// Extract the CDN path (matches logic in pinlightning_rewrite_cdn_img).
+		$cdn_path = '';
+		if ( preg_match( '/myquickurl\.com\/img\.php\?.*?src=([^&"\']+)/', $first_src, $cm ) ) {
+			$cdn_path = urldecode( $cm[1] );
+		} elseif ( preg_match( '/myquickurl\.com\/img\/(.+?)(?:\?|$)/', $first_src, $cm ) ) {
+			$cdn_path = $cm[1];
+		} elseif ( preg_match( '/myquickurl\.com\/(.+?)(?:\?|$)/', $first_src, $cm ) ) {
+			$cdn_path = $cm[1];
+		}
+
+		if ( empty( $cdn_path ) ) {
+			return;
+		}
+
+		$cdn_path_encoded = rawurlencode( $cdn_path );
+		$cdn_path_encoded = str_replace( '%2F', '/', $cdn_path_encoded );
+		$base_url = 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded;
+
+		$href   = $base_url . '&w=665&q=80';
+		$srcset = implode( ', ', array(
+			$base_url . '&w=360&q=80 360w',
+			$base_url . '&w=480&q=80 480w',
+			$base_url . '&w=665&q=80 665w',
+		) );
+		$sizes = '(max-width: 480px) 100vw, 665px';
+
+		$attrs  = 'rel="preload" as="image" href="' . esc_url( $href ) . '" fetchpriority="high"';
+		$attrs .= ' imagesrcset="' . esc_attr( $srcset ) . '"';
+		$attrs .= ' imagesizes="' . esc_attr( $sizes ) . '"';
+
+		echo '<link ' . $attrs . '>' . "\n";
+		return;
+	}
+
+	// Handle local upload images.
+	if ( strpos( $first_src, '/wp-content/uploads/' ) !== false ) {
+		preg_match( '#/wp-content/uploads/(.+?)(?:\?|$)#', $first_src, $pm );
+		$uploads_path = isset( $pm[1] ) ? $pm[1] : '';
+		if ( empty( $uploads_path ) ) {
+			return;
+		}
+		$base_url = PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path );
+
+		$href   = $base_url . '&w=480&q=65';
+		$srcset = implode( ', ', array(
+			$base_url . '&w=360&q=65 360w',
+			$base_url . '&w=480&q=65 480w',
+			$base_url . '&w=720&q=65 720w',
+		) );
+		$sizes = '(max-width: 480px) 100vw, 720px';
+
+		$attrs  = 'rel="preload" as="image" href="' . esc_url( $href ) . '" fetchpriority="high"';
+		$attrs .= ' imagesrcset="' . esc_attr( $srcset ) . '"';
+		$attrs .= ' imagesizes="' . esc_attr( $sizes ) . '"';
+
+		echo '<link ' . $attrs . '>' . "\n";
+		return;
+	}
+
+	// Fallback: preload the raw src as-is.
+	echo '<link rel="preload" as="image" href="' . esc_url( $first_src ) . '" fetchpriority="high">' . "\n";
+}
 
 /*--------------------------------------------------------------
  * 5. SCRIPT OPTIMIZATION

@@ -29,7 +29,7 @@
 			<?php if ( has_custom_logo() ) : ?>
 				<?php the_custom_logo(); ?>
 			<?php else : ?>
-				<a href="<?php echo esc_url( home_url( '/' ) ); ?>" class="site-title" rel="home"><?php bloginfo( 'name' ); ?></a>
+				<a href="<?php echo esc_url( home_url( '/' ) ); ?>" class="site-title" rel="home" aria-label="<?php esc_attr_e( 'Home', 'pinlightning' ); ?>"><?php bloginfo( 'name' ); ?></a>
 			<?php endif; ?>
 		</div>
 

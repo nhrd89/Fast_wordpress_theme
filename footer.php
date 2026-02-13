@@ -55,7 +55,7 @@
 		</div>
 
 		<div class="footer-bottom">
-			<p class="copyright">&copy; <?php echo esc_html( date_i18n( 'Y' ) ); ?> <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><?php bloginfo( 'name' ); ?></a></p>
+			<p class="copyright">&copy; <?php echo esc_html( date_i18n( 'Y' ) ); ?> <a href="<?php echo esc_url( home_url( '/' ) ); ?>" aria-label="<?php esc_attr_e( 'Home', 'pinlightning' ); ?>"><?php bloginfo( 'name' ); ?></a></p>
 		</div>
 	</div>
 

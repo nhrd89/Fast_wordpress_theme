@@ -481,14 +481,27 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 		$img = str_replace( '<img', '<img width="' . PINLIGHTNING_CDN_DISPLAY_W . '" height="' . PINLIGHTNING_CDN_DISPLAY_H . '"', $img );
 	}
 
-	// Deprioritize content images so they don't compete with hero LCP image.
-	if ( ! preg_match( '/\bfetchpriority\s*=/', $img ) ) {
-		$img = str_replace( '<img', '<img fetchpriority="low"', $img );
-	}
+	// First CDN image becomes the LCP element when there's no hero image.
+	static $cdn_img_index = 0;
+	$is_lcp = ( 0 === $cdn_img_index && ! has_post_thumbnail() );
+	$cdn_img_index++;
 
-	// Ensure content images are lazy-loaded.
-	if ( ! preg_match( '/\bloading\s*=/', $img ) ) {
-		$img = str_replace( '<img', '<img loading="lazy"', $img );
+	if ( $is_lcp ) {
+		// LCP image: eager load + high priority.
+		if ( ! preg_match( '/\bfetchpriority\s*=/', $img ) ) {
+			$img = str_replace( '<img', '<img fetchpriority="high"', $img );
+		}
+		if ( ! preg_match( '/\bloading\s*=/', $img ) ) {
+			$img = str_replace( '<img', '<img loading="eager"', $img );
+		}
+	} else {
+		// Deprioritize content images so they don't compete with LCP.
+		if ( ! preg_match( '/\bfetchpriority\s*=/', $img ) ) {
+			$img = str_replace( '<img', '<img fetchpriority="low"', $img );
+		}
+		if ( ! preg_match( '/\bloading\s*=/', $img ) ) {
+			$img = str_replace( '<img', '<img loading="lazy"', $img );
+		}
 	}
 
 	return $img;

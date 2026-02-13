@@ -62,6 +62,28 @@ function pinlightning_setup() {
 add_action( 'after_setup_theme', 'pinlightning_setup' );
 
 /**
+ * Add aria-label to the custom logo link for accessibility.
+ *
+ * @param string $html The custom logo HTML.
+ * @return string Modified HTML with aria-label.
+ */
+function pinlightning_custom_logo_aria( $html ) {
+	if ( empty( $html ) ) {
+		return $html;
+	}
+	// Only add if not already present.
+	if ( strpos( $html, 'aria-label' ) !== false ) {
+		return $html;
+	}
+	return str_replace(
+		'<a ',
+		'<a aria-label="' . esc_attr__( 'Home', 'pinlightning' ) . '" ',
+		$html
+	);
+}
+add_filter( 'get_custom_logo', 'pinlightning_custom_logo_aria' );
+
+/**
  * Register widget areas.
  */
 function pinlightning_widgets_init() {
