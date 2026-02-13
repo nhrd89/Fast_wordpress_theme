@@ -7,7 +7,8 @@ on:
       - claude/setup-pinlightning-theme-5lwUG
 
 env:
-  TEST_URL: https://cheerfultalks.com/wanderweave2/capture-the-aesthetic-15-beautiful-mountain-landscapes-for-photography/
+  TEST_URL_CHEERFULTALKS: https://cheerfultalks.com/wanderweave2/capture-the-aesthetic-15-beautiful-mountain-landscapes-for-photography/
+  TEST_URL_CHEERLIVES: ${{ secrets.SITE_URL_CHEERLIVES }}
 
 jobs:
   deploy:
@@ -32,7 +33,9 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
 
-      - name: Deploy via rsync
+      # ─── Site 1: cheerfultalks.com ───
+
+      - name: Deploy to cheerfultalks.com
         run: |
           sshpass -p '${{ secrets.SFTP_PASS }}' rsync -avz --delete \
             -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.SFTP_PORT }}" \
@@ -49,20 +52,19 @@ jobs:
             --exclude='.gitignore' \
             ./ ${{ secrets.SFTP_USER }}@${{ secrets.SFTP_HOST }}:${{ secrets.SFTP_REMOTE_PATH }}/
 
-      - name: Flush cache
+      - name: Flush cache — cheerfultalks.com
         run: |
           curl -s -X POST \
             "${{ secrets.SITE_URL }}/wp-json/pinlightning/v1/flush-cache" \
             -H "X-Cache-Secret: ${{ secrets.CACHE_SECRET }}"
 
-      - name: PageSpeed test — Mobile
-        id: psi_mobile
+      - name: PageSpeed mobile — cheerfultalks.com
+        id: ct_mobile
         continue-on-error: true
         run: |
-          echo "Testing mobile: $TEST_URL"
-          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL', safe=''))")&strategy=mobile&key=${{ secrets.PAGESPEED_API_KEY }}")
+          echo "Testing mobile: $TEST_URL_CHEERFULTALKS"
+          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL_CHEERFULTALKS', safe=''))")&strategy=mobile&key=${{ secrets.PAGESPEED_API_KEY }}")
 
-          # Extract score
           SCORE=$(echo "$RESPONSE" | python3 -c "
           import sys, json
           try:
@@ -77,10 +79,9 @@ jobs:
               print(f'ERROR: Failed to parse response — {e}')
               sys.exit(1)
           ")
-          echo "Mobile Performance Score: $SCORE"
-          echo "mobile_score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo "cheerfultalks.com Mobile Score: $SCORE"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
 
-          # Extract metrics
           echo "$RESPONSE" | python3 -c "
           import sys, json
           try:
@@ -95,7 +96,6 @@ jobs:
               print(f'Failed to extract metrics: {e}')
           "
 
-          # Extract screenshot
           echo "$RESPONSE" | python3 -c "
           import sys, json, base64
           try:
@@ -104,9 +104,9 @@ jobs:
               if ',' in ss:
                   ss = ss.split(',', 1)[1]
               img = base64.b64decode(ss)
-              with open('screenshot-mobile.png', 'wb') as f:
+              with open('ct-screenshot-mobile.png', 'wb') as f:
                   f.write(img)
-              print(f'Saved screenshot-mobile.png ({len(img):,} bytes)')
+              print(f'Saved ct-screenshot-mobile.png ({len(img):,} bytes)')
           except (json.JSONDecodeError, KeyError, TypeError) as e:
               print(f'Failed to extract screenshot: {e}')
           "
@@ -114,14 +114,13 @@ jobs:
       - name: Wait before desktop test
         run: sleep 10
 
-      - name: PageSpeed test — Desktop
-        id: psi_desktop
+      - name: PageSpeed desktop — cheerfultalks.com
+        id: ct_desktop
         continue-on-error: true
         run: |
-          echo "Testing desktop: $TEST_URL"
-          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL', safe=''))")&strategy=desktop&key=${{ secrets.PAGESPEED_API_KEY }}")
+          echo "Testing desktop: $TEST_URL_CHEERFULTALKS"
+          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL_CHEERFULTALKS', safe=''))")&strategy=desktop&key=${{ secrets.PAGESPEED_API_KEY }}")
 
-          # Extract score
           SCORE=$(echo "$RESPONSE" | python3 -c "
           import sys, json
           try:
@@ -136,10 +135,9 @@ jobs:
               print(f'ERROR: Failed to parse response — {e}')
               sys.exit(1)
           ")
-          echo "Desktop Performance Score: $SCORE"
-          echo "desktop_score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo "cheerfultalks.com Desktop Score: $SCORE"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
 
-          # Extract metrics
           echo "$RESPONSE" | python3 -c "
           import sys, json
           try:
@@ -154,7 +152,6 @@ jobs:
               print(f'Failed to extract metrics: {e}')
           "
 
-          # Extract screenshot
           echo "$RESPONSE" | python3 -c "
           import sys, json, base64
           try:
@@ -163,22 +160,174 @@ jobs:
               if ',' in ss:
                   ss = ss.split(',', 1)[1]
               img = base64.b64decode(ss)
-              with open('screenshot-desktop.png', 'wb') as f:
+              with open('ct-screenshot-desktop.png', 'wb') as f:
                   f.write(img)
-              print(f'Saved screenshot-desktop.png ({len(img):,} bytes)')
+              print(f'Saved ct-screenshot-desktop.png ({len(img):,} bytes)')
           except (json.JSONDecodeError, KeyError, TypeError) as e:
               print(f'Failed to extract screenshot: {e}')
           "
 
+      # ─── Site 2: cheerlives.com ───
+
+      - name: Create remote directory — cheerlives.com
+        run: |
+          sshpass -p "${{ secrets.SFTP_PASS }}" ssh -o StrictHostKeyChecking=no \
+            -p ${{ secrets.SFTP_PORT }} \
+            ${{ secrets.SFTP_USER }}@${{ secrets.SFTP_HOST }} \
+            "mkdir -p ${{ secrets.SFTP_REMOTE_PATH_CHEERLIVES }}"
+
+      - name: Deploy to cheerlives.com
+        run: |
+          sshpass -p '${{ secrets.SFTP_PASS }}' rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.SFTP_PORT }}" \
+            --exclude='.git/' \
+            --exclude='node_modules/' \
+            --exclude='.env' \
+            --exclude='.env.example' \
+            --exclude='deploy.sh' \
+            --exclude='wp-check.sh' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='.github/' \
+            --exclude='*.md' \
+            --exclude='.gitignore' \
+            ./ ${{ secrets.SFTP_USER }}@${{ secrets.SFTP_HOST }}:${{ secrets.SFTP_REMOTE_PATH_CHEERLIVES }}/
+
+      - name: Flush cache — cheerlives.com
+        continue-on-error: true
+        run: |
+          curl -s -X POST \
+            "${{ secrets.SITE_URL_CHEERLIVES }}/wp-json/pinlightning/v1/flush-cache" \
+            -H "X-Cache-Secret: ${{ secrets.CACHE_SECRET }}"
+
+      - name: Wait before cheerlives PageSpeed
+        run: sleep 10
+
+      - name: PageSpeed mobile — cheerlives.com
+        id: cl_mobile
+        continue-on-error: true
+        run: |
+          echo "Testing mobile: $TEST_URL_CHEERLIVES"
+          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL_CHEERLIVES', safe=''))")&strategy=mobile&key=${{ secrets.PAGESPEED_API_KEY }}")
+
+          SCORE=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              if 'lighthouseResult' not in d:
+                  print('ERROR: No lighthouseResult in response')
+                  if 'error' in d:
+                      print(f'API error: {d[\"error\"].get(\"message\", d[\"error\"])}')
+                  sys.exit(1)
+              print(int(d['lighthouseResult']['categories']['performance']['score']*100))
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'ERROR: Failed to parse response — {e}')
+              sys.exit(1)
+          ")
+          echo "cheerlives.com Mobile Score: $SCORE"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+          echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              a = d['lighthouseResult']['audits']
+              print(f\"  FCP: {a['first-contentful-paint']['displayValue']}\")
+              print(f\"  LCP: {a['largest-contentful-paint']['displayValue']}\")
+              print(f\"  Speed Index: {a['speed-index']['displayValue']}\")
+              print(f\"  TBT: {a['total-blocking-time']['displayValue']}\")
+              print(f\"  CLS: {a['cumulative-layout-shift']['displayValue']}\")
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'Failed to extract metrics: {e}')
+          "
+
+          echo "$RESPONSE" | python3 -c "
+          import sys, json, base64
+          try:
+              d = json.load(sys.stdin)
+              ss = d['lighthouseResult']['audits']['final-screenshot']['details']['data']
+              if ',' in ss:
+                  ss = ss.split(',', 1)[1]
+              img = base64.b64decode(ss)
+              with open('cl-screenshot-mobile.png', 'wb') as f:
+                  f.write(img)
+              print(f'Saved cl-screenshot-mobile.png ({len(img):,} bytes)')
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'Failed to extract screenshot: {e}')
+          "
+
+      - name: Wait before cheerlives desktop test
+        run: sleep 10
+
+      - name: PageSpeed desktop — cheerlives.com
+        id: cl_desktop
+        continue-on-error: true
+        run: |
+          echo "Testing desktop: $TEST_URL_CHEERLIVES"
+          RESPONSE=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TEST_URL_CHEERLIVES', safe=''))")&strategy=desktop&key=${{ secrets.PAGESPEED_API_KEY }}")
+
+          SCORE=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              if 'lighthouseResult' not in d:
+                  print('ERROR: No lighthouseResult in response')
+                  if 'error' in d:
+                      print(f'API error: {d[\"error\"].get(\"message\", d[\"error\"])}')
+                  sys.exit(1)
+              print(int(d['lighthouseResult']['categories']['performance']['score']*100))
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'ERROR: Failed to parse response — {e}')
+              sys.exit(1)
+          ")
+          echo "cheerlives.com Desktop Score: $SCORE"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+          echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              a = d['lighthouseResult']['audits']
+              print(f\"  FCP: {a['first-contentful-paint']['displayValue']}\")
+              print(f\"  LCP: {a['largest-contentful-paint']['displayValue']}\")
+              print(f\"  Speed Index: {a['speed-index']['displayValue']}\")
+              print(f\"  TBT: {a['total-blocking-time']['displayValue']}\")
+              print(f\"  CLS: {a['cumulative-layout-shift']['displayValue']}\")
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'Failed to extract metrics: {e}')
+          "
+
+          echo "$RESPONSE" | python3 -c "
+          import sys, json, base64
+          try:
+              d = json.load(sys.stdin)
+              ss = d['lighthouseResult']['audits']['final-screenshot']['details']['data']
+              if ',' in ss:
+                  ss = ss.split(',', 1)[1]
+              img = base64.b64decode(ss)
+              with open('cl-screenshot-desktop.png', 'wb') as f:
+                  f.write(img)
+              print(f'Saved cl-screenshot-desktop.png ({len(img):,} bytes)')
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'Failed to extract screenshot: {e}')
+          "
+
+      # ─── Summary ───
+
       - name: Print score summary
         continue-on-error: true
         run: |
-          echo "═══════════════════════════════════"
-          echo " Mobile Score:  ${{ steps.psi_mobile.outputs.mobile_score || 'N/A' }}/100"
-          echo " Desktop Score: ${{ steps.psi_desktop.outputs.desktop_score || 'N/A' }}/100"
-          echo "═══════════════════════════════════"
+          echo "═══════════════════════════════════════════════"
+          echo " cheerfultalks.com"
+          echo "   Mobile:  ${{ steps.ct_mobile.outputs.score || 'N/A' }}/100"
+          echo "   Desktop: ${{ steps.ct_desktop.outputs.score || 'N/A' }}/100"
+          echo ""
+          echo " cheerlives.com"
+          echo "   Mobile:  ${{ steps.cl_mobile.outputs.score || 'N/A' }}/100"
+          echo "   Desktop: ${{ steps.cl_desktop.outputs.score || 'N/A' }}/100"
+          echo "═══════════════════════════════════════════════"
 
-      - name: Get active plugins
+      - name: Get active plugins — cheerfultalks.com
         continue-on-error: true
         run: |
           curl -s -u "${{ secrets.WP_USER }}:${{ secrets.WP_APP_PASSWORD }}" \
@@ -190,8 +339,8 @@ jobs:
               if not isinstance(plugins, list):
                   print(f'Unexpected response: {str(plugins)[:200]}')
                   sys.exit(1)
-              with open('active-plugins.txt', 'w') as f:
-                  f.write('Active Plugins\n')
+              with open('ct-active-plugins.txt', 'w') as f:
+                  f.write('Active Plugins — cheerfultalks.com\n')
                   f.write('=' * 40 + '\n\n')
                   for p in plugins:
                       status = p.get('status', 'unknown')
@@ -199,20 +348,49 @@ jobs:
                       version = p.get('version', '?')
                       f.write(f'[{status:>8}] {name} v{version}\n')
                   f.write(f'\nTotal: {len(plugins)} plugins\n')
-              print(open('active-plugins.txt').read())
+              print(open('ct-active-plugins.txt').read())
           except (json.JSONDecodeError, KeyError, TypeError) as e:
               print(f'Failed to parse plugins response: {e}')
           "
 
-      - name: Upload screenshots and plugin list
+      - name: Get active plugins — cheerlives.com
+        continue-on-error: true
+        run: |
+          curl -s -u "${{ secrets.WP_USER_CHEERLIVES }}:${{ secrets.WP_APP_PASSWORD_CHEERLIVES }}" \
+            "${{ secrets.SITE_URL_CHEERLIVES }}/wp-json/wp/v2/plugins" \
+            | python3 -c "
+          import sys, json
+          try:
+              plugins = json.load(sys.stdin)
+              if not isinstance(plugins, list):
+                  print(f'Unexpected response: {str(plugins)[:200]}')
+                  sys.exit(1)
+              with open('cl-active-plugins.txt', 'w') as f:
+                  f.write('Active Plugins — cheerlives.com\n')
+                  f.write('=' * 40 + '\n\n')
+                  for p in plugins:
+                      status = p.get('status', 'unknown')
+                      name = p.get('name', 'Unknown')
+                      version = p.get('version', '?')
+                      f.write(f'[{status:>8}] {name} v{version}\n')
+                  f.write(f'\nTotal: {len(plugins)} plugins\n')
+              print(open('cl-active-plugins.txt').read())
+          except (json.JSONDecodeError, KeyError, TypeError) as e:
+              print(f'Failed to parse plugins response: {e}')
+          "
+
+      - name: Upload screenshots and plugin lists
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: deploy-report-${{ github.sha }}
           path: |
-            screenshot-mobile.png
-            screenshot-desktop.png
-            active-plugins.txt
+            ct-screenshot-mobile.png
+            ct-screenshot-desktop.png
+            cl-screenshot-mobile.png
+            cl-screenshot-desktop.png
+            ct-active-plugins.txt
+            cl-active-plugins.txt
           if-no-files-found: ignore
           retention-days: 30
 
