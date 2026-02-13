@@ -798,23 +798,7 @@
 	display: none;
 }
 
-.sidebar-ad-slot {
-	margin-bottom: 1.5rem;
-}
 
-.sidebar-ad-placeholder {
-	background: #f5f5f5;
-	border: 2px dashed #ddd;
-	border-radius: 8px;
-	padding: 2rem;
-	text-align: center;
-	color: #999;
-	font-size: 0.85rem;
-	min-height: 250px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
 
 .sidebar-widget {
 	margin-bottom: 1.5rem;

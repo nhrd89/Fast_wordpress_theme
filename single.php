@@ -124,12 +124,7 @@ while ( have_posts() ) :
 	<?php endif; ?>
 
 	<aside class="sidebar" aria-label="Sidebar">
-		<!-- Ad slot placeholder - replace with ad code later -->
-		<div class="sidebar-ad-slot">
-			<div class="sidebar-ad-placeholder">Ad Space</div>
-		</div>
-
-		<!-- Popular Posts as temporary content -->
+		<!-- Popular Posts -->
 		<div class="sidebar-widget">
 			<h3 class="sidebar-widget-title">Popular Posts</h3>
 			<?php
@@ -160,10 +155,6 @@ while ( have_posts() ) :
 			?>
 		</div>
 
-		<!-- Second ad slot placeholder -->
-		<div class="sidebar-ad-slot">
-			<div class="sidebar-ad-placeholder">Ad Space</div>
-		</div>
 	</aside>
 
 <?php endwhile; ?>
