@@ -1163,6 +1163,166 @@
 	100% { opacity: 0; transform: scale(0.5) rotate(360deg); }
 }
 
+/* =============================================
+   COMBO COUNTER
+   ============================================= */
+.pl-combo {
+	position: fixed;
+	right: 24px;
+	bottom: 84px;
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	opacity: 0;
+	transform: scale(0.5);
+	transition: opacity 0.3s, transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+	pointer-events: none;
+}
+.pl-combo.active { opacity: 1; transform: scale(1); }
+.pl-combo.hot .pl-combo-multiplier {
+	color: #ff5722;
+	text-shadow: 0 0 12px rgba(255,87,34,0.5);
+}
+.pl-combo.fire .pl-combo-multiplier {
+	color: #ff1744;
+	text-shadow: 0 0 20px rgba(255,23,68,0.6);
+	font-size: 28px;
+}
+.pl-combo-multiplier {
+	font-size: 22px; font-weight: 800; color: #e91e63;
+	transition: all 0.2s; line-height: 1;
+}
+.pl-combo-label {
+	font-size: 8px; font-weight: 700; letter-spacing: 0.15em;
+	color: #f48fb1; text-transform: uppercase;
+}
+
+/* =============================================
+   FLOATING COLLECTIBLES
+   ============================================= */
+.pl-collect-counter {
+	position: fixed; bottom: 80px; right: 28px; z-index: 999;
+	display: flex; align-items: center; gap: 3px;
+	font-size: 13px; font-weight: 700; color: #9c27b0;
+	opacity: 0.8; transition: transform 0.3s;
+}
+.pl-collect-icon { font-size: 16px; }
+@keyframes plCollectPulse {
+	0%, 100% { transform: scale(1); }
+	50% { transform: scale(1.3); }
+}
+.pl-collect-counter.pl-collect-pulse {
+	animation: plCollectPulse 0.4s ease;
+}
+.pl-collectible-pop {
+	position: fixed; pointer-events: none; z-index: 1001;
+	font-size: 24px; opacity: 1;
+}
+@keyframes plCollectFly {
+	0% { opacity: 1; transform: translate(0,0) scale(1.3); }
+	70% { opacity: 0.8; }
+	100% { opacity: 0; transform: translate(var(--endX),var(--endY)) scale(0.3); }
+}
+
+/* =============================================
+   ACHIEVEMENTS
+   ============================================= */
+.pl-achievement-container {
+	position: fixed; top: 20px; right: 20px; z-index: 2000;
+	display: flex; flex-direction: column; gap: 8px;
+	pointer-events: none;
+}
+.pl-achievement {
+	display: flex; align-items: center; gap: 10px;
+	background: #fff; border: 2px solid #f48fb1; border-radius: 12px;
+	padding: 10px 16px;
+	box-shadow: 0 4px 20px rgba(233,30,99,0.2);
+	transform: translateX(120%); opacity: 0;
+	transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s;
+}
+.pl-achievement.show { transform: translateX(0); opacity: 1; }
+.pl-achievement-icon { font-size: 24px; }
+.pl-achievement-title { font-size: 13px; font-weight: 700; color: #e91e63; }
+.pl-achievement-desc { font-size: 11px; color: #999; }
+
+/* =============================================
+   IMAGE SHIMMER
+   ============================================= */
+@keyframes plShimmerSweep {
+	0% { background-position: -200% 0; }
+	100% { background-position: 200% 0; }
+}
+.pl-shimmer-reveal {
+	position: relative;
+	animation: plShimmerSweep 0.8s ease forwards;
+	background-image: linear-gradient(90deg, transparent 0%, rgba(255,215,0,0.15) 50%, transparent 100%);
+	background-size: 50% 100%;
+	background-repeat: no-repeat;
+}
+
+/* =============================================
+   SECTION ANIMATIONS
+   ============================================= */
+.pl-section-heading {
+	opacity: 0;
+	transform: translateY(20px) scale(0.95);
+	transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1), transform 0.5s cubic-bezier(0.16,1,0.3,1);
+}
+.pl-section-heading.pl-section-bounce {
+	opacity: 1;
+	transform: translateY(0) scale(1);
+}
+
+/* =============================================
+   READER STATS
+   ============================================= */
+.pl-reader-stat {
+	position: fixed; bottom: 100px; left: 50%;
+	transform: translateX(-50%) translateY(20px);
+	background: #fff; border: 2px solid #f48fb1; border-radius: 20px;
+	padding: 8px 20px; font-size: 12px; color: #666;
+	box-shadow: 0 4px 20px rgba(233,30,99,0.15);
+	z-index: 1001; opacity: 0;
+	transition: opacity 0.4s, transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+	pointer-events: none; white-space: nowrap;
+}
+.pl-reader-stat.show {
+	opacity: 1; transform: translateX(-50%) translateY(0);
+}
+.pl-reader-stat strong { color: #e91e63; }
+
+/* =============================================
+   DANCER EVOLUTION ACCESSORIES
+   ============================================= */
+.pl-dancer-bow {
+	position: absolute; top: -2px; left: 50%;
+	transform: translateX(-50%); width: 12px; height: 8px; z-index: 10;
+}
+.pl-dancer-bow::before, .pl-dancer-bow::after {
+	content: ''; position: absolute; top: 0;
+	width: 6px; height: 6px; background: #ff80ab;
+	border-radius: 50% 50% 50% 0;
+}
+.pl-dancer-bow::before { left: 0; transform: rotate(-45deg); }
+.pl-dancer-bow::after { right: 0; transform: rotate(45deg) scaleX(-1); }
+
+.pl-dancer-wand {
+	position: absolute; top: 18px; right: -12px;
+	width: 3px; height: 20px;
+	background: linear-gradient(to top, #ba68c8, #e1bee7);
+	border-radius: 1px; z-index: 10; transform: rotate(-30deg);
+}
+.pl-dancer-wand::after {
+	content: '\u2B50'; position: absolute; top: -10px; left: -4px; font-size: 10px;
+}
+
+.pl-dancer-crown {
+	position: absolute; top: -10px; left: 50%;
+	transform: translateX(-50%); font-size: 12px; z-index: 10;
+}
+.pl-dancer-crown::after { content: '\uD83D\uDC51'; }
+
 /* === Responsive === */
 @media (max-width: 768px) {
 	.single-title {

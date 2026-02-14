@@ -152,7 +152,7 @@ function pinlightning_scripts() {
 		// 	true
 		// );
 
-		// Scroll engagement — heart progress + dancing girl.
+		// Scroll engagement — heart progress + dancing girl + gamification.
 		wp_enqueue_script(
 			'pinlightning-scroll-engage',
 			PINLIGHTNING_URI . '/assets/js/scroll-engage.js',
@@ -160,6 +160,7 @@ function pinlightning_scripts() {
 			PINLIGHTNING_VERSION,
 			true
 		);
+		wp_localize_script( 'pinlightning-scroll-engage', 'plEngageConfig', pl_get_engage_config() );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
@@ -188,3 +189,4 @@ require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
 require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
+require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
