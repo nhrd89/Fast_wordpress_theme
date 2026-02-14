@@ -959,6 +959,58 @@
 	animation: plHeartPulse 0.6s cubic-bezier(0.34,1.56,0.64,1);
 }
 
+/* Mini pulse for 10% micro-milestones */
+@keyframes plHeartMiniPulse {
+	0% { transform: scale(1); }
+	25% { transform: scale(1.15); }
+	50% { transform: scale(0.98); }
+	75% { transform: scale(1.05); }
+	100% { transform: scale(1); }
+}
+.pl-heart-progress.pl-heart-mini-pulse {
+	animation: plHeartMiniPulse 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+/* Heartbeat while scrolling */
+@keyframes plHeartbeat {
+	0%, 100% { transform: scale(1); }
+	14% { transform: scale(1.06); }
+	28% { transform: scale(1); }
+	42% { transform: scale(1.08); }
+	56% { transform: scale(1); }
+}
+.pl-heart-progress.pl-heartbeat {
+	animation: plHeartbeat 0.8s ease-in-out infinite;
+}
+
+/* Streak flame */
+.pl-streak-flame {
+	position: absolute;
+	top: -18px;
+	left: 50%;
+	transform: translateX(-50%);
+	font-size: 16px;
+	opacity: 0;
+	transition: opacity 0.3s, transform 0.2s;
+	pointer-events: none;
+	transform-origin: bottom center;
+}
+.pl-streak-flame.show {
+	opacity: 1;
+}
+
+/* Golden state at 100% */
+.pl-heart-progress.pl-golden {
+	filter: drop-shadow(0 4px 20px rgba(255,215,0,0.6)) drop-shadow(0 0 12px rgba(255,193,7,0.4)) !important;
+}
+.pl-heart-progress.pl-golden .pl-heart-outline {
+	stroke: #ffc107;
+	stroke-width: 2;
+}
+.pl-heart-progress.pl-golden .pl-heart-bg {
+	stroke: #ffecb3;
+}
+
 .pl-mini-heart {
 	position: fixed; pointer-events: none; z-index: 999;
 	font-size: 16px; opacity: 0;
