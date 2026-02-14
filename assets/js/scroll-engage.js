@@ -39,26 +39,20 @@
 
   function updateHeart() {
     if (!C.heart || !heartFill) return;
-    // Map 0-1 scroll to 20-100% display
     displayPct = 0.2 + (scrollPct * 0.8);
     var y = 50 - (displayPct * 50);
     heartFill.setAttribute('y', y);
     heartPercent.textContent = Math.round(displayPct * 100) + '%';
 
-    // Heartbeat while scrolling
-    if (scrollSpeed > 2) {
-      heartEl.classList.add('pl-heartbeat');
-    }
+    if (scrollSpeed > 2) heartEl.classList.add('pl-heartbeat');
 
-    // Glow intensification
     var glowStrength, glowSpread;
-    if (displayPct < 0.4) { glowStrength = 0.3; glowSpread = 12; }
-    else if (displayPct < 0.65) { glowStrength = 0.45; glowSpread = 16; }
-    else if (displayPct < 0.9) { glowStrength = 0.6; glowSpread = 22; }
-    else { glowStrength = 0.8; glowSpread = 28; }
+    if (displayPct < 0.4) { glowStrength = 0.3; glowSpread = 8; }
+    else if (displayPct < 0.65) { glowStrength = 0.45; glowSpread = 12; }
+    else if (displayPct < 0.9) { glowStrength = 0.6; glowSpread = 18; }
+    else { glowStrength = 0.8; glowSpread = 24; }
     heartEl.style.filter = 'drop-shadow(0 4px ' + glowSpread + 'px rgba(233,30,99,' + glowStrength + '))';
 
-    // Color shift
     var s1, s2, s3;
     if (displayPct < 0.5) { s1='#e91e63'; s2='#f06292'; s3='#f48fb1'; }
     else if (displayPct < 0.8) { s1='#d81b60'; s2='#e91e63'; s3='#ec407a'; }
@@ -67,7 +61,6 @@
     document.getElementById('plGradStop2').setAttribute('stop-color', s2);
     document.getElementById('plGradStop3').setAttribute('stop-color', s3);
 
-    // Micro milestones every 10%
     var micro = Math.floor(displayPct * 10);
     if (micro > lastMicroMilestone && micro > 2) {
       lastMicroMilestone = micro;
@@ -81,7 +74,6 @@
       if (C.collectibles) popCollectible();
     }
 
-    // 100% celebration
     if (displayPct >= 0.99 && lastMajorMilestone < 10) {
       lastMajorMilestone = 10;
       celebrate100();
@@ -113,7 +105,6 @@
 
   function celebrate100() {
     burstHearts(12);
-    // Confetti
     var confetti = ['\uD83C\uDF89','\u2728','\uD83D\uDC96','\uD83C\uDF1F','\uD83C\uDF8A','\uD83E\uDE77','\u2B50','\uD83D\uDCAB'];
     var rect = heartEl.getBoundingClientRect();
     var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
@@ -138,13 +129,12 @@
     setTimeout(function(){ heartEl.classList.remove('pl-golden'); }, 4000);
     if (C.dancer) {
       var d = document.getElementById('plDancer');
-      if (d) d.className = 'pl-dancer pl-dancing-3' + (d.dataset.extras || '');
+      if (d) d.className = 'pl-dancer pl-dancing-3';
       showSpeech('milestone100');
     }
     if (C.achievements) unlockAchievement('deep_diver', 'Deep Diver \uD83E\uDD3F', 'Read 100% of the article!');
   }
 
-  // Streak tracker
   function updateStreak() {
     if (!C.heart || !streakFlame) return;
     if (isScrolling) {
@@ -168,6 +158,8 @@
   var dancer, dancerSpeech, dancerContainer;
   var danceFrame = 0, danceInterval;
   var speechTimeout;
+  var moveState = 'idle'; // 'idle', 'walking', 'dancing'
+  var walkFrame = 0, walkInterval = null;
 
   var speeches = {
     idle: ['Hey! \uD83C\uDF38', 'Read more~ \uD83D\uDC95', 'Cute! \u2728', 'Hehe \uD83C\uDF80'],
@@ -183,21 +175,91 @@
     var html = '<div class="pl-dancer-container" id="plDancerContainer">' +
       '<div class="pl-dancer idle" id="plDancer">' +
         '<div class="pl-dancer-speech" id="plDancerSpeech"></div>' +
-        '<div class="pl-dancer-body">' +
-          '<div class="pl-dancer-head"><div class="pl-dancer-hair-left"></div><div class="pl-dancer-hair-right"></div>' +
-            '<div class="pl-dancer-eyes"><div class="pl-dancer-eye"></div><div class="pl-dancer-eye"></div></div>' +
-            '<div class="pl-dancer-smile"></div></div>' +
-          '<div class="pl-dancer-arm-left"><div class="pl-dancer-hand"></div></div>' +
-          '<div class="pl-dancer-arm-right"><div class="pl-dancer-hand"></div></div>' +
-          '<div class="pl-dancer-dress"></div>' +
-          '<div class="pl-dancer-leg-left"><div class="pl-dancer-shoe"></div></div>' +
-          '<div class="pl-dancer-leg-right"><div class="pl-dancer-shoe"></div></div>' +
-          '<div class="pl-dancer-bow" id="plDancerBow" style="display:none"></div>' +
-          '<div class="pl-dancer-wand" id="plDancerWand" style="display:none"></div>' +
-          '<div class="pl-dancer-crown" id="plDancerCrown" style="display:none"></div>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
+        '<svg class="pl-dancer-svg" viewBox="0 0 60 95" xmlns="http://www.w3.org/2000/svg">' +
+          '<defs>' +
+            '<linearGradient id="plDressGrad" x1="0" y1="0" x2="1" y2="1">' +
+              '<stop offset="0%" stop-color="#f8a4c8"/>' +
+              '<stop offset="100%" stop-color="#d4a5e5"/></linearGradient>' +
+            '<linearGradient id="plHeelGrad" x1="0" y1="0" x2="0" y2="1">' +
+              '<stop offset="0%" stop-color="#e91e63"/>' +
+              '<stop offset="100%" stop-color="#c2185b"/></linearGradient>' +
+          '</defs>' +
+          '<g class="pl-d-hair-back">' +
+            '<path d="M18 22 Q13 32 12 48 Q11 54 14 53 Q15 45 17 35 Z" fill="#5c3425"/>' +
+            '<path d="M42 22 Q47 32 48 48 Q49 54 46 53 Q45 45 43 35 Z" fill="#5c3425"/>' +
+          '</g>' +
+          '<g class="pl-d-legs">' +
+            '<g class="pl-d-leg-left">' +
+              '<rect class="pl-d-thigh-l" x="23" y="62" width="4.5" height="10" rx="2.2" fill="#fddcc4"/>' +
+              '<rect class="pl-d-calf-l" x="23" y="71" width="4" height="9" rx="2" fill="#fddcc4"/>' +
+              '<g class="pl-d-heel-l">' +
+                '<path d="M21 80 L28 80 L28 82 Q28 83.5 26.5 83.5 L21 83.5 Q19.5 83.5 19.5 82 Z" fill="url(#plHeelGrad)"/>' +
+                '<rect x="20" y="83.5" width="2" height="5" rx="0.8" fill="url(#plHeelGrad)"/>' +
+                '<path d="M19.5 88 L23 88 L23 88.5 L19.5 88.5 Z" fill="url(#plHeelGrad)" rx="0.3"/>' +
+                '<path d="M26 83.5 L28.5 83.5 L28.5 84 L26 84 Z" fill="url(#plHeelGrad)" rx="0.3"/>' +
+                '<ellipse cx="27" cy="80.5" rx="1.2" ry="0.5" fill="#ff80ab" opacity="0.6"/>' +
+              '</g>' +
+            '</g>' +
+            '<g class="pl-d-leg-right">' +
+              '<rect class="pl-d-thigh-r" x="32.5" y="62" width="4.5" height="10" rx="2.2" fill="#fddcc4"/>' +
+              '<rect class="pl-d-calf-r" x="33" y="71" width="4" height="9" rx="2" fill="#fddcc4"/>' +
+              '<g class="pl-d-heel-r">' +
+                '<path d="M32 80 L39 80 L39 82 Q39 83.5 37.5 83.5 L32 83.5 Q30.5 83.5 30.5 82 Z" fill="url(#plHeelGrad)"/>' +
+                '<rect x="31" y="83.5" width="2" height="5" rx="0.8" fill="url(#plHeelGrad)"/>' +
+                '<path d="M30.5 88 L34 88 L34 88.5 L30.5 88.5 Z" fill="url(#plHeelGrad)" rx="0.3"/>' +
+                '<path d="M37 83.5 L39.5 83.5 L39.5 84 L37 84 Z" fill="url(#plHeelGrad)" rx="0.3"/>' +
+                '<ellipse cx="38" cy="80.5" rx="1.2" ry="0.5" fill="#ff80ab" opacity="0.6"/>' +
+              '</g>' +
+            '</g>' +
+          '</g>' +
+          '<g class="pl-d-body">' +
+            '<path class="pl-d-dress" d="M23 38 Q22 38 21 42 L17 62 Q16 65 20 64 L40 64 Q44 65 43 62 L39 42 Q38 38 37 38 Z" fill="url(#plDressGrad)"/>' +
+            '<path d="M26 38 Q30 42 34 38" stroke="#e8a0c0" stroke-width="0.8" fill="none"/>' +
+            '<path d="M22 48 L38 48" stroke="#f48fb1" stroke-width="1.5" fill="none"/>' +
+            '<circle cx="30" cy="48" r="1.8" fill="#ff80ab"/>' +
+            '<path d="M26.5 46.5 Q24 44.5 25 48 Q24 51.5 26.5 49.5 Z" fill="#ff80ab"/>' +
+            '<path d="M33.5 46.5 Q36 44.5 35 48 Q36 51.5 33.5 49.5 Z" fill="#ff80ab"/>' +
+            '<path d="M17 62 Q22 67 26 63 Q30 67 34 63 Q38 67 43 62" stroke="#e8a0c0" stroke-width="0.6" fill="none"/>' +
+            '<text x="30" y="56" text-anchor="middle" font-size="4" fill="#ff80ab" opacity="0.5">\u2665</text>' +
+          '</g>' +
+          '<g class="pl-d-arm-left">' +
+            '<rect x="15" y="39" width="4.5" height="15" rx="2.2" fill="#fddcc4"/>' +
+            '<circle cx="17.2" cy="55" r="2.5" fill="#fddcc4"/>' +
+          '</g>' +
+          '<g class="pl-d-arm-right">' +
+            '<rect x="40.5" y="39" width="4.5" height="15" rx="2.2" fill="#fddcc4"/>' +
+            '<circle cx="42.8" cy="55" r="2.5" fill="#fddcc4"/>' +
+          '</g>' +
+          '<g class="pl-d-head">' +
+            '<circle cx="30" cy="24" r="13" fill="#fddcc4"/>' +
+            '<path d="M17 20 Q17 8 30 6 Q43 8 43 20 Q42 15 37 13 Q33 12 30 13 Q27 12 23 13 Q18 15 17 20 Z" fill="#5c3425"/>' +
+            '<path d="M19 18 Q21 22 24 19 Q26 22 28 18 Q30 22 32 18 Q34 22 36 19 Q38 22 41 18 Q40 14 30 12 Q20 14 19 18 Z" fill="#6b4330"/>' +
+            '<path class="pl-d-hair-l" d="M17 20 Q14 26 13 35 Q12 40 15 39 Q16 33 18 25 Z" fill="#5c3425"/>' +
+            '<path class="pl-d-hair-r" d="M43 20 Q46 26 47 35 Q48 40 45 39 Q44 33 42 25 Z" fill="#5c3425"/>' +
+            '<circle cx="39" cy="14" r="2" fill="#ff80ab"/>' +
+            '<circle cx="38" cy="13" r="1" fill="#f48fb1"/>' +
+            '<circle cx="40" cy="13" r="1" fill="#f48fb1"/>' +
+            '<g class="pl-d-eyes">' +
+              '<ellipse cx="24" cy="24" rx="3.8" ry="4.2" fill="#2c1810"/>' +
+              '<ellipse cx="24" cy="24.5" rx="3" ry="3.4" fill="#3d2317"/>' +
+              '<circle cx="22.5" cy="22.5" r="1.4" fill="white" opacity="0.9"/>' +
+              '<circle cx="25.2" cy="23.8" r="0.7" fill="white" opacity="0.5"/>' +
+              '<path d="M20 20 Q22 19 24.5 19.5" stroke="#3d2317" stroke-width="0.8" fill="none"/>' +
+              '<path d="M20.5 19.5 Q21 18.5 22 19" stroke="#3d2317" stroke-width="0.5" fill="none"/>' +
+              '<ellipse cx="36" cy="24" rx="3.8" ry="4.2" fill="#2c1810"/>' +
+              '<ellipse cx="36" cy="24.5" rx="3" ry="3.4" fill="#3d2317"/>' +
+              '<circle cx="34.5" cy="22.5" r="1.4" fill="white" opacity="0.9"/>' +
+              '<circle cx="37.2" cy="23.8" r="0.7" fill="white" opacity="0.5"/>' +
+              '<path d="M40 20 Q38 19 35.5 19.5" stroke="#3d2317" stroke-width="0.8" fill="none"/>' +
+              '<path d="M39.5 19.5 Q39 18.5 38 19" stroke="#3d2317" stroke-width="0.5" fill="none"/>' +
+            '</g>' +
+            '<circle cx="19.5" cy="27" r="3.2" fill="#ffb3b3" opacity="0.3"/>' +
+            '<circle cx="40.5" cy="27" r="3.2" fill="#ffb3b3" opacity="0.3"/>' +
+            '<path class="pl-d-smile" d="M27 29.5 Q30 32.5 33 29.5" stroke="#e57373" stroke-width="1" fill="none" stroke-linecap="round"/>' +
+            '<circle cx="30" cy="26.5" r="0.5" fill="#f0c0a0"/>' +
+          '</g>' +
+        '</svg>' +
+      '</div></div>';
     document.body.insertAdjacentHTML('beforeend', html);
     dancer = document.getElementById('plDancer');
     dancerSpeech = document.getElementById('plDancerSpeech');
@@ -215,18 +277,36 @@
     speechTimeout = setTimeout(function(){ dancerSpeech.classList.remove('show'); }, 2500);
   }
 
+  function startWalking() {
+    if (moveState === 'walking') return;
+    stopAllMovement();
+    moveState = 'walking';
+    walkInterval = setInterval(function(){
+      walkFrame = (walkFrame % 4) + 1;
+      dancer.className = 'pl-dancer pl-walking-' + walkFrame;
+    }, 280);
+  }
+
   function startDancing() {
-    if (danceInterval || !dancer) return;
+    if (moveState === 'dancing') return;
+    stopAllMovement();
+    moveState = 'dancing';
     danceInterval = setInterval(function(){
       danceFrame = (danceFrame % 3) + 1;
-      dancer.className = 'pl-dancer pl-dancing-' + danceFrame + (dancer.dataset.extras || '');
-      if (Math.random() > 0.5) addSparkle();
+      dancer.className = 'pl-dancer pl-dancing-' + danceFrame;
+      if (Math.random() > 0.4) addSparkle();
     }, 200);
   }
 
-  function stopDancing() {
+  function stopAllMovement() {
+    if (walkInterval) { clearInterval(walkInterval); walkInterval = null; }
     if (danceInterval) { clearInterval(danceInterval); danceInterval = null; }
-    if (dancer) dancer.className = 'pl-dancer idle' + (dancer.dataset.extras || '');
+    moveState = 'idle';
+  }
+
+  function stopDancing() {
+    stopAllMovement();
+    if (dancer) dancer.className = 'pl-dancer idle';
   }
 
   function addSparkle() {
@@ -234,8 +314,8 @@
     var s = document.createElement('div');
     s.className = 'pl-dancer-sparkle';
     s.textContent = ['\u2728','\u2B50','\uD83D\uDCAB','\uD83E\uDE77'][Math.floor(Math.random() * 4)];
-    s.style.left = (Math.random() * 60) + 'px';
-    s.style.top = (Math.random() * 40) + 'px';
+    s.style.left = (Math.random() * 42) + 'px';
+    s.style.top = (Math.random() * 30) + 'px';
     s.style.animation = 'plSparkle 0.6s ease forwards';
     dancerContainer.appendChild(s);
     setTimeout(function(){ s.remove(); }, 700);
@@ -244,13 +324,13 @@
   function dancerReact(type, milestone) {
     if (!C.dancer || !dancer) return;
     if (type === 'major') {
-      dancer.className = 'pl-dancer pl-dancing-3' + (dancer.dataset.extras || '');
+      dancer.className = 'pl-dancer pl-dancing-3';
       var keys = { 3: 'milestone25', 5: 'milestone50', 8: 'milestone75', 10: 'milestone100' };
       showSpeech(keys[milestone] || 'idle');
       setTimeout(function(){ if (!isScrolling) stopDancing(); }, 800);
     } else {
       var pose = Math.ceil(Math.random() * 3);
-      dancer.className = 'pl-dancer pl-dancing-' + pose + (dancer.dataset.extras || '');
+      dancer.className = 'pl-dancer pl-dancing-' + pose;
       if (Math.random() > 0.5) showSpeech('micro');
       setTimeout(function(){ if (!isScrolling) stopDancing(); }, 500);
     }
@@ -334,7 +414,6 @@
   }
 
   function popCollectible() {
-    // Visual pop triggered by heart milestones — find closest uncollected
     var closest = null, closestDist = 1;
     collectiblePositions.forEach(function(item) {
       if (!item.collected) {
@@ -455,23 +534,29 @@
   // =============================================
   function updateBgMood() {
     if (!C.bgMood) return;
-    // Relaxing spa-like color journey as you scroll
     var colors = [
-      {r:255, g:253, b:250}, // 0% warm ivory
-      {r:255, g:245, b:247}, // 15% barely-there blush
-      {r:250, g:243, b:255}, // 30% soft lavender mist
-      {r:243, g:250, b:255}, // 45% sky blue whisper
-      {r:245, g:255, b:250}, // 60% mint fresh
-      {r:255, g:248, b:240}, // 75% peach warmth
-      {r:255, g:243, b:248}, // 90% rose petal
-      {r:253, g:245, b:255}  // 100% dreamy lilac
+      {r:255, g:252, b:248}, // 0% warm cream
+      {r:255, g:240, b:245}, // 8% blush pink
+      {r:248, g:235, b:255}, // 16% lavender
+      {r:235, g:248, b:255}, // 24% baby blue
+      {r:240, g:255, b:245}, // 32% mint green
+      {r:255, g:245, b:230}, // 40% warm peach
+      {r:255, g:235, b:245}, // 48% rose pink
+      {r:240, g:235, b:255}, // 56% periwinkle
+      {r:245, g:250, b:255}, // 70% ice blue
+      {r:255, g:245, b:248}, // 85% soft blush
+      {r:250, g:240, b:255}  // 100% dreamy violet
     ];
-    var idx = scrollPct * (colors.length - 1);
-    var i = Math.floor(idx);
-    var t = idx - i;
+    var mappedIdx;
+    if (scrollPct <= 0.5) {
+      mappedIdx = (scrollPct / 0.5) * 7;
+    } else {
+      mappedIdx = 7 + ((scrollPct - 0.5) / 0.5) * 3;
+    }
+    var i = Math.floor(mappedIdx);
+    var t = mappedIdx - i;
     var c1 = colors[Math.min(i, colors.length - 1)];
     var c2 = colors[Math.min(i + 1, colors.length - 1)];
-    // Smooth cubic interpolation
     t = t * t * (3 - 2 * t);
     var r = Math.round(c1.r + (c2.r - c1.r) * t);
     var g = Math.round(c1.g + (c2.g - c1.g) * t);
@@ -529,23 +614,6 @@
   // =============================================
   function updateDancerEvolution() {
     if (!C.dancerEvolve || !C.dancer || !dancer) return;
-    var extras = '';
-    if (displayPct >= 0.35) {
-      var bow = document.getElementById('plDancerBow');
-      if (bow && bow.style.display === 'none') { bow.style.display = 'block'; addSparkle(); addSparkle(); }
-      extras += ' pl-has-bow';
-    }
-    if (displayPct >= 0.65) {
-      var wand = document.getElementById('plDancerWand');
-      if (wand && wand.style.display === 'none') { wand.style.display = 'block'; addSparkle(); addSparkle(); addSparkle(); }
-      extras += ' pl-has-wand';
-    }
-    if (displayPct >= 0.92) {
-      var crown = document.getElementById('plDancerCrown');
-      if (crown && crown.style.display === 'none') { crown.style.display = 'block'; addSparkle(); addSparkle(); addSparkle(); addSparkle(); showSpeech('milestone100'); }
-      extras += ' pl-has-crown';
-    }
-    dancer.dataset.extras = extras;
   }
 
   // =============================================
@@ -562,7 +630,13 @@
     isScrolling = true;
 
     updateHeart();
-    if (C.dancer && scrollSpeed > 5) startDancing();
+    if (C.dancer) {
+      if (scrollSpeed > 20) {
+        startDancing();
+      } else if (scrollSpeed > 3) {
+        startWalking();
+      }
+    }
     updateCombo();
     updateCollectibles();
     updateBgMood();

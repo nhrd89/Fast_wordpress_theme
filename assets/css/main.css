@@ -926,11 +926,11 @@
    ============================================= */
 .pl-heart-progress {
 	position: fixed;
-	bottom: 24px;
-	right: 24px;
+	bottom: 14px;
+	right: 14px;
 	z-index: 1000;
-	width: 48px;
-	height: 48px;
+	width: 36px;
+	height: 36px;
 	cursor: pointer;
 	filter: drop-shadow(0 4px 12px rgba(233,30,99,0.3));
 	transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
@@ -942,7 +942,7 @@
 .pl-heart-percent {
 	position: absolute; top: 50%; left: 50%;
 	transform: translate(-50%,-50%);
-	font-size: 10px; font-weight: 700; color: #fff;
+	font-size: 8px; font-weight: 700; color: #fff;
 	text-shadow: 0 1px 3px rgba(0,0,0,0.3);
 	pointer-events: none; opacity: 0; transition: opacity 0.3s;
 }
@@ -989,7 +989,7 @@
 	top: -18px;
 	left: 50%;
 	transform: translateX(-50%);
-	font-size: 16px;
+	font-size: 11px;
 	opacity: 0;
 	transition: opacity 0.3s, transform 0.2s;
 	pointer-events: none;
@@ -1022,163 +1022,86 @@
 }
 
 /* =============================================
-   DANCING GIRL — Kawaii Redesign
+   DANCING GIRL — SVG Kawaii with High Heels
    ============================================= */
 .pl-dancer-container {
-	position: fixed; bottom: 16px; left: 16px;
-	z-index: 1000; width: 42px; height: 56px;
+	position: fixed; bottom: 10px; left: 10px;
+	z-index: 1000; width: 34px; height: 54px;
 	pointer-events: none;
 }
 .pl-dancer {
 	width: 100%; height: 100%; position: relative;
-	transition: transform 0.25s ease;
 }
-.pl-dancer-body {
-	position: absolute; bottom: 0; left: 50%;
-	transform: translateX(-50%); width: 32px; height: 52px;
-}
-/* Big round head — kawaii proportions */
-.pl-dancer-head {
-	position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-	width: 20px; height: 20px; background: #fddcc4;
-	border-radius: 50%; z-index: 3;
-}
-/* Hair — fuller, longer, flowing */
-.pl-dancer-head::before {
-	content: ''; position: absolute; top: -5px; left: -5px;
-	width: 30px; height: 16px; background: #5c3a2e;
-	border-radius: 50% 50% 0 0; z-index: -1;
-}
-.pl-dancer-hair-left, .pl-dancer-hair-right {
-	position: absolute; top: 6px; width: 4px; height: 20px;
-	background: #5c3a2e; border-radius: 0 0 6px 6px;
-	z-index: 2; transform-origin: top center; transition: transform 0.25s ease;
-}
-.pl-dancer-hair-left { left: -3px; }
-.pl-dancer-hair-right { right: -3px; }
-/* Big anime eyes with highlight */
-.pl-dancer-eyes {
-	position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-	width: 14px; display: flex; justify-content: space-between;
-}
-.pl-dancer-eye {
-	width: 4px; height: 5px; background: #2c1810;
-	border-radius: 50%; position: relative;
-}
-.pl-dancer-eye::after {
-	content: ''; position: absolute; top: 1px; right: 0;
-	width: 1.5px; height: 1.5px; background: white; border-radius: 50%;
-}
-/* Rosy cheeks */
-.pl-dancer-smile {
-	position: absolute; top: 13px; left: 50%; transform: translateX(-50%);
-	width: 5px; height: 2px; border-bottom: 1.5px solid #e88;
-	border-radius: 0 0 5px 5px; transition: width 0.25s, height 0.25s;
-}
-.pl-dancer-head::after {
-	content: ''; position: absolute; top: 11px; left: 1px;
-	width: 18px; height: 4px;
-	background: radial-gradient(circle at 15% 50%, rgba(255,154,154,0.5) 0%, transparent 55%),
-	            radial-gradient(circle at 85% 50%, rgba(255,154,154,0.5) 0%, transparent 55%);
-	z-index: 4; pointer-events: none;
-}
-/* Dress — pastel pink-to-lavender with waist bow */
-.pl-dancer-dress {
-	position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
-	width: 14px; height: 16px;
-	background: linear-gradient(160deg, #f8a4c8, #d4a5e5);
-	border-radius: 3px 3px 10px 10px; z-index: 1;
-	transform-origin: top center; transition: transform 0.25s ease;
-}
-/* Skirt flare */
-.pl-dancer-dress::after {
-	content: ''; position: absolute; bottom: -3px; left: -4px;
-	width: 22px; height: 8px;
-	background: linear-gradient(160deg, #f8a4c8, #d4a5e5);
-	border-radius: 0 0 50% 50%; transition: transform 0.25s ease;
-}
-/* Waist bow */
-.pl-dancer-dress::before {
-	content: ''; position: absolute; top: 2px; left: 50%;
-	transform: translateX(-50%); width: 8px; height: 3px;
-	background: radial-gradient(ellipse at 25% 50%, #ff80ab 0%, #ff80ab 40%, transparent 41%),
-	            radial-gradient(ellipse at 75% 50%, #ff80ab 0%, #ff80ab 40%, transparent 41%);
-	z-index: 2;
-}
-/* Arms — thinner, more graceful */
-.pl-dancer-arm-left, .pl-dancer-arm-right {
-	position: absolute; top: 19px; width: 3.5px; height: 14px;
-	background: #fddcc4; border-radius: 2px; z-index: 2;
-	transform-origin: top center; transition: transform 0.25s ease;
-}
-.pl-dancer-arm-left { left: 5px; transform: rotate(18deg); }
-.pl-dancer-arm-right { right: 5px; transform: rotate(-18deg); }
-.pl-dancer-hand {
-	position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
-	width: 4px; height: 4px; background: #fddcc4; border-radius: 50%;
-}
-/* Legs — dainty */
-.pl-dancer-leg-left, .pl-dancer-leg-right {
-	position: absolute; bottom: 0; width: 3.5px; height: 14px;
-	background: #fddcc4; border-radius: 2px;
-	transform-origin: top center; transition: transform 0.25s ease;
-}
-.pl-dancer-leg-left { left: 10px; }
-.pl-dancer-leg-right { right: 10px; }
-/* Cute rounded shoes */
-.pl-dancer-shoe {
-	position: absolute; bottom: -2px; width: 6px; height: 3px;
-	background: #f48fb1; border-radius: 3px 3px 2px 2px;
-}
-.pl-dancer-leg-left .pl-dancer-shoe { left: -1px; }
-.pl-dancer-leg-right .pl-dancer-shoe { right: -1px; }
+.pl-dancer svg { width: 100%; height: 100%; overflow: visible; }
 
-/* --- IDLE --- */
-.pl-dancer.idle .pl-dancer-arm-left { transform: rotate(12deg); }
-.pl-dancer.idle .pl-dancer-arm-right { transform: rotate(-12deg); }
+/* SVG group transitions */
+.pl-d-arm-left, .pl-d-arm-right { transition: transform 0.18s ease; }
+.pl-d-leg-left, .pl-d-leg-right { transition: transform 0.18s ease; }
+.pl-d-hair-side { transition: transform 0.25s ease; }
+.pl-d-skirt { transition: transform 0.2s ease; }
 
-/* --- DANCE POSE 1 — sway left --- */
-.pl-dancer.pl-dancing-1 .pl-dancer-arm-left { transform: rotate(-40deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-arm-right { transform: rotate(-110deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-leg-left { transform: rotate(-12deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-leg-right { transform: rotate(8deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-dress { transform: translateX(-50%) rotate(-2deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-hair-left { transform: rotate(6deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-hair-right { transform: rotate(-3deg); }
-.pl-dancer.pl-dancing-1 { transform: translateY(-2px); }
+/* Transform origins for natural rotation */
+.pl-d-arm-left { transform-origin: 9px 22px; }
+.pl-d-arm-right { transform-origin: 25px 22px; }
+.pl-d-leg-left { transform-origin: 13px 38px; }
+.pl-d-leg-right { transform-origin: 21px 38px; }
+.pl-d-hair-side { transform-origin: 17px 8px; }
 
-/* --- DANCE POSE 2 — sway right --- */
-.pl-dancer.pl-dancing-2 .pl-dancer-arm-left { transform: rotate(-110deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-arm-right { transform: rotate(-40deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-leg-left { transform: rotate(8deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-leg-right { transform: rotate(-12deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-dress { transform: translateX(-50%) rotate(2deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-hair-left { transform: rotate(-3deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-hair-right { transform: rotate(6deg); }
-.pl-dancer.pl-dancing-2 { transform: translateY(-2px); }
+/* --- WALKING POSES (4 frames) --- */
+.pl-walking-1 .pl-d-leg-left { transform: rotate(-12deg); }
+.pl-walking-1 .pl-d-leg-right { transform: rotate(12deg); }
+.pl-walking-1 .pl-d-arm-left { transform: rotate(10deg); }
+.pl-walking-1 .pl-d-arm-right { transform: rotate(-10deg); }
 
-/* --- DANCE POSE 3 — happy jump --- */
-.pl-dancer.pl-dancing-3 .pl-dancer-arm-left { transform: rotate(-150deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-arm-right { transform: rotate(-150deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-leg-left { transform: rotate(-6deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-leg-right { transform: rotate(6deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-dress { transform: translateX(-50%) scaleX(1.04); }
-.pl-dancer.pl-dancing-3 { transform: translateY(-5px); }
-.pl-dancer.pl-dancing-3 .pl-dancer-smile { width: 7px; height: 3px; }
+.pl-walking-2 .pl-d-leg-left { transform: rotate(0deg); }
+.pl-walking-2 .pl-d-leg-right { transform: rotate(0deg); }
+.pl-walking-2 .pl-d-arm-left { transform: rotate(0deg); }
+.pl-walking-2 .pl-d-arm-right { transform: rotate(0deg); }
 
-/* Speech bubble — rounder, cuter */
+.pl-walking-3 .pl-d-leg-left { transform: rotate(12deg); }
+.pl-walking-3 .pl-d-leg-right { transform: rotate(-12deg); }
+.pl-walking-3 .pl-d-arm-left { transform: rotate(-10deg); }
+.pl-walking-3 .pl-d-arm-right { transform: rotate(10deg); }
+
+.pl-walking-4 .pl-d-leg-left { transform: rotate(0deg); }
+.pl-walking-4 .pl-d-leg-right { transform: rotate(0deg); }
+.pl-walking-4 .pl-d-arm-left { transform: rotate(0deg); }
+.pl-walking-4 .pl-d-arm-right { transform: rotate(0deg); }
+
+/* --- DANCING POSES (3 frames) --- */
+.pl-dancing-1 .pl-d-arm-left { transform: rotate(-40deg); }
+.pl-dancing-1 .pl-d-arm-right { transform: rotate(30deg); }
+.pl-dancing-1 .pl-d-leg-left { transform: rotate(-8deg); }
+.pl-dancing-1 .pl-d-leg-right { transform: rotate(12deg); }
+.pl-dancing-1 .pl-d-hair-side { transform: rotate(5deg); }
+.pl-dancing-1 svg { transform: translateY(-2px); }
+
+.pl-dancing-2 .pl-d-arm-left { transform: rotate(30deg); }
+.pl-dancing-2 .pl-d-arm-right { transform: rotate(-40deg); }
+.pl-dancing-2 .pl-d-leg-left { transform: rotate(12deg); }
+.pl-dancing-2 .pl-d-leg-right { transform: rotate(-8deg); }
+.pl-dancing-2 .pl-d-hair-side { transform: rotate(-5deg); }
+.pl-dancing-2 svg { transform: translateY(-2px); }
+
+.pl-dancing-3 .pl-d-arm-left { transform: rotate(-60deg); }
+.pl-dancing-3 .pl-d-arm-right { transform: rotate(-60deg); }
+.pl-dancing-3 .pl-d-leg-left { transform: rotate(-5deg); }
+.pl-dancing-3 .pl-d-leg-right { transform: rotate(5deg); }
+.pl-dancing-3 svg { transform: translateY(-4px); }
+
+/* Speech bubble */
 .pl-dancer-speech {
-	position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+	position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
 	background: #fff; border: 1.5px solid #f8a4c8; border-radius: 10px;
-	padding: 2px 7px; font-size: 9px; font-weight: 500; color: #e91e63;
+	padding: 2px 6px; font-size: 8px; font-weight: 500; color: #e91e63;
 	white-space: nowrap; opacity: 0; transition: opacity 0.3s, transform 0.3s;
 	pointer-events: none; box-shadow: 0 2px 8px rgba(233,30,99,0.1);
 }
 .pl-dancer-speech::after {
-	content: ''; position: absolute; bottom: -5px; left: 50%;
+	content: ''; position: absolute; bottom: -4px; left: 50%;
 	transform: translateX(-50%); width: 0; height: 0;
-	border-left: 4px solid transparent; border-right: 4px solid transparent;
-	border-top: 5px solid #f8a4c8;
+	border-left: 3px solid transparent; border-right: 3px solid transparent;
+	border-top: 4px solid #f8a4c8;
 }
 .pl-dancer-speech.show {
 	opacity: 1; transform: translateX(-50%) translateY(-3px);
@@ -1186,7 +1109,7 @@
 
 /* Sparkles */
 .pl-dancer-sparkle {
-	position: absolute; pointer-events: none; font-size: 8px; opacity: 0;
+	position: absolute; pointer-events: none; font-size: 7px; opacity: 0;
 }
 @keyframes plSparkle {
 	0% { opacity: 0; transform: scale(0) rotate(0deg); }
