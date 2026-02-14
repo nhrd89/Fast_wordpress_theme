@@ -151,6 +151,15 @@ function pinlightning_scripts() {
 		// 	PINLIGHTNING_VERSION,
 		// 	true
 		// );
+
+		// Scroll engagement — heart progress + dancing girl.
+		wp_enqueue_script(
+			'pinlightning-scroll-engage',
+			PINLIGHTNING_URI . '/assets/js/scroll-engage.js',
+			array(),
+			PINLIGHTNING_VERSION,
+			true
+		);
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
