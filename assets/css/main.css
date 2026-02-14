@@ -1022,140 +1022,171 @@
 }
 
 /* =============================================
-   SCROLL ENGAGEMENT — Dancing Girl
+   DANCING GIRL — Kawaii Redesign
    ============================================= */
 .pl-dancer-container {
-	position: fixed; bottom: 20px; left: 24px;
-	z-index: 1000; width: 60px; height: 80px;
+	position: fixed; bottom: 16px; left: 16px;
+	z-index: 1000; width: 42px; height: 56px;
 	pointer-events: none;
 }
 .pl-dancer {
 	width: 100%; height: 100%; position: relative;
-	transition: transform 0.15s ease;
+	transition: transform 0.25s ease;
 }
 .pl-dancer-body {
 	position: absolute; bottom: 0; left: 50%;
-	transform: translateX(-50%); width: 40px; height: 70px;
+	transform: translateX(-50%); width: 32px; height: 52px;
 }
+/* Big round head — kawaii proportions */
 .pl-dancer-head {
 	position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-	width: 22px; height: 22px; background: #fdd9b5;
+	width: 20px; height: 20px; background: #fddcc4;
 	border-radius: 50%; z-index: 3;
 }
+/* Hair — fuller, longer, flowing */
 .pl-dancer-head::before {
-	content: ''; position: absolute; top: -6px; left: -4px;
-	width: 30px; height: 18px; background: #4a3228;
+	content: ''; position: absolute; top: -5px; left: -5px;
+	width: 30px; height: 16px; background: #5c3a2e;
 	border-radius: 50% 50% 0 0; z-index: -1;
 }
 .pl-dancer-hair-left, .pl-dancer-hair-right {
-	position: absolute; top: 8px; width: 5px; height: 22px;
-	background: #4a3228; border-radius: 0 0 8px 8px;
-	z-index: 2; transform-origin: top center; transition: transform 0.2s ease;
+	position: absolute; top: 6px; width: 4px; height: 20px;
+	background: #5c3a2e; border-radius: 0 0 6px 6px;
+	z-index: 2; transform-origin: top center; transition: transform 0.25s ease;
 }
 .pl-dancer-hair-left { left: -3px; }
 .pl-dancer-hair-right { right: -3px; }
+/* Big anime eyes with highlight */
 .pl-dancer-eyes {
-	position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+	position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
 	width: 14px; display: flex; justify-content: space-between;
 }
-.pl-dancer-eye { width: 3px; height: 3px; background: #333; border-radius: 50%; }
+.pl-dancer-eye {
+	width: 4px; height: 5px; background: #2c1810;
+	border-radius: 50%; position: relative;
+}
+.pl-dancer-eye::after {
+	content: ''; position: absolute; top: 1px; right: 0;
+	width: 1.5px; height: 1.5px; background: white; border-radius: 50%;
+}
+/* Rosy cheeks */
 .pl-dancer-smile {
-	position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-	width: 6px; height: 3px; border-bottom: 2px solid #e57373;
-	border-radius: 0 0 6px 6px; transition: width 0.2s, height 0.2s;
+	position: absolute; top: 13px; left: 50%; transform: translateX(-50%);
+	width: 5px; height: 2px; border-bottom: 1.5px solid #e88;
+	border-radius: 0 0 5px 5px; transition: width 0.25s, height 0.25s;
 }
+.pl-dancer-head::after {
+	content: ''; position: absolute; top: 11px; left: 1px;
+	width: 18px; height: 4px;
+	background: radial-gradient(circle at 15% 50%, rgba(255,154,154,0.5) 0%, transparent 55%),
+	            radial-gradient(circle at 85% 50%, rgba(255,154,154,0.5) 0%, transparent 55%);
+	z-index: 4; pointer-events: none;
+}
+/* Dress — pastel pink-to-lavender with waist bow */
 .pl-dancer-dress {
-	position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-	width: 18px; height: 22px;
-	background: linear-gradient(135deg, #e91e63, #f06292);
-	border-radius: 4px 4px 12px 12px; z-index: 1;
-	transform-origin: top center; transition: transform 0.2s ease;
+	position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+	width: 14px; height: 16px;
+	background: linear-gradient(160deg, #f8a4c8, #d4a5e5);
+	border-radius: 3px 3px 10px 10px; z-index: 1;
+	transform-origin: top center; transition: transform 0.25s ease;
 }
+/* Skirt flare */
 .pl-dancer-dress::after {
-	content: ''; position: absolute; bottom: -4px; left: -6px;
-	width: 30px; height: 10px;
-	background: linear-gradient(135deg, #ec407a, #f48fb1);
-	border-radius: 0 0 50% 50%; transition: transform 0.2s ease;
+	content: ''; position: absolute; bottom: -3px; left: -4px;
+	width: 22px; height: 8px;
+	background: linear-gradient(160deg, #f8a4c8, #d4a5e5);
+	border-radius: 0 0 50% 50%; transition: transform 0.25s ease;
 }
+/* Waist bow */
+.pl-dancer-dress::before {
+	content: ''; position: absolute; top: 2px; left: 50%;
+	transform: translateX(-50%); width: 8px; height: 3px;
+	background: radial-gradient(ellipse at 25% 50%, #ff80ab 0%, #ff80ab 40%, transparent 41%),
+	            radial-gradient(ellipse at 75% 50%, #ff80ab 0%, #ff80ab 40%, transparent 41%);
+	z-index: 2;
+}
+/* Arms — thinner, more graceful */
 .pl-dancer-arm-left, .pl-dancer-arm-right {
-	position: absolute; top: 22px; width: 5px; height: 20px;
-	background: #fdd9b5; border-radius: 3px; z-index: 2;
-	transform-origin: top center; transition: transform 0.15s ease;
+	position: absolute; top: 19px; width: 3.5px; height: 14px;
+	background: #fddcc4; border-radius: 2px; z-index: 2;
+	transform-origin: top center; transition: transform 0.25s ease;
 }
-.pl-dancer-arm-left { left: 4px; transform: rotate(20deg); }
-.pl-dancer-arm-right { right: 4px; transform: rotate(-20deg); }
+.pl-dancer-arm-left { left: 5px; transform: rotate(18deg); }
+.pl-dancer-arm-right { right: 5px; transform: rotate(-18deg); }
 .pl-dancer-hand {
-	position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%);
-	width: 6px; height: 6px; background: #fdd9b5; border-radius: 50%;
+	position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+	width: 4px; height: 4px; background: #fddcc4; border-radius: 50%;
 }
+/* Legs — dainty */
 .pl-dancer-leg-left, .pl-dancer-leg-right {
-	position: absolute; bottom: 0; width: 5px; height: 20px;
-	background: #fdd9b5; border-radius: 3px;
-	transform-origin: top center; transition: transform 0.15s ease;
+	position: absolute; bottom: 0; width: 3.5px; height: 14px;
+	background: #fddcc4; border-radius: 2px;
+	transform-origin: top center; transition: transform 0.25s ease;
 }
-.pl-dancer-leg-left { left: 12px; }
-.pl-dancer-leg-right { right: 12px; }
+.pl-dancer-leg-left { left: 10px; }
+.pl-dancer-leg-right { right: 10px; }
+/* Cute rounded shoes */
 .pl-dancer-shoe {
-	position: absolute; bottom: -3px; width: 8px; height: 4px;
-	background: #e91e63; border-radius: 4px 4px 2px 2px;
+	position: absolute; bottom: -2px; width: 6px; height: 3px;
+	background: #f48fb1; border-radius: 3px 3px 2px 2px;
 }
-.pl-dancer-leg-left .pl-dancer-shoe { left: -2px; }
-.pl-dancer-leg-right .pl-dancer-shoe { right: -2px; }
+.pl-dancer-leg-left .pl-dancer-shoe { left: -1px; }
+.pl-dancer-leg-right .pl-dancer-shoe { right: -1px; }
 
-/* Idle state */
-.pl-dancer.idle .pl-dancer-arm-left { transform: rotate(15deg); }
-.pl-dancer.idle .pl-dancer-arm-right { transform: rotate(-15deg); }
+/* --- IDLE --- */
+.pl-dancer.idle .pl-dancer-arm-left { transform: rotate(12deg); }
+.pl-dancer.idle .pl-dancer-arm-right { transform: rotate(-12deg); }
 
-/* Dance pose 1 */
-.pl-dancer.pl-dancing-1 .pl-dancer-arm-left { transform: rotate(-45deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-arm-right { transform: rotate(-120deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-leg-left { transform: rotate(-15deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-leg-right { transform: rotate(10deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-dress { transform: translateX(-50%) rotate(-3deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-hair-left { transform: rotate(8deg); }
-.pl-dancer.pl-dancing-1 .pl-dancer-hair-right { transform: rotate(-4deg); }
-.pl-dancer.pl-dancing-1 { transform: translateY(-3px); }
+/* --- DANCE POSE 1 — sway left --- */
+.pl-dancer.pl-dancing-1 .pl-dancer-arm-left { transform: rotate(-40deg); }
+.pl-dancer.pl-dancing-1 .pl-dancer-arm-right { transform: rotate(-110deg); }
+.pl-dancer.pl-dancing-1 .pl-dancer-leg-left { transform: rotate(-12deg); }
+.pl-dancer.pl-dancing-1 .pl-dancer-leg-right { transform: rotate(8deg); }
+.pl-dancer.pl-dancing-1 .pl-dancer-dress { transform: translateX(-50%) rotate(-2deg); }
+.pl-dancer.pl-dancing-1 .pl-dancer-hair-left { transform: rotate(6deg); }
+.pl-dancer.pl-dancing-1 .pl-dancer-hair-right { transform: rotate(-3deg); }
+.pl-dancer.pl-dancing-1 { transform: translateY(-2px); }
 
-/* Dance pose 2 */
-.pl-dancer.pl-dancing-2 .pl-dancer-arm-left { transform: rotate(-120deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-arm-right { transform: rotate(-45deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-leg-left { transform: rotate(10deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-leg-right { transform: rotate(-15deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-dress { transform: translateX(-50%) rotate(3deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-hair-left { transform: rotate(-4deg); }
-.pl-dancer.pl-dancing-2 .pl-dancer-hair-right { transform: rotate(8deg); }
-.pl-dancer.pl-dancing-2 { transform: translateY(-3px); }
+/* --- DANCE POSE 2 — sway right --- */
+.pl-dancer.pl-dancing-2 .pl-dancer-arm-left { transform: rotate(-110deg); }
+.pl-dancer.pl-dancing-2 .pl-dancer-arm-right { transform: rotate(-40deg); }
+.pl-dancer.pl-dancing-2 .pl-dancer-leg-left { transform: rotate(8deg); }
+.pl-dancer.pl-dancing-2 .pl-dancer-leg-right { transform: rotate(-12deg); }
+.pl-dancer.pl-dancing-2 .pl-dancer-dress { transform: translateX(-50%) rotate(2deg); }
+.pl-dancer.pl-dancing-2 .pl-dancer-hair-left { transform: rotate(-3deg); }
+.pl-dancer.pl-dancing-2 .pl-dancer-hair-right { transform: rotate(6deg); }
+.pl-dancer.pl-dancing-2 { transform: translateY(-2px); }
 
-/* Dance pose 3 — jump */
-.pl-dancer.pl-dancing-3 .pl-dancer-arm-left { transform: rotate(-160deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-arm-right { transform: rotate(-160deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-leg-left { transform: rotate(-8deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-leg-right { transform: rotate(8deg); }
-.pl-dancer.pl-dancing-3 .pl-dancer-dress { transform: translateX(-50%) scaleX(1.05); }
-.pl-dancer.pl-dancing-3 { transform: translateY(-6px); }
-.pl-dancer.pl-dancing-3 .pl-dancer-smile { width: 8px; height: 4px; }
+/* --- DANCE POSE 3 — happy jump --- */
+.pl-dancer.pl-dancing-3 .pl-dancer-arm-left { transform: rotate(-150deg); }
+.pl-dancer.pl-dancing-3 .pl-dancer-arm-right { transform: rotate(-150deg); }
+.pl-dancer.pl-dancing-3 .pl-dancer-leg-left { transform: rotate(-6deg); }
+.pl-dancer.pl-dancing-3 .pl-dancer-leg-right { transform: rotate(6deg); }
+.pl-dancer.pl-dancing-3 .pl-dancer-dress { transform: translateX(-50%) scaleX(1.04); }
+.pl-dancer.pl-dancing-3 { transform: translateY(-5px); }
+.pl-dancer.pl-dancing-3 .pl-dancer-smile { width: 7px; height: 3px; }
 
-/* Speech bubble */
+/* Speech bubble — rounder, cuter */
 .pl-dancer-speech {
-	position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
-	background: #fff; border: 2px solid #f48fb1; border-radius: 12px;
-	padding: 3px 8px; font-size: 10px; font-weight: 500; color: #e91e63;
+	position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+	background: #fff; border: 1.5px solid #f8a4c8; border-radius: 10px;
+	padding: 2px 7px; font-size: 9px; font-weight: 500; color: #e91e63;
 	white-space: nowrap; opacity: 0; transition: opacity 0.3s, transform 0.3s;
-	pointer-events: none;
+	pointer-events: none; box-shadow: 0 2px 8px rgba(233,30,99,0.1);
 }
 .pl-dancer-speech::after {
-	content: ''; position: absolute; bottom: -6px; left: 50%;
+	content: ''; position: absolute; bottom: -5px; left: 50%;
 	transform: translateX(-50%); width: 0; height: 0;
-	border-left: 5px solid transparent; border-right: 5px solid transparent;
-	border-top: 6px solid #f48fb1;
+	border-left: 4px solid transparent; border-right: 4px solid transparent;
+	border-top: 5px solid #f8a4c8;
 }
 .pl-dancer-speech.show {
-	opacity: 1; transform: translateX(-50%) translateY(-4px);
+	opacity: 1; transform: translateX(-50%) translateY(-3px);
 }
 
 /* Sparkles */
 .pl-dancer-sparkle {
-	position: absolute; pointer-events: none; font-size: 10px; opacity: 0;
+	position: absolute; pointer-events: none; font-size: 8px; opacity: 0;
 }
 @keyframes plSparkle {
 	0% { opacity: 0; transform: scale(0) rotate(0deg); }
@@ -1292,36 +1323,10 @@
 }
 .pl-reader-stat strong { color: #e91e63; }
 
-/* =============================================
-   DANCER EVOLUTION ACCESSORIES
-   ============================================= */
-.pl-dancer-bow {
-	position: absolute; top: -2px; left: 50%;
-	transform: translateX(-50%); width: 12px; height: 8px; z-index: 10;
-}
-.pl-dancer-bow::before, .pl-dancer-bow::after {
-	content: ''; position: absolute; top: 0;
-	width: 6px; height: 6px; background: #ff80ab;
-	border-radius: 50% 50% 50% 0;
-}
-.pl-dancer-bow::before { left: 0; transform: rotate(-45deg); }
-.pl-dancer-bow::after { right: 0; transform: rotate(45deg) scaleX(-1); }
-
-.pl-dancer-wand {
-	position: absolute; top: 18px; right: -12px;
-	width: 3px; height: 20px;
-	background: linear-gradient(to top, #ba68c8, #e1bee7);
-	border-radius: 1px; z-index: 10; transform: rotate(-30deg);
-}
-.pl-dancer-wand::after {
-	content: '\u2B50'; position: absolute; top: -10px; left: -4px; font-size: 10px;
-}
-
-.pl-dancer-crown {
-	position: absolute; top: -10px; left: 50%;
-	transform: translateX(-50%); font-size: 12px; z-index: 10;
-}
-.pl-dancer-crown::after { content: '\uD83D\uDC51'; }
+/* Evolution accessories (hidden by default, re-enable via Customizer) */
+.pl-dancer-bow { display: none; }
+.pl-dancer-wand { display: none; }
+.pl-dancer-crown { display: none; }
 
 /* === Responsive === */
 @media (max-width: 768px) {

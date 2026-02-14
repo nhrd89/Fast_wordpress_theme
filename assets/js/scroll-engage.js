@@ -170,12 +170,12 @@
   var speechTimeout;
 
   var speeches = {
-    idle: ['Scroll more! \uD83C\uDF80', 'Keep reading! \uD83D\uDCD6', 'So pretty! \u2728', 'Love this! \uD83D\uDC95'],
-    milestone25: ['Nice start! \uD83C\uDF38', 'Keep going! \uD83D\uDCAA', 'Looking good! \uD83C\uDF89'],
-    milestone50: ['Halfway! \uD83C\uDF8A', "You're amazing! \uD83D\uDC96", 'So engaged! \u2728'],
-    milestone75: ['Almost there! \uD83D\uDE80', '75%! Wow! \uD83C\uDF1F', 'Love it! \uD83D\uDC97'],
-    milestone100: ['You did it! \uD83C\uDFC6', 'Full heart! \uD83D\uDC96', 'Amazing! \uD83C\uDF89'],
-    micro: ['Nice! \u2728', 'Ooh! \uD83D\uDC95', 'Yay! \uD83C\uDF1F', 'Go go! \uD83D\uDE80']
+    idle: ['Hey! \uD83C\uDF38', 'Read more~ \uD83D\uDC95', 'Cute! \u2728', 'Hehe \uD83C\uDF80'],
+    milestone25: ['Yay! \uD83C\uDF38', 'Nice~ \uD83D\uDCAB', 'Go go! \uD83C\uDF1F'],
+    milestone50: ['Halfway! \uD83C\uDF8A', 'Amazing~ \uD83D\uDC96', 'Woo! \u2728'],
+    milestone75: ['Almost! \uD83D\uDE0D', 'So close~ \uD83D\uDC97', 'Wow! \uD83C\uDF1F'],
+    milestone100: ['Yaaay! \uD83C\uDFC6', 'You did it! \uD83D\uDC96', '\uD83C\uDF89\uD83C\uDF89\uD83C\uDF89'],
+    micro: ['\u2728', '!\uD83D\uDC95', '~\uD83C\uDF1F', 'Ooh!\uD83C\uDF80']
   };
 
   function initDancer() {
@@ -455,17 +455,24 @@
   // =============================================
   function updateBgMood() {
     if (!C.bgMood) return;
+    // Relaxing spa-like color journey as you scroll
     var colors = [
-      { r: 250, g: 248, b: 246 },
-      { r: 255, g: 245, b: 248 },
-      { r: 248, g: 244, b: 255 },
-      { r: 255, g: 240, b: 235 }
+      {r:255, g:253, b:250}, // 0% warm ivory
+      {r:255, g:245, b:247}, // 15% barely-there blush
+      {r:250, g:243, b:255}, // 30% soft lavender mist
+      {r:243, g:250, b:255}, // 45% sky blue whisper
+      {r:245, g:255, b:250}, // 60% mint fresh
+      {r:255, g:248, b:240}, // 75% peach warmth
+      {r:255, g:243, b:248}, // 90% rose petal
+      {r:253, g:245, b:255}  // 100% dreamy lilac
     ];
     var idx = scrollPct * (colors.length - 1);
     var i = Math.floor(idx);
     var t = idx - i;
     var c1 = colors[Math.min(i, colors.length - 1)];
     var c2 = colors[Math.min(i + 1, colors.length - 1)];
+    // Smooth cubic interpolation
+    t = t * t * (3 - 2 * t);
     var r = Math.round(c1.r + (c2.r - c1.r) * t);
     var g = Math.round(c1.g + (c2.g - c1.g) * t);
     var b = Math.round(c1.b + (c2.b - c1.b) * t);
