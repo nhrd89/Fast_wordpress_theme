@@ -647,6 +647,8 @@ function updateHeart(pct){
 function onScroll(){
   if(ticking)return;ticking=true;
   requestAnimationFrame(function(){ticking=false;
+    // Don't process scroll tracking when chat input is focused
+    if (document.activeElement && document.activeElement.classList.contains('pl-chat-input')) return;
     var sT=window.pageYOffset,dH=document.documentElement.scrollHeight-window.innerHeight;if(dH<=0)return;
     scrollPct=Math.min(Math.max(sT/dH,0),1);speed=Math.abs(sT-lastY);lastY=sT;
     updateMood(scrollPct);updateHeart(scrollPct);
@@ -853,7 +855,9 @@ function addMessage(role, text) {
   div.className = 'pl-chat-msg ' + cls;
   div.textContent = text;
   chatBody.appendChild(div);
-  chatBody.scrollTop = chatBody.scrollHeight;
+  requestAnimationFrame(function() {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  });
   chatMessages.push({ role: role, text: text });
 }
 
@@ -864,7 +868,9 @@ function addTypingIndicator() {
   div.id = 'plChatTyping';
   div.innerHTML = '<div class="pl-chat-dots"><span></span><span></span><span></span></div>';
   chatBody.appendChild(div);
-  chatBody.scrollTop = chatBody.scrollHeight;
+  requestAnimationFrame(function() {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  });
 }
 
 function removeTypingIndicator() {
@@ -987,6 +993,7 @@ function init(){
   document.getElementById('plChatSend').addEventListener('click', sendMessage);
 
   document.getElementById('plChatInput').addEventListener('keydown', function(e) {
+    e.stopPropagation();
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -996,6 +1003,19 @@ function init(){
   // Enable send button when input has text
   document.getElementById('plChatInput').addEventListener('input', function() {
     document.getElementById('plChatSend').disabled = !this.value.trim() || chatLoading || chatEnded;
+  });
+
+  // Prevent page scroll while interacting with chat
+  document.getElementById('plChatInput').addEventListener('focus', function() {
+    document.body.style.overflow = '';
+  });
+  // Prevent chat scroll from bubbling to page
+  document.getElementById('plChatBody').addEventListener('scroll', function(e) {
+    e.stopPropagation();
+  });
+  // Prevent touch events on chat from scrolling the page
+  document.getElementById('plChatWrap').addEventListener('touchmove', function(e) {
+    e.stopPropagation();
   });
 
   // === IMAGE TAP → OPEN CHAT WITH IMAGE CONTEXT ===
