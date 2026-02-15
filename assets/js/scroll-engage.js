@@ -83,6 +83,32 @@ function injectDOM(){
     css.push(".pl-e-sp.show{opacity:1;transform:translateY(0) scale(1)}");
     css.push(".pl-e-sk{position:fixed;pointer-events:none;z-index:999;font-size:14px;animation:plSF 1.2s ease-out forwards}");
     css.push("@keyframes plSF{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-60px) scale(.3) rotate(180deg)}}");
+    css.push(".pl-chat-panel{position:fixed;bottom:14px;right:14px;width:300px;max-height:440px;z-index:1002;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.18);display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif;animation:plChatIn .3s ease}");
+    css.push("@keyframes plChatIn{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}");
+    css.push(".pl-chat-panel.show{display:flex}");
+    css.push(".pl-chat-head{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}");
+    css.push(".pl-chat-head span{font-weight:600;font-size:14px}");
+    css.push(".pl-chat-close{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:0 4px;opacity:.8}");
+    css.push(".pl-chat-close:hover{opacity:1}");
+    css.push(".pl-chat-body{flex:1;overflow-y:auto;padding:12px;min-height:200px;max-height:300px;scroll-behavior:smooth}");
+    css.push(".pl-chat-msg{margin:8px 0;max-width:85%;padding:8px 12px;border-radius:14px;font-size:13px;line-height:1.4;word-wrap:break-word;animation:plMsgIn .2s ease}");
+    css.push("@keyframes plMsgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}");
+    css.push(".pl-chat-msg.ai{background:#f3e8ff;border:1px solid #e9d5ff;margin-right:auto;border-bottom-left-radius:4px}");
+    css.push(".pl-chat-msg.user{background:#dbeafe;border:1px solid #bfdbfe;margin-left:auto;text-align:right;border-bottom-right-radius:4px}");
+    css.push(".pl-chat-msg.typing{background:#f3e8ff;border:1px solid #e9d5ff;margin-right:auto;border-bottom-left-radius:4px;opacity:.7}");
+    css.push(".pl-chat-dots{display:inline-flex;gap:4px}");
+    css.push(".pl-chat-dots span{width:6px;height:6px;border-radius:50%;background:#7c3aed;animation:plDot .6s infinite alternate}");
+    css.push(".pl-chat-dots span:nth-child(2){animation-delay:.2s}");
+    css.push(".pl-chat-dots span:nth-child(3){animation-delay:.4s}");
+    css.push("@keyframes plDot{from{opacity:.3}to{opacity:1}}");
+    css.push(".pl-chat-foot{border-top:1px solid #eee;padding:8px 12px;display:flex;gap:8px;flex-shrink:0;align-items:center}");
+    css.push(".pl-chat-input{flex:1;border:1px solid #ddd;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;font-family:inherit;resize:none;max-height:60px;overflow-y:auto}");
+    css.push(".pl-chat-input:focus{border-color:#7c3aed}");
+    css.push(".pl-chat-send{background:#7c3aed;color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s}");
+    css.push(".pl-chat-send:hover{background:#6d28d9}");
+    css.push(".pl-chat-send:disabled{background:#d1d5db;cursor:not-allowed}");
+    css.push(".pl-chat-ended{text-align:center;padding:12px;color:#6b7280;font-size:12px}");
+    css.push("@media(max-width:480px){.pl-chat-panel{width:calc(100vw - 28px);bottom:8px;right:8px;max-height:60vh}}");
   }
   if(C.heart!==false){
     css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:34px;height:34px}");
@@ -106,6 +132,27 @@ function injectDOM(){
     heartEl.innerHTML='<svg viewBox="0 0 24 24"><defs><clipPath id="plHC"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></clipPath></defs><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="none" stroke="#ffb6c1" stroke-width="1"/><rect id="plHF" x="0" y="24" width="24" height="24" fill="#ff69b4" clip-path="url(#plHC)" opacity=".85"/></svg><div class="pl-e-pct" id="plHP">20%</div>';
     document.body.appendChild(heartEl);
   }
+
+  // Chat panel
+  var chatName = (window.__plChat ? window.__plChat.name : 'Cheer');
+  var chatHtml = '<div class="pl-chat-panel" id="plChatPanel">'
+    + '<div class="pl-chat-head">'
+    + '<span>' + chatName + '</span>'
+    + '<button class="pl-chat-close" id="plChatClose" aria-label="Close chat">&times;</button>'
+    + '</div>'
+    + '<div class="pl-chat-body" id="plChatBody"></div>'
+    + '<div class="pl-chat-foot">'
+    + '<input class="pl-chat-input" id="plChatInput" placeholder="Type a message..." maxlength="500" />'
+    + '<button class="pl-chat-send" id="plChatSend" disabled aria-label="Send message">'
+    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>'
+    + '</button>'
+    + '</div>'
+    + '</div>';
+  document.body.insertAdjacentHTML('beforeend', chatHtml);
+
+  chatPanel = document.getElementById('plChatPanel');
+  chatBody = document.getElementById('plChatBody');
+  chatInput = document.getElementById('plChatInput');
 }
 
 // ============================
@@ -129,6 +176,19 @@ var lastTapTime = 0;
 var firstCharTapMs = 0;
 var firstHeartTapMs = 0;
 var sessionStart = Date.now();
+
+// === AI CHAT STATE ===
+var chatOpen = false;
+var chatSessionId = 0;
+var chatVisitorId = '';
+var chatMessages = [];
+var chatLoading = false;
+var chatEnded = false;
+var chatPanel = null;
+var chatInput = null;
+var chatBody = null;
+var chatStartTime = 0;
+var chatPrompted = false; // has "want to chat?" been shown
 
 
 function oneShotThen(name, cb){
@@ -598,6 +658,181 @@ function onScroll(){
   });
 }
 
+// ============================
+// AI CHAT FUNCTIONS
+// ============================
+
+// === CHAT: Open panel and start session ===
+function openChat() {
+  if (chatOpen) return;
+  if (!window.__plChat || !window.__plChat.enabled) return;
+
+  chatOpen = true;
+  chatStartTime = Date.now();
+  chatPanel.classList.add('show');
+
+  // Hide character + heart + speech while chat is open
+  if (wrap) wrap.style.display = 'none';
+  if (heartEl) heartEl.style.display = 'none';
+  if (speechEl) speechEl.classList.remove('show');
+
+  // Show typing indicator
+  addTypingIndicator();
+
+  // Get visitor timezone info
+  var tz = '';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
+
+  // Get visitor ID from localStorage
+  var vn = 1;
+  try {
+    chatVisitorId = localStorage.getItem('pl_chat_vid') || '';
+    vn = parseInt(localStorage.getItem('pl_v') || '1');
+  } catch(e) {}
+
+  // Start session via API
+  var payload = {
+    vid: chatVisitorId,
+    pid: window.__plChat.pid,
+    pt: window.__plChat.pt,
+    pc: window.__plChat.pc || '',
+    dev: window.innerWidth < 768 ? 'mobile' : (window.innerWidth < 1024 ? 'tablet' : 'desktop'),
+    ref: document.referrer || '',
+    tz: tz,
+    lh: new Date().getHours(),
+    vn: vn,
+    sd: Math.round(scrollPct * 100),
+    ss: 0,
+    sp: '',
+    ps: '',
+    ct: charTapCount || 0,
+    ht: heartTapCount || 0
+  };
+
+  fetch(window.__plChat.endpoint + '/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    removeTypingIndicator();
+    if (data.error) {
+      addMessage('ai', 'Oops! I\'m taking a quick nap. Try again later!');
+      return;
+    }
+    chatSessionId = data.sid;
+    chatVisitorId = data.vid;
+    try { localStorage.setItem('pl_chat_vid', data.vid); } catch(e) {}
+    addMessage('ai', data.msg);
+    chatInput.focus();
+    document.getElementById('plChatSend').disabled = false;
+  })
+  .catch(function() {
+    removeTypingIndicator();
+    addMessage('ai', 'Hmm, something went wrong. Try tapping me again!');
+  });
+}
+
+// === CHAT: Close panel ===
+function closeChat() {
+  if (!chatOpen) return;
+  chatOpen = false;
+  chatPanel.classList.remove('show');
+
+  // Show character + heart again
+  if (wrap) wrap.style.display = '';
+  if (heartEl) heartEl.style.display = '';
+
+  // Send end signal
+  if (chatSessionId) {
+    var dur = Math.round((Date.now() - chatStartTime) / 1000);
+    navigator.sendBeacon(
+      window.__plChat.endpoint + '/end',
+      new Blob([JSON.stringify({ sid: chatSessionId, dur: dur, sd: Math.round(scrollPct * 100) })],
+        { type: 'application/json' })
+    );
+  }
+}
+
+// === CHAT: Send message ===
+function sendMessage() {
+  if (chatLoading || chatEnded) return;
+  var msg = chatInput.value.trim();
+  if (!msg) return;
+
+  chatInput.value = '';
+  addMessage('user', msg);
+  chatLoading = true;
+  document.getElementById('plChatSend').disabled = true;
+  addTypingIndicator();
+
+  fetch(window.__plChat.endpoint + '/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sid: chatSessionId,
+      msg: msg,
+      sd: Math.round(scrollPct * 100)
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    removeTypingIndicator();
+    chatLoading = false;
+
+    if (data.error) {
+      addMessage('ai', 'Oops, my brain glitched! Try again?');
+      document.getElementById('plChatSend').disabled = false;
+      return;
+    }
+
+    addMessage('ai', data.msg);
+    document.getElementById('plChatSend').disabled = false;
+    chatInput.focus();
+
+    if (data.ended) {
+      chatEnded = true;
+      chatInput.disabled = true;
+      document.getElementById('plChatSend').disabled = true;
+      chatBody.insertAdjacentHTML('beforeend',
+        '<div class="pl-chat-ended">Chat ended. Come back anytime!</div>');
+    }
+  })
+  .catch(function() {
+    removeTypingIndicator();
+    chatLoading = false;
+    addMessage('ai', 'Connection lost! Try again?');
+    document.getElementById('plChatSend').disabled = false;
+  });
+}
+
+// === CHAT: Add message bubble ===
+function addMessage(role, text) {
+  var cls = role === 'ai' ? 'ai' : 'user';
+  var div = document.createElement('div');
+  div.className = 'pl-chat-msg ' + cls;
+  div.textContent = text;
+  chatBody.appendChild(div);
+  chatBody.scrollTop = chatBody.scrollHeight;
+  chatMessages.push({ role: role, text: text });
+}
+
+// === CHAT: Typing indicator ===
+function addTypingIndicator() {
+  var div = document.createElement('div');
+  div.className = 'pl-chat-msg typing';
+  div.id = 'plChatTyping';
+  div.innerHTML = '<div class="pl-chat-dots"><span></span><span></span><span></span></div>';
+  chatBody.appendChild(div);
+  chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+function removeTypingIndicator() {
+  var el = document.getElementById('plChatTyping');
+  if (el) el.parentNode.removeChild(el);
+}
+
 // Init
 function init(){
   injectDOM();
@@ -625,11 +860,29 @@ function init(){
         oneShotThen(pick, function(){ goIdle(); });
       }
 
+      // After chat prompt shown + another tap, open chat
+      if (charTapCount > 3 && chatPrompted && !chatOpen && window.__plChat && window.__plChat.enabled) {
+        setTimeout(openChat, 500);
+        return; // Don't show another speech bubble
+      }
+
       // Escalating messages based on tap count
       if(charTapCount <= 4){
         showSpeech("charTapEarly");
       } else {
         showSpeech("charTapEscalated");
+      }
+
+      // After 3+ taps, show chat invitation
+      if (charTapCount >= 3 && !chatPrompted && window.__plChat && window.__plChat.enabled) {
+        chatPrompted = true;
+        setTimeout(function() {
+          lastSpeechTime = 0;
+          speechEl.textContent = "Want to actually chat with me? Tap again!";
+          speechEl.classList.add("show");
+          clearTimeout(speechTimeout);
+          speechTimeout = setTimeout(function() { speechEl.classList.remove("show"); }, 5000);
+        }, 3500);
       }
 
       // Visual feedback — sparkle burst
@@ -671,6 +924,11 @@ function init(){
       // Heart tap message
       showSpeech("heartTap");
 
+      // Heart taps can also open chat
+      if (heartTapCount >= 3 && !chatOpen && window.__plChat && window.__plChat.enabled) {
+        setTimeout(openChat, 500);
+      }
+
       // First tap timing
       if(!firstHeartTapMs) firstHeartTapMs = Date.now() - sessionStart;
 
@@ -687,6 +945,42 @@ function init(){
     };
     heartEl.addEventListener("click", onHeartTap);
     heartEl.addEventListener("touchend", function(e){ e.preventDefault(); onHeartTap(e); });
+  }
+
+  // === CHAT EVENT LISTENERS ===
+  document.getElementById('plChatClose').addEventListener('click', closeChat);
+
+  document.getElementById('plChatSend').addEventListener('click', sendMessage);
+
+  document.getElementById('plChatInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Enable send button when input has text
+  document.getElementById('plChatInput').addEventListener('input', function() {
+    document.getElementById('plChatSend').disabled = !this.value.trim() || chatLoading || chatEnded;
+  });
+
+  // Close chat on page unload
+  window.addEventListener('pagehide', function() {
+    if (chatOpen) closeChat();
+  });
+
+  // Proactive chat invitation — after 60s on page if chat enabled and not prompted
+  if (window.__plChat && window.__plChat.enabled) {
+    setTimeout(function() {
+      if (!chatPrompted && !chatOpen && state === 'idle') {
+        chatPrompted = true;
+        lastSpeechTime = 0;
+        speechEl.textContent = "Psst... I can actually chat with you! Tap me!";
+        speechEl.classList.add("show");
+        clearTimeout(speechTimeout);
+        speechTimeout = setTimeout(function() { speechEl.classList.remove("show"); }, 6000);
+      }
+    }, 60000);
   }
 
 }
