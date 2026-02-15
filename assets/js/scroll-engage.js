@@ -1,5 +1,5 @@
 /**
- * PinLightning Scroll Engagement v4.0 — Psychology-Driven Video Character
+ * PinLightning Scroll Engagement v5.1 — Psychology-Driven Video Character + Interaction Tracking
  *
  * BEHAVIORAL SCIENCE TRIGGERS:
  * 1. Variable Ratio Schedule (Skinner) — micro-interactions fire at random 12-35s intervals
@@ -76,7 +76,7 @@ function switchTo(name) {
 function injectDOM(){
   var css = [];
   if(C.dancer!==false){
-    css.push(".pl-v-wrap{position:fixed;bottom:70px;right:14px;z-index:1000;pointer-events:none;width:44px;height:80px}");
+    css.push(".pl-v-wrap{position:fixed;bottom:70px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:44px;height:80px}");
     css.push(".pl-v-wrap video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .15s}");
     css.push(".pl-v-wrap video.active{opacity:1}");
     css.push(".pl-e-sp{position:fixed;bottom:160px;right:10px;z-index:1001;background:#fff;border:2px solid #ff69b4;border-radius:16px 16px 4px 16px;padding:6px 10px;font-size:11px;color:#333;font-family:sans-serif;max-width:160px;box-shadow:0 3px 12px rgba(255,105,180,.2);opacity:0;transform:translateY(10px) scale(.9);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;line-height:1.3}");
@@ -85,7 +85,7 @@ function injectDOM(){
     css.push("@keyframes plSF{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-60px) scale(.3) rotate(180deg)}}");
   }
   if(C.heart!==false){
-    css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:none;width:34px;height:34px}");
+    css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:34px;height:34px}");
     css.push(".pl-e-heart svg{width:34px;height:34px;animation:plHB .8s ease-in-out infinite}");
     css.push(".pl-e-pct{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:700;color:#e91e63;font-family:sans-serif;text-shadow:0 0 3px rgba(255,255,255,.9)}");
     css.push("@keyframes plHB{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}");
@@ -116,6 +116,18 @@ var lastSpeechTime=0,speechTimeout=null;
 var milestoneHit={},ticking=false,peekabooTimer=null;
 var visitCount=1;
 try{visitCount=parseInt(localStorage.getItem("pl_v")||"0")+1;localStorage.setItem("pl_v",visitCount)}catch(e){}
+
+// ============================
+// INTERACTION TRACKING v5.1
+// ============================
+var charTaps = [];           // timestamps of character taps
+var heartTaps = [];          // timestamps of heart taps
+var charTapCount = 0;
+var heartTapCount = 0;
+var rapidTapCount = 0;       // taps within 2s window
+var lastTapTime = 0;
+var sessionStart = Date.now();
+
 
 function oneShotThen(name, cb){
   switchTo(name);
@@ -434,6 +446,27 @@ var MSG = {
     "This is the most fun I've had all day! 🎉"
   ],
 
+  // ── TAP INTERACTION MESSAGES ──
+  charTapEarly: [
+    "You tapped me! I like the attention 💕",
+    "Hey! That tickles! 🤭✨",
+    "Ooh you noticed me! Hi! 👋💖",
+    "You're interactive! I love that about you 💫"
+  ],
+  charTapEscalated: [
+    "Okay okay I see you! Can't stop tapping? 😆💕",
+    "You really like me, don't you? 🥰✨",
+    "We're definitely besties now 💖💖",
+    "All this tapping... are you trying to tell me something? 🤭💫",
+    "I'm blushing! Stop! ...okay don't stop 😳💕"
+  ],
+  heartTap: [
+    "You tapped my heart! Now I'm yours 💖",
+    "Feel that? Our hearts are in sync 💕✨",
+    "A heart tap! You really care 🥹💖",
+    "Every tap fills it with more love 💗✨"
+  ],
+
   // ── SCROLL STATE MESSAGES ──
   walk: [
     "I love exploring with you 💃✨",
@@ -569,6 +602,84 @@ function init(){
   if(C.heart!==false)updateHeart(0);
   if(C.dancer!==false){switchTo("idle");setTimeout(function(){startWelcome()},1500);scheduleNextMicro()}
   window.addEventListener("scroll",onScroll,{passive:true});
+
+  // ── Character tap interaction ──
+  if(wrap && C.dancer!==false){
+    var onCharTap = function(e){
+      e.preventDefault();
+      var now = Date.now();
+      charTapCount++;
+      charTaps.push(now);
+
+      // Rapid tap detection (multiple taps within 2s)
+      if(now - lastTapTime < 2000) { rapidTapCount++; } else { rapidTapCount = 1; }
+      lastTapTime = now;
+
+      // React with a random micro-interaction
+      if(state!=="victory"){
+        var tapMicros = ["shhh","peace","blowkiss","surprise","excited"];
+        var pick = tapMicros[rnd(0, tapMicros.length-1)];
+        state = "micro";
+        oneShotThen(pick, function(){ goIdle(); });
+      }
+
+      // Escalating messages based on tap count
+      if(charTapCount <= 4){
+        showSpeech("charTapEarly");
+      } else {
+        showSpeech("charTapEscalated");
+      }
+
+      // Visual feedback — sparkle burst
+      for(var i=0;i<3;i++) addSparkle();
+    };
+    wrap.addEventListener("click", onCharTap);
+    wrap.addEventListener("touchend", function(e){ e.preventDefault(); onCharTap(e); });
+  }
+
+  // ── Heart tap interaction ──
+  if(heartEl && C.heart!==false){
+    var onHeartTap = function(e){
+      e.preventDefault();
+      heartTapCount++;
+      heartTaps.push(Date.now());
+
+      // Pulse animation
+      var svg = heartEl.querySelector("svg");
+      if(svg){
+        svg.style.transition = "transform .15s";
+        svg.style.transform = "scale(1.4)";
+        setTimeout(function(){ svg.style.transform = "scale(1)"; }, 150);
+      }
+
+      // Heart tap message
+      showSpeech("heartTap");
+    };
+    heartEl.addEventListener("click", onHeartTap);
+    heartEl.addEventListener("touchend", function(e){ e.preventDefault(); onHeartTap(e); });
+  }
+
+  // ── Beacon tracking on unload ──
+  var sendTrackingBeacon = function(){
+    if(charTapCount === 0 && heartTapCount === 0) return;
+    var data = {
+      type: "scroll_engage_interaction",
+      sessionDuration: Math.round((Date.now() - sessionStart) / 1000),
+      charTapCount: charTapCount,
+      heartTapCount: heartTapCount,
+      rapidTapCount: rapidTapCount,
+      maxScrollPct: Math.round(scrollPct * 100),
+      visitCount: visitCount,
+      charTaps: charTaps.slice(-20),  // last 20 timestamps
+      heartTaps: heartTaps.slice(-20)
+    };
+    var url = SC.trackUrl || "/wp-json/pl-tracker/v1/event";
+    try { navigator.sendBeacon(url, JSON.stringify(data)); } catch(e){}
+  };
+  window.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "hidden") sendTrackingBeacon();
+  });
+  window.addEventListener("pagehide", sendTrackingBeacon);
 }
 
 function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
