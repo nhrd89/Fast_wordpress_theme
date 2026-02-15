@@ -83,7 +83,6 @@ function injectDOM(){
     css.push(".pl-e-sp.show{opacity:1;transform:translateY(0) scale(1)}");
     css.push(".pl-e-sk{position:fixed;pointer-events:none;z-index:999;font-size:14px;animation:plSF 1.2s ease-out forwards}");
     css.push("@keyframes plSF{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-60px) scale(.3) rotate(180deg)}}");
-    css.push("body.pl-chat-open{margin-right:320px;transition:margin-right .35s ease}");
     css.push(".pl-chat-panel{position:fixed;top:0;right:0;width:320px;height:100vh;z-index:1002;background:rgba(255,240,245,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-left:2px solid #f9a8d4;display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif;animation:plChatSlide .35s ease}");
     css.push("@keyframes plChatSlide{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}");
     css.push(".pl-chat-panel.show{display:flex}");
@@ -112,8 +111,8 @@ function injectDOM(){
     css.push(".pl-chat-send:hover{background:linear-gradient(135deg,#ec4899,#db2777);transform:scale(1.05)}");
     css.push(".pl-chat-send:disabled{background:#fce7f3;color:#f9a8d4;cursor:not-allowed;box-shadow:none;transform:none}");
     css.push(".pl-chat-ended{text-align:center;padding:10px;color:#9d174d;font-size:12px}");
-    css.push("@media(max-width:900px){body.pl-chat-open{margin-right:280px}.pl-chat-panel{width:280px}}");
-    css.push("@media(max-width:768px){body.pl-chat-open{margin-right:0}.pl-chat-panel{top:auto;bottom:0;right:0;left:0;width:100%;height:auto;max-height:55vh;border-left:none;border-radius:20px 20px 0 0;border:2px solid #f9a8d4;border-bottom:none}.pl-chat-head{border-radius:18px 18px 0 0}.pl-chat-foot{border-radius:0}}");
+    css.push("@media(max-width:900px){.pl-chat-panel{width:280px}}");
+    css.push("@media(max-width:768px){.pl-chat-panel{top:auto;bottom:0;right:0;left:0;width:100%;height:auto;max-height:55vh;border-left:none;border-radius:20px 20px 0 0;border:2px solid #f9a8d4;border-bottom:none}.pl-chat-head{border-radius:18px 18px 0 0}.pl-chat-foot{border-radius:0}}");
   }
   if(C.heart!==false){
     css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:34px;height:34px}");
@@ -189,6 +188,7 @@ var chatVisitorId = '';
 var chatMessages = [];
 var chatLoading = false;
 var chatEnded = false;
+var chatMinimized = false;
 var chatPanel = null;
 var chatInput = null;
 var chatBody = null;
@@ -668,13 +668,25 @@ function onScroll(){
 
 // === CHAT: Open panel and start session ===
 function openChat() {
-  if (chatOpen) return;
   if (!window.__plChat || !window.__plChat.enabled) return;
+
+  // Resume minimized chat — just reshow panel, don't create new session
+  if (chatMinimized && chatSessionId) {
+    chatMinimized = false;
+    chatPanel.classList.add('show');
+    if (window.innerWidth < 768) {
+      if (wrap) wrap.style.display = 'none';
+      if (heartEl) heartEl.style.display = 'none';
+    }
+    chatInput.focus();
+    chatBody.scrollTop = chatBody.scrollHeight;
+    return;
+  }
+  if (chatOpen) return;
 
   chatOpen = true;
   chatStartTime = Date.now();
   chatPanel.classList.add('show');
-  document.body.classList.add('pl-chat-open');
 
   // On mobile, hide character + heart (bottom sheet overlay)
   if (window.innerWidth < 768) {
@@ -741,26 +753,14 @@ function openChat() {
   });
 }
 
-// === CHAT: Close panel ===
+// === CHAT: Close panel (minimize — session stays alive) ===
 function closeChat() {
   if (!chatOpen) return;
-  chatOpen = false;
+  chatMinimized = true;
   chatPanel.classList.remove('show');
-  document.body.classList.remove('pl-chat-open');
-
-  // Show character + heart again
+  // Restore character + heart visibility
   if (wrap) wrap.style.display = '';
   if (heartEl) heartEl.style.display = '';
-
-  // Send end signal
-  if (chatSessionId) {
-    var dur = Math.round((Date.now() - chatStartTime) / 1000);
-    navigator.sendBeacon(
-      window.__plChat.endpoint + '/end',
-      new Blob([JSON.stringify({ sid: chatSessionId, dur: dur, sd: Math.round(scrollPct * 100) })],
-        { type: 'application/json' })
-    );
-  }
 }
 
 // === CHAT: Send message ===
@@ -879,7 +879,7 @@ function init(){
       for(var i=0;i<3;i++) addSparkle();
 
       // Open chat on first character tap
-      if (!chatOpen && window.__plChat && window.__plChat.enabled) {
+      if ((!chatOpen || chatMinimized) && window.__plChat && window.__plChat.enabled) {
         if (window.innerWidth < 768 && window.__plChat && !window.__plChat.showOnMobile) {
           // Mobile chat disabled
         } else {
@@ -924,7 +924,7 @@ function init(){
       showSpeech("heartTap");
 
       // Open chat on first heart tap
-      if (!chatOpen && window.__plChat && window.__plChat.enabled) {
+      if ((!chatOpen || chatMinimized) && window.__plChat && window.__plChat.enabled) {
         if (window.innerWidth < 768 && window.__plChat && !window.__plChat.showOnMobile) {
           // Mobile chat disabled
         } else {
@@ -967,9 +967,16 @@ function init(){
     document.getElementById('plChatSend').disabled = !this.value.trim() || chatLoading || chatEnded;
   });
 
-  // Close chat on page unload
+  // End chat session on page leave
   window.addEventListener('pagehide', function() {
-    if (chatOpen) closeChat();
+    if ((chatOpen || chatMinimized) && chatSessionId) {
+      var dur = Math.round((Date.now() - chatStartTime) / 1000);
+      navigator.sendBeacon(
+        window.__plChat.endpoint + '/end',
+        new Blob([JSON.stringify({ sid: chatSessionId, dur: dur, sd: Math.round(scrollPct * 100) })],
+          { type: 'application/json' })
+      );
+    }
   });
 
 }
