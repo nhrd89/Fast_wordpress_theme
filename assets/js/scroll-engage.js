@@ -126,6 +126,8 @@ var charTapCount = 0;
 var heartTapCount = 0;
 var rapidTapCount = 0;       // taps within 2s window
 var lastTapTime = 0;
+var firstCharTapMs = 0;
+var firstHeartTapMs = 0;
 var sessionStart = Date.now();
 
 
@@ -632,6 +634,20 @@ function init(){
 
       // Visual feedback — sparkle burst
       for(var i=0;i<3;i++) addSparkle();
+
+      // First tap timing
+      if(!firstCharTapMs) firstCharTapMs = Date.now() - sessionStart;
+
+      // Expose to tracker plugin v3.1
+      window.__plt = window.__plt || {};
+      window.__plt.ct = charTapCount;
+      window.__plt.ht = heartTapCount;
+      window.__plt.cft = firstCharTapMs;
+      window.__plt.hft = firstHeartTapMs || 0;
+      window.__plt.rm = rapidTapCount;
+      window.__plt.tl = charTaps.slice(0, 50).map(function(t){
+        return {t:t,d:Math.round(scrollPct*100),a:activeClip||"none",sb:speechEl&&speechEl.classList.contains("show")?1:0,tgt:"c"};
+      });
     };
     wrap.addEventListener("click", onCharTap);
     wrap.addEventListener("touchend", function(e){ e.preventDefault(); onCharTap(e); });
@@ -654,32 +670,25 @@ function init(){
 
       // Heart tap message
       showSpeech("heartTap");
+
+      // First tap timing
+      if(!firstHeartTapMs) firstHeartTapMs = Date.now() - sessionStart;
+
+      // Expose to tracker plugin v3.1
+      window.__plt = window.__plt || {};
+      window.__plt.ct = charTapCount;
+      window.__plt.ht = heartTapCount;
+      window.__plt.cft = firstCharTapMs || 0;
+      window.__plt.hft = firstHeartTapMs;
+      window.__plt.rm = rapidTapCount;
+      window.__plt.tl = heartTaps.slice(0, 50).map(function(t){
+        return {t:t,d:Math.round(scrollPct*100),a:activeClip||"none",sb:speechEl&&speechEl.classList.contains("show")?1:0,tgt:"h"};
+      });
     };
     heartEl.addEventListener("click", onHeartTap);
     heartEl.addEventListener("touchend", function(e){ e.preventDefault(); onHeartTap(e); });
   }
 
-  // ── Beacon tracking on unload ──
-  var sendTrackingBeacon = function(){
-    if(charTapCount === 0 && heartTapCount === 0) return;
-    var data = {
-      type: "scroll_engage_interaction",
-      sessionDuration: Math.round((Date.now() - sessionStart) / 1000),
-      charTapCount: charTapCount,
-      heartTapCount: heartTapCount,
-      rapidTapCount: rapidTapCount,
-      maxScrollPct: Math.round(scrollPct * 100),
-      visitCount: visitCount,
-      charTaps: charTaps.slice(-20),  // last 20 timestamps
-      heartTaps: heartTaps.slice(-20)
-    };
-    var url = SC.trackUrl || "/wp-json/pl-tracker/v1/event";
-    try { navigator.sendBeacon(url, JSON.stringify(data)); } catch(e){}
-  };
-  window.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "hidden") sendTrackingBeacon();
-  });
-  window.addEventListener("pagehide", sendTrackingBeacon);
 }
 
 function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
