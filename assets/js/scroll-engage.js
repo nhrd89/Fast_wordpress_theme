@@ -188,6 +188,8 @@ var chatPanel = null;
 var chatInput = null;
 var chatBody = null;
 var chatStartTime = 0;
+var chatImageContext = null; // stores info about tapped image
+var tappedImages = [];       // log of all images tapped this session
 
 
 function oneShotThen(name, cb){
@@ -675,6 +677,25 @@ function openChat() {
     }
     chatInput.focus();
     chatBody.scrollTop = chatBody.scrollHeight;
+    // If resumed via image tap, send the image context as a special message
+    if (chatImageContext) {
+      var imgNote = '[Visitor just tapped image ' + chatImageContext.position + ': "' + (chatImageContext.alt || chatImageContext.caption || chatImageContext.section || 'an image') + '" at ' + chatImageContext.depth + '% depth]';
+      fetch(window.__plChat.endpoint + '/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sid: chatSessionId,
+          msg: imgNote,
+          sd: Math.round(scrollPct * 100),
+          isImageTap: true
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.msg) addMessage('ai', data.msg);
+      });
+      chatImageContext = null;
+    }
     return;
   }
   if (chatOpen) return;
@@ -720,7 +741,14 @@ function openChat() {
     sp: '',
     ps: '',
     ct: charTapCount || 0,
-    ht: heartTapCount || 0
+    ht: heartTapCount || 0,
+    img: chatImageContext ? chatImageContext.src : '',
+    imgAlt: chatImageContext ? chatImageContext.alt : '',
+    imgCaption: chatImageContext ? (chatImageContext.caption || chatImageContext.title || '') : '',
+    imgSection: chatImageContext ? chatImageContext.section : '',
+    imgPos: chatImageContext ? chatImageContext.position : '',
+    imgDepth: chatImageContext ? chatImageContext.depth : 0,
+    ti: JSON.stringify(tappedImages.slice(-10))
   };
 
   fetch(window.__plChat.endpoint + '/start', {
@@ -739,6 +767,7 @@ function openChat() {
     chatVisitorId = data.vid;
     try { localStorage.setItem('pl_chat_vid', data.vid); } catch(e) {}
     addMessage('ai', data.msg);
+    chatImageContext = null; // clear after use
     chatInput.focus();
     document.getElementById('plChatSend').disabled = false;
   })
@@ -960,6 +989,100 @@ function init(){
   // Enable send button when input has text
   document.getElementById('plChatInput').addEventListener('input', function() {
     document.getElementById('plChatSend').disabled = !this.value.trim() || chatLoading || chatEnded;
+  });
+
+  // === IMAGE TAP → OPEN CHAT WITH IMAGE CONTEXT ===
+  var postImages = document.querySelectorAll('.entry-content img, .post-content img, article img, .wp-block-image img');
+  postImages.forEach(function(img, index) {
+    // Skip tiny images (icons, spacers) and the character image
+    if (img.width < 100 || img.height < 100) return;
+    if (img.closest('.pl-v-wrap')) return;
+
+    // Add visual hint that images are tappable when chat is enabled
+    if (window.__plChat && window.__plChat.enabled) {
+      img.style.cursor = 'pointer';
+      img.style.transition = 'box-shadow .2s ease';
+      img.addEventListener('mouseenter', function() {
+        this.style.boxShadow = '0 0 0 3px #f9a8d4';
+      });
+      img.addEventListener('mouseleave', function() {
+        this.style.boxShadow = '';
+      });
+    }
+
+    img.addEventListener('click', function(e) {
+      if (!window.__plChat || !window.__plChat.enabled) return;
+      // Mobile check
+      if (window.innerWidth < 768 && window.__plChat && !window.__plChat.showOnMobile) return;
+
+      // Get image context
+      var imgSrc = this.src || '';
+      var imgAlt = this.alt || '';
+      var imgTitle = this.title || '';
+
+      // Get nearby heading or caption
+      var caption = '';
+      var figcaption = this.closest('figure') ? this.closest('figure').querySelector('figcaption') : null;
+      if (figcaption) caption = figcaption.textContent.trim();
+
+      // Get the closest heading above this image
+      var nearestHeading = '';
+      var el = this.parentElement;
+      while (el && el !== document.body) {
+        var prev = el.previousElementSibling;
+        while (prev) {
+          if (prev.matches && prev.matches('h1,h2,h3,h4,h5,h6')) {
+            nearestHeading = prev.textContent.trim();
+            break;
+          }
+          prev = prev.previousElementSibling;
+        }
+        if (nearestHeading) break;
+        el = el.parentElement;
+      }
+
+      // Calculate image position in article
+      var allImgs = document.querySelectorAll('.entry-content img, .post-content img, article img');
+      var imgIndex = 0;
+      var totalImgs = 0;
+      allImgs.forEach(function(im) {
+        if (im.width >= 100 && im.height >= 100 && !im.closest('.pl-v-wrap')) {
+          totalImgs++;
+          if (im === img) imgIndex = totalImgs;
+        }
+      });
+
+      // Get depth of this image
+      var rect = this.getBoundingClientRect();
+      var imgScrollDepth = Math.round(((window.scrollY + rect.top) / document.documentElement.scrollHeight) * 100);
+
+      chatImageContext = {
+        src: imgSrc,
+        alt: imgAlt,
+        title: imgTitle,
+        caption: caption,
+        section: nearestHeading,
+        position: imgIndex + ' of ' + totalImgs,
+        depth: imgScrollDepth
+      };
+
+      tappedImages.push({
+        time: Date.now(),
+        index: imgIndex,
+        section: nearestHeading,
+        depth: imgScrollDepth
+      });
+
+      // Add a quick visual feedback — pink pulse on the image
+      this.style.boxShadow = '0 0 0 4px #f472b6';
+      var self = this;
+      setTimeout(function() { self.style.boxShadow = ''; }, 400);
+
+      // Open chat with image context
+      setTimeout(function() {
+        openChat();
+      }, 300);
+    });
   });
 
   // End chat session on page leave

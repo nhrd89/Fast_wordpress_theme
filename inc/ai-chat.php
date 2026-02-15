@@ -257,6 +257,12 @@ function plchat_api_start($request) {
         'tapped_images'  => sanitize_text_field($body['ti'] ?? ''),
         'char_taps'      => intval($body['ct'] ?? 0),
         'heart_taps'     => intval($body['ht'] ?? 0),
+        'image_src'      => esc_url_raw($body['img'] ?? ''),
+        'image_alt'      => sanitize_text_field($body['imgAlt'] ?? ''),
+        'image_caption'  => sanitize_text_field($body['imgCaption'] ?? ''),
+        'image_section'  => sanitize_text_field($body['imgSection'] ?? ''),
+        'image_position' => sanitize_text_field($body['imgPos'] ?? ''),
+        'image_depth'    => intval($body['imgDepth'] ?? 0),
     ];
 
     // Create session
@@ -307,6 +313,17 @@ function plchat_api_start($request) {
     if ($context['tapped_images']) $ctx_block .= "\n- Tapped/zoomed images near: {$context['tapped_images']}";
     if ($context['char_taps'] > 0) $ctx_block .= "\n- Tapped the character {$context['char_taps']} times before opening chat (eager to interact!)";
     if ($context['heart_taps'] > 0) $ctx_block .= "\n- Tapped the heart {$context['heart_taps']} times";
+
+    if (!empty($context['image_src'])) {
+        $img_label = $context['image_alt'] ?: $context['image_caption'] ?: 'untitled';
+        $ctx_block .= "\n\nIMAGE TAP TRIGGER: The visitor opened this chat by tapping a specific image!";
+        $ctx_block .= "\n- Image: " . $img_label;
+        if ($context['image_caption']) $ctx_block .= "\n- Caption/context: " . $context['image_caption'];
+        if ($context['image_section']) $ctx_block .= "\n- In section: \"" . $context['image_section'] . "\"";
+        $ctx_block .= "\n- Position: image " . $context['image_position'] . " in the article";
+        $ctx_block .= "\n- At " . $context['image_depth'] . "% scroll depth";
+        $ctx_block .= "\n→ Comment on what they tapped! They're interested in THIS specific look/item. Be excited about their taste. Ask what specifically caught their eye about it.";
+    }
 
     $full_system = $sys_prompt . $ctx_block;
 
@@ -362,6 +379,12 @@ function plchat_api_message($request) {
 
     // Truncate user message
     $user_msg = mb_substr($user_msg, 0, 500);
+
+    // If this is an image tap context message, mark it as system-like
+    $is_image_tap = !empty($body['isImageTap']);
+    if ($is_image_tap) {
+        $user_msg = '[System note: ' . $user_msg . ']';
+    }
 
     // Store user message
     $wpdb->insert("{$wpdb->prefix}pl_chat_messages", [
