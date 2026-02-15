@@ -174,6 +174,8 @@ var rapidTapCount = 0;       // taps within 2s window
 var lastTapTime = 0;
 var firstCharTapMs = 0;
 var firstHeartTapMs = 0;
+var imageTaps = [];
+var imageTapCount = 0;
 var sessionStart = Date.now();
 
 // === AI CHAT STATE ===
@@ -937,6 +939,9 @@ function init(){
       window.__plt.tl = charTaps.slice(0, 50).map(function(t){
         return {t:t,d:Math.round(scrollPct*100),a:activeClip||"none",sb:speechEl&&speechEl.classList.contains("show")?1:0,tgt:"c"};
       });
+      window.__plt.it = imageTapCount;
+      window.__plt.itl = imageTaps.slice(0, 30);
+      window.__plt.ift = imageTaps.length > 0 ? imageTaps[0].time : 0;
     };
     wrap.addEventListener("click", onCharTap);
     wrap.addEventListener("touchend", function(e){ e.preventDefault(); onCharTap(e); });
@@ -982,6 +987,9 @@ function init(){
       window.__plt.tl = heartTaps.slice(0, 50).map(function(t){
         return {t:t,d:Math.round(scrollPct*100),a:activeClip||"none",sb:speechEl&&speechEl.classList.contains("show")?1:0,tgt:"h"};
       });
+      window.__plt.it = imageTapCount;
+      window.__plt.itl = imageTaps.slice(0, 30);
+      window.__plt.ift = imageTaps.length > 0 ? imageTaps[0].time : 0;
     };
     heartEl.addEventListener("click", onHeartTap);
     heartEl.addEventListener("touchend", function(e){ e.preventDefault(); onHeartTap(e); });
@@ -1082,6 +1090,25 @@ function init(){
       // Get depth of this image
       var rect = this.getBoundingClientRect();
       var imgScrollDepth = Math.round(((window.scrollY + rect.top) / document.documentElement.scrollHeight) * 100);
+
+      // Track image tap for analytics
+      imageTapCount++;
+      imageTaps.push({
+        time: Date.now() - sessionStart,
+        index: imgIndex,
+        total: totalImgs,
+        depth: imgScrollDepth,
+        alt: (imgAlt || '').substring(0, 80),
+        section: (nearestHeading || '').substring(0, 80),
+        caption: (caption || '').substring(0, 80),
+        openedChat: !!(window.__plChat && window.__plChat.enabled)
+      });
+
+      // Expose to tracker plugin
+      window.__plt = window.__plt || {};
+      window.__plt.it = imageTapCount;
+      window.__plt.itl = imageTaps.slice(0, 30);
+      window.__plt.ift = imageTaps.length > 0 ? imageTaps[0].time : 0;
 
       chatImageContext = {
         src: imgSrc,

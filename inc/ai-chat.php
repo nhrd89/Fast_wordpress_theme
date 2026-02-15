@@ -719,6 +719,80 @@ function plchat_admin_dashboard() {
             <?php endif; ?>
         </div>
 
+        <?php
+        // Image interaction stats from tracker
+        $img_stats = ['total' => 0, 'tap_sessions' => 0, 'taps' => 0, 'by_depth' => array_fill(0, 10, 0),
+            'by_section' => [], 'to_chat' => 0];
+        for ($ii_day = 0; $ii_day < 7; $ii_day++) {
+            $day_dir = $tracker_base . '/' . gmdate('Y-m-d', strtotime("-{$ii_day} days"));
+            if (!is_dir($day_dir)) continue;
+            foreach (glob($day_dir . '/*.json') as $ff) {
+                $ss = json_decode(file_get_contents($ff), true);
+                if (!$ss) continue;
+                $img_stats['total']++;
+                $iii = $ss['image_interaction'] ?? [];
+                $iit = intval($iii['image_taps'] ?? 0);
+                if ($iit > 0) {
+                    $img_stats['tap_sessions']++;
+                    $img_stats['taps'] += $iit;
+                    foreach ($iii['tap_log'] ?? [] as $itap) {
+                        $idi = min(9, max(0, floor(($itap['depth_pct'] ?? 0) / 10)));
+                        $img_stats['by_depth'][$idi]++;
+                        $isec = $itap['section'] ?? 'Unknown';
+                        $img_stats['by_section'][$isec] = ($img_stats['by_section'][$isec] ?? 0) + 1;
+                        if (!empty($itap['opened_chat'])) $img_stats['to_chat']++;
+                    }
+                }
+            }
+        }
+        $img_tap_rate = $img_stats['total'] > 0 ? round(($img_stats['tap_sessions'] / $img_stats['total']) * 100, 1) : 0;
+        if (!empty($img_stats['by_section'])) arsort($img_stats['by_section']);
+        ?>
+
+        <div class="plc-recent" style="margin-top:24px">
+            <h3>Post Image Interactions (Last 7 Days)</h3>
+            <div class="plc-grid" style="margin-top:12px">
+                <div class="plc-card"><h2><?php echo esc_html($img_stats['tap_sessions']); ?></h2><p>Sessions with Image Taps</p></div>
+                <div class="plc-card"><h2><?php echo esc_html($img_tap_rate); ?>%</h2><p>Image Tap Rate</p></div>
+                <div class="plc-card"><h2><?php echo esc_html($img_stats['taps']); ?></h2><p>Total Image Taps</p></div>
+                <div class="plc-card green"><h2><?php echo esc_html($img_stats['to_chat']); ?></h2><p>Image Taps &rarr; Chat</p></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px">
+                <div>
+                    <h4>Image Taps by Depth Zone</h4>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <?php for ($idi = 0; $idi < 10; $idi++):
+                            $izone = ($idi*10) . '-' . (($idi+1)*10) . '%';
+                            $icount = $img_stats['by_depth'][$idi];
+                            $imax = max(1, max($img_stats['by_depth']));
+                            $ibar = round(($icount / $imax) * 100);
+                        ?>
+                        <tr style="border-bottom:1px solid #f0f0f0">
+                            <td style="padding:4px 8px;width:70px"><?php echo esc_html($izone); ?></td>
+                            <td style="padding:4px 8px"><div style="background:#fce7f3;height:16px;border-radius:4px;width:<?php echo $ibar; ?>%;min-width:<?php echo $icount > 0 ? '4px' : '0'; ?>"></div></td>
+                            <td style="padding:4px 8px;width:40px;text-align:right;color:#666"><?php echo esc_html($icount); ?></td>
+                        </tr>
+                        <?php endfor; ?>
+                    </table>
+                </div>
+                <?php if (!empty($img_stats['by_section'])): ?>
+                <div>
+                    <h4>Most Tapped Sections</h4>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:8px">Section</th><th style="padding:8px;text-align:right">Taps</th></tr>
+                        <?php foreach (array_slice($img_stats['by_section'], 0, 10, true) as $isec => $iscount): ?>
+                        <tr style="border-bottom:1px solid #f0f0f0">
+                            <td style="padding:6px 8px"><?php echo esc_html(mb_substr($isec, 0, 50)); ?></td>
+                            <td style="padding:6px 8px;text-align:right;font-weight:600;color:#ec4899"><?php echo esc_html($iscount); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <div class="plc-recent">
             <h3>Recent Chats</h3>
             <?php
