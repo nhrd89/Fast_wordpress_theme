@@ -1308,19 +1308,21 @@ function plt_admin_settings() {
     // Handle purge
     if (isset($_POST['plt_purge']) && wp_verify_nonce($_POST['_wpnonce'], 'plt_purge')) {
         $purge_days = intval($_POST['purge_days']);
-        $cutoff = date('Y-m-d', strtotime("-{$purge_days} days"));
+        $delete_all = ($purge_days === 0);
+        $cutoff = $delete_all ? '9999-99-99' : date('Y-m-d', strtotime("-{$purge_days} days"));
         $deleted = 0;
         if (is_dir($data_dir)) {
             foreach (glob($data_dir . '/????-??-??') as $dd) {
                 $dir_date = basename($dd);
-                if ($dir_date < $cutoff) {
+                if ($delete_all || $dir_date < $cutoff) {
                     $files = glob($dd . '/*.json');
                     foreach ($files as $f) { unlink($f); $deleted++; }
                     rmdir($dd);
                 }
             }
         }
-        echo '<div class="notice notice-success"><p>Purged ' . $deleted . ' sessions older than ' . $purge_days . ' days.</p></div>';
+        $msg = $delete_all ? 'Deleted ALL ' . $deleted . ' sessions.' : 'Purged ' . $deleted . ' sessions older than ' . $purge_days . ' days.';
+        echo '<div class="notice notice-success"><p>' . $msg . '</p></div>';
         $total_sessions -= $deleted;
     }
     ?>
@@ -1360,8 +1362,9 @@ function plt_admin_settings() {
                 <option value="60">60 days</option>
                 <option value="90">90 days</option>
                 <option value="7">7 days</option>
+                <option value="0" style="color:red">ALL data</option>
             </select>
-            <button type="submit" name="plt_purge" class="button button-secondary" onclick="return confirm('Delete old session data?')">Purge</button>
+            <button type="submit" name="plt_purge" class="button button-secondary" onclick="return confirm(this.form.purge_days.value==='0' ? 'DELETE ALL SESSION DATA? This cannot be undone!' : 'Delete old session data?')">Purge</button>
             </p>
         </form>
     </div>
