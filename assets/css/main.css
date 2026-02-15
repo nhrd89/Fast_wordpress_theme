@@ -1022,102 +1022,6 @@
 }
 
 /* =============================================
-   DANCING GIRL — SVG Kawaii with High Heels
-   ============================================= */
-.pl-dancer-container {
-	position: fixed; bottom: 10px; left: 10px;
-	z-index: 1000; width: 34px; height: 54px;
-	pointer-events: none;
-}
-.pl-dancer {
-	width: 100%; height: 100%; position: relative;
-}
-.pl-dancer svg { width: 100%; height: 100%; overflow: visible; }
-
-/* SVG group transitions */
-.pl-d-arm-left, .pl-d-arm-right { transition: transform 0.18s ease; }
-.pl-d-leg-left, .pl-d-leg-right { transition: transform 0.18s ease; }
-.pl-d-hair-side { transition: transform 0.25s ease; }
-.pl-d-skirt { transition: transform 0.2s ease; }
-
-/* Transform origins for natural rotation */
-.pl-d-arm-left { transform-origin: 9px 22px; }
-.pl-d-arm-right { transform-origin: 25px 22px; }
-.pl-d-leg-left { transform-origin: 13px 38px; }
-.pl-d-leg-right { transform-origin: 21px 38px; }
-.pl-d-hair-side { transform-origin: 17px 8px; }
-
-/* --- WALKING POSES (4 frames) --- */
-.pl-walking-1 .pl-d-leg-left { transform: rotate(-12deg); }
-.pl-walking-1 .pl-d-leg-right { transform: rotate(12deg); }
-.pl-walking-1 .pl-d-arm-left { transform: rotate(10deg); }
-.pl-walking-1 .pl-d-arm-right { transform: rotate(-10deg); }
-
-.pl-walking-2 .pl-d-leg-left { transform: rotate(0deg); }
-.pl-walking-2 .pl-d-leg-right { transform: rotate(0deg); }
-.pl-walking-2 .pl-d-arm-left { transform: rotate(0deg); }
-.pl-walking-2 .pl-d-arm-right { transform: rotate(0deg); }
-
-.pl-walking-3 .pl-d-leg-left { transform: rotate(12deg); }
-.pl-walking-3 .pl-d-leg-right { transform: rotate(-12deg); }
-.pl-walking-3 .pl-d-arm-left { transform: rotate(-10deg); }
-.pl-walking-3 .pl-d-arm-right { transform: rotate(10deg); }
-
-.pl-walking-4 .pl-d-leg-left { transform: rotate(0deg); }
-.pl-walking-4 .pl-d-leg-right { transform: rotate(0deg); }
-.pl-walking-4 .pl-d-arm-left { transform: rotate(0deg); }
-.pl-walking-4 .pl-d-arm-right { transform: rotate(0deg); }
-
-/* --- DANCING POSES (3 frames) --- */
-.pl-dancing-1 .pl-d-arm-left { transform: rotate(-40deg); }
-.pl-dancing-1 .pl-d-arm-right { transform: rotate(30deg); }
-.pl-dancing-1 .pl-d-leg-left { transform: rotate(-8deg); }
-.pl-dancing-1 .pl-d-leg-right { transform: rotate(12deg); }
-.pl-dancing-1 .pl-d-hair-side { transform: rotate(5deg); }
-.pl-dancing-1 svg { transform: translateY(-2px); }
-
-.pl-dancing-2 .pl-d-arm-left { transform: rotate(30deg); }
-.pl-dancing-2 .pl-d-arm-right { transform: rotate(-40deg); }
-.pl-dancing-2 .pl-d-leg-left { transform: rotate(12deg); }
-.pl-dancing-2 .pl-d-leg-right { transform: rotate(-8deg); }
-.pl-dancing-2 .pl-d-hair-side { transform: rotate(-5deg); }
-.pl-dancing-2 svg { transform: translateY(-2px); }
-
-.pl-dancing-3 .pl-d-arm-left { transform: rotate(-60deg); }
-.pl-dancing-3 .pl-d-arm-right { transform: rotate(-60deg); }
-.pl-dancing-3 .pl-d-leg-left { transform: rotate(-5deg); }
-.pl-dancing-3 .pl-d-leg-right { transform: rotate(5deg); }
-.pl-dancing-3 svg { transform: translateY(-4px); }
-
-/* Speech bubble */
-.pl-dancer-speech {
-	position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
-	background: #fff; border: 1.5px solid #f8a4c8; border-radius: 10px;
-	padding: 2px 6px; font-size: 8px; font-weight: 500; color: #e91e63;
-	white-space: nowrap; opacity: 0; transition: opacity 0.3s, transform 0.3s;
-	pointer-events: none; box-shadow: 0 2px 8px rgba(233,30,99,0.1);
-}
-.pl-dancer-speech::after {
-	content: ''; position: absolute; bottom: -4px; left: 50%;
-	transform: translateX(-50%); width: 0; height: 0;
-	border-left: 3px solid transparent; border-right: 3px solid transparent;
-	border-top: 4px solid #f8a4c8;
-}
-.pl-dancer-speech.show {
-	opacity: 1; transform: translateX(-50%) translateY(-3px);
-}
-
-/* Sparkles */
-.pl-dancer-sparkle {
-	position: absolute; pointer-events: none; font-size: 7px; opacity: 0;
-}
-@keyframes plSparkle {
-	0% { opacity: 0; transform: scale(0) rotate(0deg); }
-	50% { opacity: 1; transform: scale(1) rotate(180deg); }
-	100% { opacity: 0; transform: scale(0.5) rotate(360deg); }
-}
-
-/* =============================================
    COMBO COUNTER
    ============================================= */
 .pl-combo {
@@ -1245,11 +1149,6 @@
 	opacity: 1; transform: translateX(-50%) translateY(0);
 }
 .pl-reader-stat strong { color: #e91e63; }
-
-/* Evolution accessories (hidden by default, re-enable via Customizer) */
-.pl-dancer-bow { display: none; }
-.pl-dancer-wand { display: none; }
-.pl-dancer-crown { display: none; }
 
 /* === Responsive === */
 @media (max-width: 768px) {

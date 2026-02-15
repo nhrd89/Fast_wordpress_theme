@@ -161,6 +161,26 @@ function pinlightning_scripts() {
 			true
 		);
 		wp_localize_script( 'pinlightning-scroll-engage', 'plEngageConfig', pl_get_engage_config() );
+
+		// Pass sprite URL for photo character.
+		wp_add_inline_script(
+			'pinlightning-scroll-engage',
+			'window.PLScrollConfig={spriteUrl:"' . esc_url( get_template_directory_uri() . '/assets/engage/sprite-prod.png' ) . '"};',
+			'before'
+		);
+
+		// Preload sprite — low priority, no LCP impact.
+		add_action( 'wp_head', function() {
+			echo '<link rel="preload" href="' . esc_url( get_template_directory_uri() . '/assets/engage/sprite-prod.png' ) . '" as="image" fetchpriority="low">' . "\n";
+		}, 5 );
+
+		// Defer the scroll engage script.
+		add_filter( 'script_loader_tag', function( $tag, $handle ) {
+			if ( $handle === 'pinlightning-scroll-engage' ) {
+				return str_replace( ' src=', ' defer src=', $tag );
+			}
+			return $tag;
+		}, 10, 2 );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
