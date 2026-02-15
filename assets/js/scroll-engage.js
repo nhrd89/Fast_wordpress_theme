@@ -571,10 +571,16 @@ var MSG = {
   ]
 };
 
+// Chat-aware speech gate — suppress bubbles while chat panel is visible
+function canShowSpeech() {
+  return !chatOpen || chatMinimized;
+}
+
 // Depth-aware message selection — messages escalate in emotional intimacy
 // as user scrolls deeper (Escalating Self-Disclosure Model, Schramm 2024)
 function showSpeech(ctx) {
   if (!speechEl || C.dancer === false) return;
+  if (!canShowSpeech()) return;
   var now = Date.now();
   if (now - lastSpeechTime < 3500) return;
   lastSpeechTime = now;
@@ -710,6 +716,7 @@ function openChat() {
     if (heartEl) heartEl.style.display = 'none';
   }
   if (speechEl) speechEl.classList.remove('show');
+  clearTimeout(speechTimeout);
 
   // Show typing indicator
   addTypingIndicator();
