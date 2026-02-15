@@ -193,6 +193,13 @@ add_action('rest_api_init', function() {
         'callback' => 'plchat_api_admin_analytics',
         'permission_callback' => function() { return current_user_can('manage_options'); },
     ]);
+
+    // Admin: delete a session
+    register_rest_route('pl-chat/v1', '/admin/session/(?P<id>\d+)/delete', [
+        'methods' => 'POST',
+        'callback' => 'plchat_api_admin_delete',
+        'permission_callback' => function() { return current_user_can('manage_options'); },
+    ]);
 });
 
 // ============================================
@@ -439,6 +446,17 @@ function plchat_api_end($request) {
 }
 
 // ============================================
+// API: Admin Delete Session
+// ============================================
+function plchat_api_admin_delete($request) {
+    global $wpdb;
+    $id = absint($request['id']);
+    $wpdb->delete("{$wpdb->prefix}pl_chat_messages", ['session_id' => $id]);
+    $wpdb->delete("{$wpdb->prefix}pl_chat_sessions", ['id' => $id]);
+    return new WP_REST_Response(['ok' => true, 'deleted' => $id], 200);
+}
+
+// ============================================
 // CLAUDE API CALL
 // ============================================
 function plchat_call_claude($api_key, $system_prompt, $conversation, $session_id) {
@@ -623,6 +641,23 @@ function plchat_admin_dashboard() {
 function plchat_admin_history() {
     global $wpdb;
 
+    // Handle bulk delete all
+    if (!empty($_POST['plchat_delete_all']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'plchat_delete_all')) {
+        $wpdb->query("TRUNCATE TABLE {$wpdb->prefix}pl_chat_messages");
+        $wpdb->query("TRUNCATE TABLE {$wpdb->prefix}pl_chat_sessions");
+        echo '<div class="notice notice-success"><p>All chat history deleted.</p></div>';
+    }
+
+    // Handle single session delete
+    if (!empty($_GET['delete']) && !empty($_GET['_wpnonce'])) {
+        $del_id = absint($_GET['delete']);
+        if (wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'plchat_delete_' . $del_id)) {
+            $wpdb->delete("{$wpdb->prefix}pl_chat_messages", ['session_id' => $del_id]);
+            $wpdb->delete("{$wpdb->prefix}pl_chat_sessions", ['id' => $del_id]);
+            echo '<div class="notice notice-success"><p>Chat #' . esc_html($del_id) . ' deleted.</p></div>';
+        }
+    }
+
     // Single session view
     $session_id = absint($_GET['session'] ?? 0);
     if ($session_id) {
@@ -642,7 +677,14 @@ function plchat_admin_history() {
 
     ?>
     <div class="wrap">
-        <h1>Chat History (<?php echo esc_html($total); ?> sessions)</h1>
+        <h1 style="display:inline">Chat History (<?php echo esc_html($total); ?> sessions)</h1>
+        <?php if ($total > 0): ?>
+        <form method="post" style="display:inline;margin-left:12px" onsubmit="return confirm('Delete ALL chat history? This cannot be undone!')">
+            <?php wp_nonce_field('plchat_delete_all'); ?>
+            <input type="hidden" name="plchat_delete_all" value="1">
+            <button type="submit" class="button" style="color:#dc2626;border-color:#dc2626">Delete All Chats</button>
+        </form>
+        <?php endif; ?>
 
         <style>
             .plc-hist{background:#fff;border:1px solid #ddd;border-radius:8px;overflow:hidden;margin:20px 0}
@@ -674,6 +716,7 @@ function plchat_admin_history() {
                     <th>Depth</th>
                     <th>Cost</th>
                     <th>Status</th>
+                    <th>Action</th>
                 </tr>
                 <?php foreach ($sessions as $s): ?>
                 <tr>
@@ -694,6 +737,7 @@ function plchat_admin_history() {
                         <?php if ($s->email_captured): ?>E<?php endif; ?>
                         <?php if ($s->converted): ?>C<?php endif; ?>
                     </td>
+                    <td><a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=pl-ai-chat-history&delete=' . $s->id), 'plchat_delete_' . $s->id)); ?>" onclick="return confirm('Delete this chat permanently?')" style="color:#dc2626">Delete</a></td>
                 </tr>
                 <?php endforeach; ?>
             </table>
@@ -732,6 +776,7 @@ function plchat_admin_session_view($session_id) {
             Chat #<?php echo esc_html($session_id); ?>
             <?php if ($s->starred): ?> *<?php endif; ?>
             <?php if ($s->email_captured): ?> (<?php echo esc_html($s->email_captured); ?>)<?php endif; ?>
+            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=pl-ai-chat-history&delete=' . $session_id), 'plchat_delete_' . $session_id)); ?>" onclick="return confirm('Delete this entire chat session and all messages?')" class="button" style="color:#dc2626;border-color:#dc2626;margin-left:12px">Delete Chat</a>
         </h1>
 
         <style>
