@@ -162,16 +162,16 @@ function pinlightning_scripts() {
 		);
 		wp_localize_script( 'pinlightning-scroll-engage', 'plEngageConfig', pl_get_engage_config() );
 
-		// Pass sprite URL for photo character.
+		// Pass video base URL for character clips.
 		wp_add_inline_script(
 			'pinlightning-scroll-engage',
-			'window.PLScrollConfig={spriteUrl:"' . esc_url( get_template_directory_uri() . '/assets/engage/sprite-prod.png' ) . '"};',
+			'window.PLScrollConfig={baseUrl:"' . esc_url( get_template_directory_uri() . '/assets/engage/' ) . '"};',
 			'before'
 		);
 
-		// Preload sprite — low priority, no LCP impact.
+		// Preload idle clip — low priority, no LCP impact.
 		add_action( 'wp_head', function() {
-			echo '<link rel="preload" href="' . esc_url( get_template_directory_uri() . '/assets/engage/sprite-prod.png' ) . '" as="image" fetchpriority="low">' . "\n";
+			echo '<link rel="preload" href="' . esc_url( get_template_directory_uri() . '/assets/engage/idle.webm' ) . '" as="video" fetchpriority="low">' . "\n";
 		}, 5 );
 
 		// Defer the scroll engage script.
