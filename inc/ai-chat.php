@@ -116,6 +116,11 @@ add_action('admin_init', function() {
     register_setting('plchat_settings', 'plchat_max_messages', ['default' => PLCHAT_MAX_MESSAGES]);
     register_setting('plchat_settings', 'plchat_character_name', ['default' => 'Cheer']);
     register_setting('plchat_settings', 'plchat_system_prompt', ['default' => plchat_default_system_prompt()]);
+    register_setting('plchat_settings', 'plchat_taps_to_prompt', ['default' => '3']);
+    register_setting('plchat_settings', 'plchat_taps_to_open', ['default' => '4']);
+    register_setting('plchat_settings', 'plchat_heart_taps_to_open', ['default' => '3']);
+    register_setting('plchat_settings', 'plchat_proactive_delay', ['default' => '60']);
+    register_setting('plchat_settings', 'plchat_show_on_mobile', ['default' => '1']);
 });
 
 function plchat_default_system_prompt() {
@@ -594,6 +599,101 @@ function plchat_admin_dashboard() {
             <div class="plc-card"><h2><?php echo esc_html(round($stats['avg_messages'], 1)); ?></h2><p>Avg Messages/Chat</p></div>
             <div class="plc-card green"><h2><?php echo esc_html($stats['emails']); ?></h2><p>Emails Captured</p></div>
             <div class="plc-card gold"><h2>$<?php echo esc_html(number_format($stats['total_cost'], 4)); ?></h2><p>Total API Cost</p></div>
+        </div>
+
+        <?php
+        // Character interaction stats from tracker
+        $upload_dir = wp_upload_dir();
+        $tracker_base = $upload_dir['basedir'] . '/pl-tracker-data';
+        $ci_stats = ['total_sessions' => 0, 'tap_sessions' => 0, 'char_taps' => 0, 'heart_taps' => 0,
+            'taps_by_depth' => array_fill(0, 10, 0), 'taps_by_anim' => [], 'tappers_depth' => [], 'nontappers_depth' => [],
+            'tappers_return' => 0, 'nontappers_return' => 0, 'tappers_total' => 0, 'nontappers_total' => 0];
+
+        for ($i = 0; $i < 7; $i++) {
+            $day_dir = $tracker_base . '/' . gmdate('Y-m-d', strtotime("-{$i} days"));
+            if (!is_dir($day_dir)) continue;
+            foreach (glob($day_dir . '/*.json') as $f) {
+                $s = json_decode(file_get_contents($f), true);
+                if (!$s) continue;
+                $ci_stats['total_sessions']++;
+                $cci = $s['char_interaction'] ?? [];
+                $ct = intval($cci['char_taps'] ?? 0);
+                $ht = intval($cci['heart_taps'] ?? 0);
+                if (($ct + $ht) > 0) {
+                    $ci_stats['tap_sessions']++;
+                    $ci_stats['char_taps'] += $ct;
+                    $ci_stats['heart_taps'] += $ht;
+                    foreach ($cci['tap_log'] ?? [] as $tap) {
+                        $di = min(9, max(0, floor(($tap['depth_pct'] ?? 0) / 10)));
+                        $ci_stats['taps_by_depth'][$di]++;
+                        $anim = $tap['animation'] ?? 'unknown';
+                        $ci_stats['taps_by_anim'][$anim] = ($ci_stats['taps_by_anim'][$anim] ?? 0) + 1;
+                    }
+                    $ci_stats['tappers_depth'][] = $s['max_depth_pct'] ?? 0;
+                    $ci_stats['tappers_total']++;
+                    if (!empty($s['returning'])) $ci_stats['tappers_return']++;
+                } else {
+                    $ci_stats['nontappers_depth'][] = $s['max_depth_pct'] ?? 0;
+                    $ci_stats['nontappers_total']++;
+                    if (!empty($s['returning'])) $ci_stats['nontappers_return']++;
+                }
+            }
+        }
+        $tap_rate = $ci_stats['total_sessions'] > 0 ? round(($ci_stats['tap_sessions'] / $ci_stats['total_sessions']) * 100, 1) : 0;
+        $avg_tapper_depth = count($ci_stats['tappers_depth']) > 0 ? round(array_sum($ci_stats['tappers_depth']) / count($ci_stats['tappers_depth']), 1) : 0;
+        $avg_nontapper_depth = count($ci_stats['nontappers_depth']) > 0 ? round(array_sum($ci_stats['nontappers_depth']) / count($ci_stats['nontappers_depth']), 1) : 0;
+        $tapper_return = $ci_stats['tappers_total'] > 0 ? round(($ci_stats['tappers_return'] / $ci_stats['tappers_total']) * 100, 1) : 0;
+        $nontapper_return = $ci_stats['nontappers_total'] > 0 ? round(($ci_stats['nontappers_return'] / $ci_stats['nontappers_total']) * 100, 1) : 0;
+        ?>
+
+        <div class="plc-recent" style="margin-top:24px">
+            <h3>Character &amp; Heart Interactions (Last 7 Days)</h3>
+            <div class="plc-grid" style="margin-top:12px">
+                <div class="plc-card"><h2><?php echo esc_html($ci_stats['tap_sessions']); ?></h2><p>Sessions with Taps</p></div>
+                <div class="plc-card"><h2><?php echo esc_html($tap_rate); ?>%</h2><p>Tap Rate</p></div>
+                <div class="plc-card"><h2><?php echo esc_html($ci_stats['char_taps']); ?></h2><p>Character Taps</p></div>
+                <div class="plc-card"><h2><?php echo esc_html($ci_stats['heart_taps']); ?></h2><p>Heart Taps</p></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px">
+                <div>
+                    <h4>Tappers vs Non-Tappers</h4>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:8px">Metric</th><th style="padding:8px">Tappers</th><th style="padding:8px">Non-Tappers</th></tr>
+                        <tr style="border-bottom:1px solid #eee"><td style="padding:8px">Avg Scroll Depth</td><td style="padding:8px;text-align:center;font-weight:600;color:<?php echo $avg_tapper_depth > $avg_nontapper_depth ? '#059669' : '#dc2626'; ?>"><?php echo esc_html($avg_tapper_depth); ?>%</td><td style="padding:8px;text-align:center"><?php echo esc_html($avg_nontapper_depth); ?>%</td></tr>
+                        <tr style="border-bottom:1px solid #eee"><td style="padding:8px">Return Rate</td><td style="padding:8px;text-align:center;font-weight:600;color:<?php echo $tapper_return > $nontapper_return ? '#059669' : '#dc2626'; ?>"><?php echo esc_html($tapper_return); ?>%</td><td style="padding:8px;text-align:center"><?php echo esc_html($nontapper_return); ?>%</td></tr>
+                        <tr><td style="padding:8px">Sessions</td><td style="padding:8px;text-align:center"><?php echo esc_html($ci_stats['tappers_total']); ?></td><td style="padding:8px;text-align:center"><?php echo esc_html($ci_stats['nontappers_total']); ?></td></tr>
+                    </table>
+                </div>
+                <div>
+                    <h4>Taps by Depth Zone</h4>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <?php for ($di = 0; $di < 10; $di++):
+                            $zone = ($di*10) . '-' . (($di+1)*10) . '%';
+                            $dcount = $ci_stats['taps_by_depth'][$di];
+                            $max_depth_count = max(1, max($ci_stats['taps_by_depth']));
+                            $bar_pct = round(($dcount / $max_depth_count) * 100);
+                        ?>
+                        <tr style="border-bottom:1px solid #f0f0f0">
+                            <td style="padding:4px 8px;width:70px"><?php echo esc_html($zone); ?></td>
+                            <td style="padding:4px 8px"><div style="background:#e9d5ff;height:16px;border-radius:4px;width:<?php echo $bar_pct; ?>%;min-width:<?php echo $dcount > 0 ? '4px' : '0'; ?>"></div></td>
+                            <td style="padding:4px 8px;width:40px;text-align:right;color:#666"><?php echo esc_html($dcount); ?></td>
+                        </tr>
+                        <?php endfor; ?>
+                    </table>
+                </div>
+            </div>
+
+            <?php if (!empty($ci_stats['taps_by_anim'])): arsort($ci_stats['taps_by_anim']); ?>
+            <div style="margin-top:16px">
+                <h4>Taps by Animation</h4>
+                <div style="display:flex;gap:12px;flex-wrap:wrap">
+                    <?php foreach ($ci_stats['taps_by_anim'] as $anim => $acount): ?>
+                    <span style="background:#f3e8ff;padding:4px 12px;border-radius:12px;font-size:13px"><?php echo esc_html($anim); ?>: <strong><?php echo esc_html($acount); ?></strong></span>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="plc-recent">
@@ -1110,6 +1210,44 @@ function plchat_admin_settings() {
                         </td>
                     </tr>
                     <tr>
+                        <th>Taps to Show Chat Prompt</th>
+                        <td>
+                            <input type="number" name="plchat_taps_to_prompt" value="<?php echo esc_attr(get_option('plchat_taps_to_prompt', '3')); ?>" min="1" max="20" style="width:80px">
+                            <p class="plc-help">Character taps before "Want to chat?" speech bubble appears.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Taps to Open Chat</th>
+                        <td>
+                            <input type="number" name="plchat_taps_to_open" value="<?php echo esc_attr(get_option('plchat_taps_to_open', '4')); ?>" min="2" max="20" style="width:80px">
+                            <p class="plc-help">Character taps to auto-open chat panel. Must be more than prompt taps.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Heart Taps to Open Chat</th>
+                        <td>
+                            <input type="number" name="plchat_heart_taps_to_open" value="<?php echo esc_attr(get_option('plchat_heart_taps_to_open', '3')); ?>" min="1" max="20" style="width:80px">
+                            <p class="plc-help">Heart taps needed to open chat.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Proactive Invite Delay (seconds)</th>
+                        <td>
+                            <input type="number" name="plchat_proactive_delay" value="<?php echo esc_attr(get_option('plchat_proactive_delay', '60')); ?>" min="0" max="300" style="width:80px">
+                            <p class="plc-help">Seconds before "I can chat!" appears. Set 0 to disable proactive invite.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Show on Mobile</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="plchat_show_on_mobile" value="1" <?php checked(get_option('plchat_show_on_mobile', '1'), '1'); ?>>
+                                Enable chat on mobile devices
+                            </label>
+                            <p class="plc-help">Uncheck to disable chat on phones/tablets (character still shows, just no chat).</p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th>System Prompt</th>
                         <td>
                             <textarea name="plchat_system_prompt" rows="18"><?php echo esc_textarea(get_option('plchat_system_prompt', plchat_default_system_prompt())); ?></textarea>
@@ -1143,7 +1281,12 @@ add_action('wp_footer', function() {
         pid: <?php echo intval($post_id); ?>,
         pt: <?php echo wp_json_encode(get_the_title($post_id)); ?>,
         pc: <?php echo wp_json_encode($cat_name); ?>,
-        name: <?php echo wp_json_encode(get_option('plchat_character_name', 'Cheer')); ?>
+        name: <?php echo wp_json_encode(get_option('plchat_character_name', 'Cheer')); ?>,
+        tapsToPrompt: <?php echo intval(get_option('plchat_taps_to_prompt', 3)); ?>,
+        tapsToOpen: <?php echo intval(get_option('plchat_taps_to_open', 4)); ?>,
+        heartTapsToOpen: <?php echo intval(get_option('plchat_heart_taps_to_open', 3)); ?>,
+        proactiveDelay: <?php echo intval(get_option('plchat_proactive_delay', 60)); ?>,
+        showOnMobile: <?php echo intval(get_option('plchat_show_on_mobile', 1)); ?>
     };
     </script>
     <?php

@@ -666,6 +666,8 @@ function onScroll(){
 function openChat() {
   if (chatOpen) return;
   if (!window.__plChat || !window.__plChat.enabled) return;
+  // Mobile check
+  if (window.innerWidth < 768 && window.__plChat && !window.__plChat.showOnMobile) return;
 
   chatOpen = true;
   chatStartTime = Date.now();
@@ -861,7 +863,7 @@ function init(){
       }
 
       // After chat prompt shown + another tap, open chat
-      if (charTapCount > 3 && chatPrompted && !chatOpen && window.__plChat && window.__plChat.enabled) {
+      if (charTapCount >= (window.__plChat ? window.__plChat.tapsToOpen : 4) && chatPrompted && !chatOpen && window.__plChat && window.__plChat.enabled) {
         setTimeout(openChat, 500);
         return; // Don't show another speech bubble
       }
@@ -873,8 +875,8 @@ function init(){
         showSpeech("charTapEscalated");
       }
 
-      // After 3+ taps, show chat invitation
-      if (charTapCount >= 3 && !chatPrompted && window.__plChat && window.__plChat.enabled) {
+      // After N taps, show chat invitation
+      if (charTapCount >= (window.__plChat ? window.__plChat.tapsToPrompt : 3) && !chatPrompted && window.__plChat && window.__plChat.enabled) {
         chatPrompted = true;
         setTimeout(function() {
           lastSpeechTime = 0;
@@ -925,7 +927,7 @@ function init(){
       showSpeech("heartTap");
 
       // Heart taps can also open chat
-      if (heartTapCount >= 3 && !chatOpen && window.__plChat && window.__plChat.enabled) {
+      if (heartTapCount >= (window.__plChat ? window.__plChat.heartTapsToOpen : 3) && !chatOpen && window.__plChat && window.__plChat.enabled) {
         setTimeout(openChat, 500);
       }
 
@@ -969,18 +971,21 @@ function init(){
     if (chatOpen) closeChat();
   });
 
-  // Proactive chat invitation — after 60s on page if chat enabled and not prompted
+  // Proactive chat invitation — configurable delay, 0 to disable
   if (window.__plChat && window.__plChat.enabled) {
-    setTimeout(function() {
-      if (!chatPrompted && !chatOpen && state === 'idle') {
-        chatPrompted = true;
-        lastSpeechTime = 0;
-        speechEl.textContent = "Psst... I can actually chat with you! Tap me!";
-        speechEl.classList.add("show");
-        clearTimeout(speechTimeout);
-        speechTimeout = setTimeout(function() { speechEl.classList.remove("show"); }, 6000);
-      }
-    }, 60000);
+    var proDelay = window.__plChat.proactiveDelay * 1000;
+    if (proDelay > 0) {
+      setTimeout(function() {
+        if (!chatPrompted && !chatOpen && state === 'idle') {
+          chatPrompted = true;
+          lastSpeechTime = 0;
+          speechEl.textContent = "Psst... I can actually chat with you! Tap me!";
+          speechEl.classList.add("show");
+          clearTimeout(speechTimeout);
+          speechTimeout = setTimeout(function() { speechEl.classList.remove("show"); }, 6000);
+        }
+      }, proDelay);
+    }
   }
 
 }
