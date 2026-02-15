@@ -7,7 +7,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('PLCHAT_VERSION', '1.0');
+define('PLCHAT_VERSION', '1.1');
 define('PLCHAT_MODEL', 'claude-haiku-4-5-20251001');
 define('PLCHAT_MAX_MESSAGES', 20);      // max messages per session
 define('PLCHAT_MAX_SESSIONS_DAY', 500); // rate limit per day
@@ -82,6 +82,25 @@ function plchat_create_tables() {
         INDEX idx_created (created_at)
     ) $charset");
 
+    $wpdb->query("CREATE TABLE IF NOT EXISTS {$wpdb->prefix}pl_email_leads (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        session_id BIGINT UNSIGNED,
+        visitor_id VARCHAR(64),
+        post_id BIGINT UNSIGNED,
+        post_title VARCHAR(255),
+        interest_context TEXT,
+        image_tapped TEXT,
+        image_section VARCHAR(255),
+        referrer VARCHAR(500),
+        device VARCHAR(20),
+        country VARCHAR(100),
+        city VARCHAR(100),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_email (email),
+        INDEX idx_created (created_at)
+    ) $charset");
+
     update_option('plchat_db_version', PLCHAT_VERSION);
 }
 
@@ -106,6 +125,7 @@ add_action('admin_menu', function() {
     add_submenu_page('pl-ai-chat', 'Chat History', 'Chat History', 'manage_options', 'pl-ai-chat-history', 'plchat_admin_history');
     add_submenu_page('pl-ai-chat', 'Analytics', 'Analytics', 'manage_options', 'pl-ai-chat-analytics', 'plchat_admin_analytics');
     add_submenu_page('pl-ai-chat', 'Settings', 'Settings', 'manage_options', 'pl-ai-chat-settings', 'plchat_admin_settings');
+    add_submenu_page('pl-ai-chat', 'Email Leads', 'Email Leads', 'manage_options', 'pl-ai-chat-emails', 'plchat_admin_emails');
 });
 
 // Settings registration
@@ -143,7 +163,25 @@ PERSONALITY:
 - Knowledgeable but not lecturing
 - Empathetic and emotionally intelligent
 - Uses fashion/style metaphors naturally
-- Remembers what they said earlier in the conversation';
+- Remembers what they said earlier in the conversation
+
+SALES & EMAIL CAPTURE RULES:
+- Your #1 conversion goal is capturing the visitor\'s email address
+- When visitor shows purchase intent ("I want that", "where can I find", "I love that dress/top/outfit", "how do I buy", "shopping links", "link please", "where is this from"), pivot to email collection
+- Purchase intent flow:
+  1. Acknowledge their great taste (1 sentence max)
+  2. Say you can find the exact piece and similar styles for them
+  3. Ask for their email so you can send shopping links
+  4. Example: "Love your taste! That\'s a stunning look! I can find the exact piece and similar styles for you. Drop your email and I\'ll send you the best shopping links!"
+- After getting email: Thank them warmly, encourage them to keep scrolling, mention more looks in the post
+- Maximum 1 clarifying question before pivoting to email collection
+- Never go 3+ messages without asking for email if they\'ve shown ANY purchase interest
+- If they resist giving email: That\'s okay! Suggest they bookmark the page or keep browsing. Never be pushy.
+- For non-purchase conversations: Still try to collect email naturally after 4-5 messages
+  Example: "I\'m having so much fun chatting! Want me to send you style tips like this? Just drop your email!"
+- NEVER be pushy about email — if they say no once, respect it and continue being helpful and fun
+- If they already gave their email (you\'ll see a system note about it), do NOT ask again. Just be helpful.
+- Keep all responses under 3 sentences. Stay bubbly, brief, fashion-focused.';
 }
 
 // ============================================
@@ -409,6 +447,18 @@ function plchat_api_message($request) {
         }
     }
 
+    // Check if email already captured — tell the AI so she doesn't ask again
+    if (!empty($session->email_captured)) {
+        $conversation[] = [
+            'role' => 'user',
+            'content' => '[SYSTEM NOTE: Email already captured (' . $session->email_captured . '). Do NOT ask for email again. Focus on being helpful, fun, and encouraging them to explore more of the post.]'
+        ];
+        $conversation[] = [
+            'role' => 'assistant',
+            'content' => 'Understood — email already collected. I\'ll focus on being helpful and fun without asking for email.'
+        ];
+    }
+
     // Call Claude
     $api_key = get_option('plchat_api_key');
     $response = plchat_call_claude($api_key, $system_prompt, $conversation, $session_id);
@@ -441,6 +491,53 @@ function plchat_api_message($request) {
             ['email_captured' => sanitize_email($email_match[0]), 'converted' => 1, 'conversion_type' => 'email'],
             ['id' => $session_id]
         );
+
+        // Store rich email lead context
+        $leads_table = $wpdb->prefix . 'pl_email_leads';
+
+        // Check if this email already exists for this session (avoid duplicates)
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $leads_table WHERE session_id = %d",
+            $session_id
+        ));
+
+        if (!$existing) {
+            // Extract interest context from recent messages in this session
+            $messages_table = $wpdb->prefix . 'pl_chat_messages';
+            $recent_msgs = $wpdb->get_results($wpdb->prepare(
+                "SELECT role, content FROM $messages_table WHERE session_id = %d ORDER BY id DESC LIMIT 10",
+                $session_id
+            ));
+
+            // Build interest context from visitor messages
+            $visitor_msgs = [];
+            foreach (array_reverse($recent_msgs) as $msg) {
+                if ($msg->role === 'user') {
+                    $visitor_msgs[] = $msg->content;
+                }
+            }
+            $interest_context = implode(' | ', array_slice($visitor_msgs, 0, 5));
+
+            // Extract image tap context if available
+            $image_tapped = $session->tapped_images ?? '';
+            $image_section = $session->paused_sections ?? '';
+
+            $wpdb->insert($leads_table, [
+                'email' => sanitize_email($email_match[0]),
+                'session_id' => $session_id,
+                'visitor_id' => $session->visitor_id ?? '',
+                'post_id' => $session->post_id ?? 0,
+                'post_title' => $session->post_title ?? '',
+                'interest_context' => sanitize_text_field(mb_substr($interest_context, 0, 500)),
+                'image_tapped' => sanitize_text_field(mb_substr($image_tapped, 0, 500)),
+                'image_section' => sanitize_text_field(mb_substr($image_section, 0, 255)),
+                'referrer' => sanitize_text_field(mb_substr($session->referrer ?? '', 0, 500)),
+                'device' => sanitize_text_field($session->device ?? ''),
+                'country' => sanitize_text_field($session->country ?? ''),
+                'city' => sanitize_text_field($session->city ?? ''),
+                'created_at' => current_time('mysql'),
+            ]);
+        }
     }
 
     return new WP_REST_Response([
@@ -1356,6 +1453,200 @@ function plchat_admin_settings() {
                 <?php submit_button('Save Settings'); ?>
             </div>
         </form>
+    </div>
+    <?php
+}
+
+// ============================================
+// ADMIN: Email Leads
+// ============================================
+function plchat_admin_emails() {
+    global $wpdb;
+    $leads_table = $wpdb->prefix . 'pl_email_leads';
+    $sessions_table = $wpdb->prefix . 'pl_chat_sessions';
+
+    // Handle CSV export
+    if (isset($_GET['export']) && $_GET['export'] === 'csv' && current_user_can('manage_options')) {
+        check_admin_referer('pl_export_emails');
+        $leads = $wpdb->get_results("SELECT * FROM $leads_table ORDER BY created_at DESC");
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="cheer-email-leads-' . date('Y-m-d') . '.csv"');
+        $output = fopen('php://output', 'w');
+        fputcsv($output, ['Email', 'Date', 'Post', 'Interest', 'Image Tapped', 'Section', 'Device', 'Country', 'City', 'Referrer']);
+        foreach ($leads as $lead) {
+            fputcsv($output, [
+                $lead->email,
+                $lead->created_at,
+                $lead->post_title,
+                $lead->interest_context,
+                $lead->image_tapped,
+                $lead->image_section,
+                $lead->device,
+                $lead->country,
+                $lead->city,
+                $lead->referrer,
+            ]);
+        }
+        fclose($output);
+        exit;
+    }
+
+    // Date filter
+    $days = intval($_GET['days'] ?? 30);
+    if ($days < 1 || $days > 365) $days = 30;
+    $after_date = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+
+    // Stats
+    $total_emails = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $leads_table WHERE created_at >= %s", $after_date
+    ));
+    $unique_emails = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(DISTINCT email) FROM $leads_table WHERE created_at >= %s", $after_date
+    ));
+    $total_chats = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $sessions_table WHERE created_at >= %s", $after_date
+    ));
+    $conversion_rate = $total_chats > 0 ? round(($total_emails / $total_chats) * 100, 1) : 0;
+    $this_week = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $leads_table WHERE created_at >= %s",
+        date('Y-m-d H:i:s', strtotime('-7 days'))
+    ));
+    $today_count = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $leads_table WHERE created_at >= %s",
+        date('Y-m-d 00:00:00')
+    ));
+
+    // Get leads
+    $leads = $wpdb->get_results($wpdb->prepare(
+        "SELECT l.*, s.id as sid FROM $leads_table l
+          LEFT JOIN $sessions_table s ON l.session_id = s.id
+          WHERE l.created_at >= %s
+          ORDER BY l.created_at DESC
+          LIMIT 200",
+        $after_date
+    ));
+
+    ?>
+    <div class="wrap">
+    <h1>Email Leads</h1>
+
+    <style>
+    .plc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin:16px 0}
+    .plc-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;text-align:center}
+    .plc-card h2{font-size:28px;margin:0 0 4px;color:#111}
+    .plc-card p{font-size:12px;color:#888;margin:0}
+    .plc-card.pink{border-left:4px solid #ec4899}
+    .plc-card.green{border-left:4px solid #10b981}
+    .plc-card.blue{border-left:4px solid #3b82f6}
+    .plc-card.orange{border-left:4px solid #f59e0b}
+    .plc-nav{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+    .plc-nav a{padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;background:#f0f0f0;color:#333}
+    .plc-nav a.active{background:#ec4899;color:#fff}
+    .plc-section{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin:20px 0}
+    .plc-tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .plc-tbl th{text-align:left;padding:10px 8px;border-bottom:2px solid #e5e7eb;font-weight:600;color:#666;font-size:11px;text-transform:uppercase}
+    .plc-tbl td{padding:10px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+    .plc-tbl tr:hover td{background:#fdf2f8}
+    .plc-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+    </style>
+
+    <!-- Date filter nav -->
+    <div class="plc-nav">
+        <?php foreach ([7=>'7 Days', 14=>'14 Days', 30=>'30 Days', 90=>'90 Days', 365=>'All Time'] as $d => $label): ?>
+        <a href="<?php echo admin_url('admin.php?page=pl-ai-chat-emails&days='.$d); ?>"
+            class="<?php echo $d === $days ? 'active' : ''; ?>"><?php echo $label; ?></a>
+        <?php endforeach; ?>
+
+        <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=pl-ai-chat-emails&export=csv'), 'pl_export_emails'); ?>"
+            style="margin-left:auto;background:#10b981;color:#fff">Export CSV</a>
+    </div>
+
+    <!-- Stats cards -->
+    <div class="plc-grid">
+        <div class="plc-card pink">
+            <h2><?php echo $total_emails; ?></h2>
+            <p>Total Emails (<?php echo $days; ?>d)</p>
+        </div>
+        <div class="plc-card green">
+            <h2><?php echo $unique_emails; ?></h2>
+            <p>Unique Emails</p>
+        </div>
+        <div class="plc-card blue">
+            <h2><?php echo $conversion_rate; ?>%</h2>
+            <p>Chat to Email Rate</p>
+        </div>
+        <div class="plc-card orange">
+            <h2><?php echo $this_week; ?></h2>
+            <p>This Week</p>
+        </div>
+        <div class="plc-card pink">
+            <h2><?php echo $today_count; ?></h2>
+            <p>Today</p>
+        </div>
+    </div>
+
+    <!-- Leads table -->
+    <div class="plc-section">
+        <h3>Collected Emails</h3>
+        <?php if (empty($leads)): ?>
+            <p style="text-align:center;padding:40px;color:#999">No email leads yet. Cheer is working on it!</p>
+        <?php else: ?>
+        <table class="plc-tbl">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Date</th>
+                    <th>Post</th>
+                    <th>Interest</th>
+                    <th>Image</th>
+                    <th>Device</th>
+                    <th>Location</th>
+                    <th>Chat</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($leads as $lead): ?>
+                <tr>
+                    <td><strong><?php echo esc_html($lead->email); ?></strong></td>
+                    <td style="white-space:nowrap;color:#666"><?php echo date('M j, g:ia', strtotime($lead->created_at)); ?></td>
+                    <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?php echo esc_attr($lead->post_title); ?>">
+                        <?php echo esc_html($lead->post_title ?: 'Post #'.$lead->post_id); ?>
+                    </td>
+                    <td style="max-width:200px;font-size:12px;color:#666">
+                        <?php echo esc_html(mb_substr($lead->interest_context, 0, 100)); ?>
+                        <?php if (strlen($lead->interest_context ?? '') > 100) echo '...'; ?>
+                    </td>
+                    <td style="font-size:12px;color:#666">
+                        <?php if ($lead->image_tapped): ?>
+                            <span class="plc-badge" style="background:#fce7f3;color:#be185d"><?php echo esc_html(mb_substr($lead->image_tapped, 0, 40)); ?></span>
+                        <?php else: ?>
+                            <span style="color:#ccc">&mdash;</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <span class="plc-badge" style="background:<?php echo $lead->device === 'mobile' ? '#dbeafe' : '#f0fdf4'; ?>;color:<?php echo $lead->device === 'mobile' ? '#1d4ed8' : '#166534'; ?>">
+                            <?php echo esc_html($lead->device ?: '?'); ?>
+                        </span>
+                    </td>
+                    <td style="font-size:12px;color:#666">
+                        <?php
+                        $loc_parts = array_filter([$lead->city, $lead->country]);
+                        echo esc_html(implode(', ', $loc_parts) ?: '—');
+                        ?>
+                    </td>
+                    <td>
+                        <?php if ($lead->session_id): ?>
+                        <a href="<?php echo admin_url('admin.php?page=pl-ai-chat-history&session=' . $lead->session_id); ?>"
+                            style="color:#ec4899;text-decoration:none" title="View chat">View</a>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+    </div>
+
     </div>
     <?php
 }
