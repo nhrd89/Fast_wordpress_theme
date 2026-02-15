@@ -83,36 +83,35 @@ function injectDOM(){
     css.push(".pl-e-sp.show{opacity:1;transform:translateY(0) scale(1)}");
     css.push(".pl-e-sk{position:fixed;pointer-events:none;z-index:999;font-size:14px;animation:plSF 1.2s ease-out forwards}");
     css.push("@keyframes plSF{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-60px) scale(.3) rotate(180deg)}}");
-    css.push(".pl-chat-panel{position:fixed;top:0;right:0;width:320px;height:100vh;z-index:1002;background:rgba(255,240,245,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-left:2px solid #f9a8d4;display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif;animation:plChatSlide .35s ease}");
-    css.push("@keyframes plChatSlide{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}");
-    css.push(".pl-chat-panel.show{display:flex}");
-    css.push(".pl-chat-head{background:linear-gradient(135deg,#f472b6,#fb7185);color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}");
-    css.push(".pl-chat-head span{font-weight:600;font-size:14px;text-shadow:0 1px 2px rgba(0,0,0,.1)}");
-    css.push(".pl-chat-close{background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:2px 6px;opacity:.85;transition:opacity .2s;border-radius:50%;line-height:1}");
-    css.push(".pl-chat-close:hover{opacity:1;background:rgba(255,255,255,.2)}");
-    css.push(".pl-chat-body{flex:1;overflow-y:auto;padding:12px;scroll-behavior:smooth}");
-    css.push(".pl-chat-msg{position:relative;margin:10px 0;max-width:85%;padding:9px 13px;border-radius:16px;font-size:13px;line-height:1.45;word-wrap:break-word;animation:plMsgPop .25s ease}");
-    css.push("@keyframes plMsgPop{from{opacity:0;transform:scale(.92) translateY(6px)}to{opacity:1;transform:scale(1) translateY(0)}}");
-    css.push(".pl-chat-msg.ai{background:#fff;border:1.5px solid #f9a8d4;margin-right:auto;border-bottom-left-radius:4px;color:#831843}");
-    css.push(".pl-chat-msg.ai::after{content:'';position:absolute;bottom:0;left:-6px;width:0;height:0;border:6px solid transparent;border-right-color:#f9a8d4;border-bottom-color:#f9a8d4}");
-    css.push(".pl-chat-msg.user{background:linear-gradient(135deg,#fce7f3,#fdf2f8);border:1.5px solid #f9a8d4;margin-left:auto;text-align:right;border-bottom-right-radius:4px;color:#9d174d}");
-    css.push(".pl-chat-msg.user::after{content:'';position:absolute;bottom:0;right:-6px;width:0;height:0;border:6px solid transparent;border-left-color:#f9a8d4;border-bottom-color:#f9a8d4}");
-    css.push(".pl-chat-msg.typing{background:rgba(255,255,255,.6);border:1.5px solid #f9a8d4;margin-right:auto;border-bottom-left-radius:4px;opacity:.8}");
-    css.push(".pl-chat-dots{display:inline-flex;gap:5px;padding:2px 0}");
-    css.push(".pl-chat-dots span{width:7px;height:7px;border-radius:50%;background:#f472b6;animation:plDotBounce .5s infinite alternate}");
+    css.push(".pl-chat-wrap{position:fixed;bottom:100px;right:14px;width:260px;z-index:1002;display:none;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}");
+    css.push(".pl-chat-wrap.show{display:flex}");
+    css.push(".pl-chat-scroll{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow-y:auto;overflow-x:hidden;width:100%;padding:4px 2px;scroll-behavior:smooth;scrollbar-width:none;-ms-overflow-style:none;pointer-events:auto}");
+    css.push(".pl-chat-scroll::-webkit-scrollbar{display:none}");
+    css.push(".pl-chat-msg{position:relative;max-width:90%;padding:9px 13px;font-size:13px;line-height:1.45;word-wrap:break-word;animation:plMsgFloat .3s ease;pointer-events:auto;background:#fff;border:2px solid #f9a8d4;border-radius:16px;color:#4a1942;box-shadow:0 2px 8px rgba(244,114,182,.1);flex-shrink:0}");
+    css.push(".pl-chat-msg::after{content:'';position:absolute;bottom:-6px;width:9px;height:9px;background:#fff;border-bottom:2px solid #f9a8d4;border-right:2px solid #f9a8d4;transform:rotate(45deg)}");
+    css.push("@keyframes plMsgFloat{from{opacity:0;transform:translateY(8px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}");
+    css.push(".pl-chat-msg.ai{align-self:flex-start;border-radius:16px 16px 16px 4px}");
+    css.push(".pl-chat-msg.ai::after{left:12px;border-right:2px solid #f9a8d4;border-bottom:2px solid #f9a8d4;border-left:none;border-top:none}");
+    css.push(".pl-chat-msg.user{align-self:flex-end;border-radius:16px 16px 4px 16px;background:#fff5f7}");
+    css.push(".pl-chat-msg.user::after{right:12px;left:auto;border-left:2px solid #f9a8d4;border-bottom:2px solid #f9a8d4;border-right:none;border-top:none}");
+    css.push(".pl-chat-msg.typing{align-self:flex-start;border-radius:16px 16px 16px 4px;background:#fff;border:2px solid #f9a8d4}");
+    css.push(".pl-chat-msg.typing::after{left:12px;border-right:2px solid #f9a8d4;border-bottom:2px solid #f9a8d4;border-left:none;border-top:none}");
+    css.push(".pl-chat-dots{display:inline-flex;gap:4px;padding:2px 0}");
+    css.push(".pl-chat-dots span{width:6px;height:6px;border-radius:50%;background:#f472b6;animation:plDotBounce .5s infinite alternate}");
     css.push(".pl-chat-dots span:nth-child(2){animation-delay:.15s}");
     css.push(".pl-chat-dots span:nth-child(3){animation-delay:.3s}");
     css.push("@keyframes plDotBounce{from{opacity:.3;transform:translateY(0)}to{opacity:1;transform:translateY(-3px)}}");
-    css.push(".pl-chat-foot{border-top:1.5px solid #f9a8d4;padding:8px 10px;display:flex;gap:8px;flex-shrink:0;align-items:center;background:rgba(255,255,255,.5)}");
-    css.push(".pl-chat-input{flex:1;border:1.5px solid #f9a8d4;border-radius:18px;padding:7px 14px;font-size:13px;outline:none;font-family:inherit;resize:none;max-height:55px;overflow-y:auto;background:rgba(255,255,255,.8);color:#831843}");
-    css.push(".pl-chat-input:focus{border-color:#ec4899;box-shadow:0 0 0 2px rgba(236,72,153,.15)}");
-    css.push(".pl-chat-input::placeholder{color:#f9a8d4}");
-    css.push(".pl-chat-send{background:linear-gradient(135deg,#f472b6,#ec4899);color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;box-shadow:0 2px 8px rgba(236,72,153,.25)}");
+    css.push(".pl-chat-bar{display:flex;gap:6px;align-items:center;width:100%;pointer-events:auto;margin-top:4px}");
+    css.push(".pl-chat-input{flex:1;border:2px solid #f9a8d4;border-radius:18px;padding:7px 12px;font-size:12.5px;outline:none;font-family:-apple-system,BlinkMacSystemFont,sans-serif;resize:none;max-height:44px;overflow-y:auto;background:#fff;color:#4a1942;box-shadow:0 2px 8px rgba(244,114,182,.1)}");
+    css.push(".pl-chat-input:focus{border-color:#ec4899;box-shadow:0 0 0 2px rgba(236,72,153,.12)}");
+    css.push(".pl-chat-input::placeholder{color:#e8a0bf}");
+    css.push(".pl-chat-send{background:linear-gradient(135deg,#f472b6,#ec4899);color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;box-shadow:0 2px 6px rgba(236,72,153,.2)}");
     css.push(".pl-chat-send:hover{background:linear-gradient(135deg,#ec4899,#db2777);transform:scale(1.05)}");
     css.push(".pl-chat-send:disabled{background:#fce7f3;color:#f9a8d4;cursor:not-allowed;box-shadow:none;transform:none}");
-    css.push(".pl-chat-ended{text-align:center;padding:10px;color:#9d174d;font-size:12px}");
-    css.push("@media(max-width:900px){.pl-chat-panel{width:280px}}");
-    css.push("@media(max-width:768px){.pl-chat-panel{top:auto;bottom:0;right:0;left:0;width:100%;height:auto;max-height:55vh;border-left:none;border-radius:20px 20px 0 0;border:2px solid #f9a8d4;border-bottom:none}.pl-chat-head{border-radius:18px 18px 0 0}.pl-chat-foot{border-radius:0}}");
+    css.push(".pl-chat-x{background:none;border:none;color:#f472b6;font-size:16px;cursor:pointer;padding:0 4px;line-height:1;opacity:.7;transition:opacity .2s;flex-shrink:0}");
+    css.push(".pl-chat-x:hover{opacity:1}");
+    css.push(".pl-chat-ended{align-self:center;font-size:11px;color:#9d174d;padding:4px 10px;background:rgba(255,245,248,.9);border-radius:10px;border:1px solid #f9a8d4}");
+    css.push("@media(max-width:480px){.pl-chat-wrap{right:8px;left:8px;width:auto;bottom:90px}}");
   }
   if(C.heart!==false){
     css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:34px;height:34px}");
@@ -137,24 +136,20 @@ function injectDOM(){
     document.body.appendChild(heartEl);
   }
 
-  // Chat panel
-  var chatName = (window.__plChat ? window.__plChat.name : 'Cheer');
-  var chatHtml = '<div class="pl-chat-panel" id="plChatPanel">'
-    + '<div class="pl-chat-head">'
-    + '<span>' + chatName + '</span>'
-    + '<button class="pl-chat-close" id="plChatClose" aria-label="Close chat">&times;</button>'
-    + '</div>'
-    + '<div class="pl-chat-body" id="plChatBody"></div>'
-    + '<div class="pl-chat-foot">'
+  // Chat — floating speech bubbles
+  var chatHtml = '<div class="pl-chat-wrap" id="plChatWrap">'
+    + '<div class="pl-chat-scroll" id="plChatBody"></div>'
+    + '<div class="pl-chat-bar">'
+    + '<button class="pl-chat-x" id="plChatClose">\u2715</button>'
     + '<input class="pl-chat-input" id="plChatInput" placeholder="Type a message..." maxlength="500" />'
-    + '<button class="pl-chat-send" id="plChatSend" disabled aria-label="Send message">'
-    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>'
+    + '<button class="pl-chat-send" id="plChatSend" disabled>'
+    + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>'
     + '</button>'
     + '</div>'
     + '</div>';
   document.body.insertAdjacentHTML('beforeend', chatHtml);
 
-  chatPanel = document.getElementById('plChatPanel');
+  chatPanel = document.getElementById('plChatWrap');
   chatBody = document.getElementById('plChatBody');
   chatInput = document.getElementById('plChatInput');
 }
@@ -804,7 +799,7 @@ function sendMessage() {
       chatInput.disabled = true;
       document.getElementById('plChatSend').disabled = true;
       chatBody.insertAdjacentHTML('beforeend',
-        '<div class="pl-chat-ended">Chat ended. Come back anytime!</div>');
+        '<div class="pl-chat-ended">Come back anytime! \uD83D\uDC95</div>');
     }
   })
   .catch(function() {
