@@ -1,7 +1,19 @@
 /**
- * PinLightning Scroll Engagement v3.0 — Video Character System
- * WebM VP9 with alpha transparency for crystal clear quality
- * Lazy loads clips on demand, hardware decoded, zero main thread
+ * PinLightning Scroll Engagement v4.0 — Psychology-Driven Video Character
+ *
+ * BEHAVIORAL SCIENCE TRIGGERS:
+ * 1. Variable Ratio Schedule (Skinner) — micro-interactions fire at random 12-35s intervals
+ *    Most addictive reinforcement pattern. User never knows when next reward comes.
+ * 2. Novelty Effect (Bunzeck & Düzel 2006) — 8 different micro-interactions randomized,
+ *    never same twice in a row. Novel stimuli = stronger dopamine response.
+ * 3. Escalating Rewards — deeper scroll = more exciting reactions (peace→surprise→omg)
+ * 4. Curiosity Gap (Loewenstein) — peek-a-boo after 5s idle creates anticipation
+ * 5. Peak-End Rule (Kahneman) — epic victory at 100% = memorable experience ending
+ * 6. Endowed Progress (Nunes & Dreze 2006) — heart starts 20% filled
+ * 7. Zeigarnik Effect — incomplete task bias exploited by "don't stop" messages
+ * 8. Reciprocity (Cialdini) — compliments trigger reciprocal engagement
+ * 9. Mere Exposure (Zajonc 1968) — repeated character exposure builds attachment
+ * 10. Parasocial Bonding — time-aware greetings + returning visitor recognition
  */
 (function(){
 "use strict";
@@ -11,10 +23,21 @@ var C = window.plEngageConfig || {};
 var SC = window.PLScrollConfig || {};
 if(!SC.baseUrl) return;
 
-// Video elements
-var wrap, speechEl, streakEl, heartEl, styleEl;
+var wrap, speechEl, heartEl, styleEl;
 var videos = {};
 var activeClip = null;
+
+// Micro-interaction pool — escalates with scroll depth
+var MICROS_EARLY = ["shhh","peace","blowkiss","beckon"];     // 0-40% depth
+var MICROS_MID   = ["surprise","excited","peace","shhh"];     // 40-70%
+var MICROS_DEEP  = ["omg","excited","clap","surprise"];       // 70%+
+var lastMicro = "";
+
+// Variable ratio schedule state
+var vrTimer = null;
+var vrMinDelay = 12000;  // minimum 12s between micros
+var vrMaxDelay = 35000;  // maximum 35s
+var microCount = 0;
 
 function createVideo(name, loop) {
   var v = document.createElement("video");
@@ -35,7 +58,7 @@ function switchTo(name) {
   if (activeClip === name) return;
   activeClip = name;
   if (!videos[name]) {
-    var looping = (name==="idle"||name==="walk"||name==="dance");
+    var looping = (name==="idle"||name==="catwalk"||name==="dance");
     createVideo(name, looping);
   }
   Object.keys(videos).forEach(function(k){
@@ -50,7 +73,6 @@ function switchTo(name) {
   });
 }
 
-// Inject DOM
 function injectDOM(){
   var css = [];
   if(C.dancer!==false){
@@ -61,8 +83,6 @@ function injectDOM(){
     css.push(".pl-e-sp.show{opacity:1;transform:translateY(0) scale(1)}");
     css.push(".pl-e-sk{position:fixed;pointer-events:none;z-index:999;font-size:14px;animation:plSF 1.2s ease-out forwards}");
     css.push("@keyframes plSF{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-60px) scale(.3) rotate(180deg)}}");
-    css.push(".pl-e-str{position:fixed;bottom:160px;right:56px;z-index:998;font-family:sans-serif;font-size:13px;font-weight:700;color:#ff4500;text-shadow:0 1px 4px rgba(255,69,0,.3);opacity:0;transition:opacity .3s;pointer-events:none}");
-    css.push(".pl-e-str.show{opacity:1}");
   }
   if(C.heart!==false){
     css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:none;width:34px;height:34px}");
@@ -78,8 +98,6 @@ function injectDOM(){
     wrap=document.createElement("div");wrap.className="pl-v-wrap";
     document.body.appendChild(wrap);
     speechEl=document.createElement("div");speechEl.className="pl-e-sp";document.body.appendChild(speechEl);
-    streakEl=document.createElement("div");streakEl.className="pl-e-str";document.body.appendChild(streakEl);
-    // Preload idle immediately
     createVideo("idle", true);
     videos["idle"].preload = "auto";
   }
@@ -94,7 +112,7 @@ function injectDOM(){
 // STATE MACHINE
 // ============================
 var state="idle",lastY=0,speed=0,scrollPct=0,scrollTimer=null;
-var streakCount=0,streakTimer=null,lastCardY=0,lastSpeechTime=0,speechTimeout=null;
+var lastSpeechTime=0,speechTimeout=null;
 var milestoneHit={},ticking=false,peekabooTimer=null;
 var visitCount=1;
 try{visitCount=parseInt(localStorage.getItem("pl_v")||"0")+1;localStorage.setItem("pl_v",visitCount)}catch(e){}
@@ -113,17 +131,18 @@ function goIdle(){
   peekabooTimer=setTimeout(function(){
     if(state==="idle"&&scrollPct<0.9)startPeekaboo();
   },5000);
+  scheduleNextMicro();
 }
 
-function startWalking(){
-  if(state==="walking"||C.dancer===false)return;
-  state="walking";switchTo("walk");
-  if(Math.random()>0.7)showSpeech("walk");
+function startCatwalk(){
+  if(state==="catwalk"||C.dancer===false)return;
+  state="catwalk";switchTo("catwalk");
+  if(Math.random()>0.75)showSpeech("walk");
 }
 function startDancing(){
   if(state==="dancing"||C.dancer===false)return;
   state="dancing";switchTo("dance");
-  if(Math.random()>0.5)showSpeech("dance");
+  if(Math.random()>0.5){showSpeech("dance");addSparkle();addSparkle();}
 }
 function startPeekaboo(){
   if(C.dancer===false)return;
@@ -145,45 +164,97 @@ function startWelcome(){
 }
 function playMilestone(){
   if(C.dancer===false)return;
-  state="milestone";oneShotThen("dance",function(){goIdle()});
+  // Pick a contextual micro-interaction for this milestone
+  var pool = scrollPct<0.5 ? ["surprise","excited"] : ["omg","clap"];
+  var pick = pool[rnd(0,pool.length-1)];
+  state="milestone";
+  oneShotThen(pick,function(){goIdle()});
   for(var i=0;i<4;i++){(function(j){setTimeout(addSparkle,j*100)})(i)}
 }
 
+// ============================
+// VARIABLE RATIO MICRO-INTERACTIONS
+// The most addictive reinforcement schedule (Skinner 1957)
+// Fires surprise interactions at unpredictable intervals
+// ============================
+function scheduleNextMicro(){
+  clearTimeout(vrTimer);
+  if(C.dancer===false||state==="victory")return;
+  // Interval shrinks slightly as user scrolls deeper (increased engagement = more rewards)
+  var depthBonus = scrollPct > 0.5 ? 0.8 : 1.0;
+  var delay = rnd(vrMinDelay, vrMaxDelay) * depthBonus;
+  vrTimer = setTimeout(function(){
+    if(state!=="idle"&&state!=="catwalk") { scheduleNextMicro(); return; }
+    triggerMicroInteraction();
+  }, delay);
+}
+
+function triggerMicroInteraction(){
+  if(C.dancer===false)return;
+  microCount++;
+
+  // Select pool based on scroll depth (escalating rewards)
+  var pool;
+  if(scrollPct < 0.4) pool = MICROS_EARLY;
+  else if(scrollPct < 0.7) pool = MICROS_MID;
+  else pool = MICROS_DEEP;
+
+  // Pick random, never same twice in a row (novelty effect)
+  var pick;
+  do { pick = pool[rnd(0, pool.length-1)]; } while(pick === lastMicro && pool.length > 1);
+  lastMicro = pick;
+
+  // Play the micro-interaction
+  state = "micro";
+  oneShotThen(pick, function(){
+    // Pair with contextual speech (reciprocity + social reward)
+    var speechMap = {
+      shhh:"secret", peace:"validation", blowkiss:"reciprocity",
+      beckon:"curiosity", surprise:"surprise", excited:"validation",
+      omg:"omg", clap:"appreciation"
+    };
+    showSpeech(speechMap[pick] || "validation");
+    addSparkle();
+    if(Math.random() > 0.5) addSparkle();
+    goIdle();
+  });
+
+  scheduleNextMicro();
+}
+
 // Sparkles
-var sparkleE=["✨","💖","💗","⭐","🌟","💕","🎀","💫"],lastSpkT=0,nextSpkD=rnd(8e3,22e3);
+var sparkleE=["✨","💖","💗","⭐","🌟","💕","🎀","💫"];
 function addSparkle(){
   if(C.dancer===false)return;
   var el=document.createElement("div");el.className="pl-e-sk";el.textContent=sparkleE[rnd(0,sparkleE.length-1)];
   el.style.right=rnd(10,60)+"px";el.style.bottom=rnd(70,160)+"px";el.style.fontSize=rnd(10,18)+"px";
   document.body.appendChild(el);setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},1300);
 }
-function checkSparkle(){
-  if(C.dancer===false)return;
-  var now=Date.now();if(now-lastSpkT>nextSpkD&&scrollPct>0.05){lastSpkT=now;nextSpkD=rnd(8e3,22e3);
-  var roll=Math.random();if(roll<0.2){for(var i=0;i<5;i++)(function(j){setTimeout(addSparkle,j*80)})(i);showSpeech("validation")}
-  else if(roll<0.45){addSparkle();addSparkle()}else{addSparkle()}}
-}
 
-// Speech
+// Speech — expanded with micro-interaction specific messages
 var MSG={
   welcomeMorning:["Good morning gorgeous! ☀️","Rise & shine! ✨"],
   welcomeAfternoon:["Hey beautiful! 💕","So glad you're here! 🌸"],
   welcomeEvening:["Evening vibes! 🌙","Perfect night to scroll! ✨"],
   welcomeNight:["Late night scrolling? Same! 💫","Can't sleep? Me neither! 🌙"],
   returning:["You came back! 💖","Missed you! 🎀","She's baaack! 💕"],
-  curiosity:["Wait till you see what's next! 👀","The best one is coming... 👇"],
-  validation:["Great taste! 💖","Amazing style sense! ✨","Slay queen! 💅"],
-  lossAversion:["Don't stop now! 💪","So close! Keep going! 🔥"],
-  streak:["You're on fire! 🔥🔥🔥","Unstoppable! 💪✨"],
-  milestone:["Look at you go! 🎉","You're dedicated! 💖"],
-  deep:["True reader! 📖✨","Top 5% of readers! 🏆"],
-  complete:["YOU DID IT! 🎉🎊💖","100%!! AMAZING! 🏆✨🎀"],
-  walk:["Love your scrolling style! 💃","Where are we going? 🎀"],
-  dance:["Let's gooo! 🎶💃","We're vibing! ✨🎵"],
-  peekaboo:["Peek-a-boo! 🙈","I see you! 👀💕"]
+  curiosity:["Wait till you see what's next! 👀","The best part is coming... 👇","You won't believe what's below! 🤫"],
+  validation:["Great taste! 💖","You have amazing style! ✨","Slay queen! 💅","Obsessed with your vibe! 💕"],
+  reciprocity:["You're so sweet! 💋","This one's for you! 💝","You deserve the best! 🌟"],
+  secret:["Shh... keep scrolling! 🤫","I have a secret for you! 💫","Just between us... 🤭"],
+  surprise:["OMG did you see that?! 😱","No way! 🤯","I can't even! 😍"],
+  omg:["THIS IS EVERYTHING! 🔥","I'm literally screaming! 😱✨","ICONIC! 💖🔥"],
+  appreciation:["You're amazing for reading this! 👏","Love that you're here! 💖","Thank you for staying! 🥹"],
+  lossAversion:["Don't stop now! 💪","You'll miss the best part! 😱","So close to something special! ✨"],
+  milestone:["Look at you go! 🎉","You're on fire! 💖","Incredible dedication! 🏆"],
+  deep:["True reader right here! 📖✨","Top 5% of readers! 🏆","You're special for making it here! 💎"],
+  complete:["YOU DID IT! 🎉🎊💖","100%!! AMAZING! 🏆✨🎀","LEGEND! 👑💖🎉"],
+  walk:["Love the way you scroll! 💃","Where are we going? 🎀","This is fun! ✨"],
+  dance:["Let's gooo! 🎶💃","We're vibing! ✨🎵","Dance break! 💖🎶"],
+  peekaboo:["Peek-a-boo! 🙈","I see you! 👀💕","Caught you looking! 🤭"]
 };
 function showSpeech(ctx){
-  if(!speechEl||C.dancer===false)return;var now=Date.now();if(now-lastSpeechTime<4e3)return;lastSpeechTime=now;
+  if(!speechEl||C.dancer===false)return;var now=Date.now();if(now-lastSpeechTime<3500)return;lastSpeechTime=now;
   var pool;if(ctx==="welcome"){pool=visitCount>1?MSG.returning:MSG["welcome"+getTC()]}else{pool=MSG[ctx]||MSG.validation}
   speechEl.textContent=pool[rnd(0,pool.length-1)];speechEl.classList.add("show");
   clearTimeout(speechTimeout);speechTimeout=setTimeout(function(){speechEl.classList.remove("show")},3500);
@@ -207,28 +278,25 @@ function updateHeart(pct){
   if(hf){hf.setAttribute("y",y);hf.setAttribute("height",24)}if(hp)hp.textContent=Math.round(fill*100)+"%";
 }
 
-// Streak
-function updateStreak(){
-  if(C.dancer===false||!streakEl)return;
-  streakCount++;if(streakCount>=3){streakEl.textContent="🔥 "+streakCount+" streak!";streakEl.classList.add("show");
-  if(streakCount===5||streakCount===10){showSpeech("streak");for(var i=0;i<3;i++)(function(j){setTimeout(addSparkle,j*100)})(i)}}
-  clearTimeout(streakTimer);streakTimer=setTimeout(function(){if(streakCount>=3&&scrollPct<0.9)showSpeech("lossAversion");streakCount=0;streakEl.classList.remove("show")},5e3);
-}
-
-// Scroll
+// Scroll handler
 function onScroll(){
   if(ticking)return;ticking=true;
   requestAnimationFrame(function(){ticking=false;
     var sT=window.pageYOffset,dH=document.documentElement.scrollHeight-window.innerHeight;if(dH<=0)return;
     scrollPct=Math.min(Math.max(sT/dH,0),1);speed=Math.abs(sT-lastY);lastY=sT;
-    updateMood(scrollPct);updateHeart(scrollPct);checkSparkle();
-    var cards=Math.floor(scrollPct*15);if(cards>lastCardY){lastCardY=cards;updateStreak()}
+    updateMood(scrollPct);updateHeart(scrollPct);
+
+    // Victory at 98%+
     if(scrollPct>=0.98&&!milestoneHit["100"]){milestoneHit["100"]=true;startVictory()}
-    else if(state!=="victory"&&state!=="peekaboo"&&state!=="welcome"&&state!=="milestone"){
-      if(speed>30){startDancing()}else if(speed>3){startWalking()}
+    // Movement states (only if not in special animation)
+    else if(state!=="victory"&&state!=="peekaboo"&&state!=="welcome"&&state!=="milestone"&&state!=="micro"){
+      if(speed>30){startDancing()}
+      else if(speed>3){startCatwalk()}
     }
+    // Milestones at 40%, 60%, 80%
     [0.4,0.6,0.8].forEach(function(m){var key=(m*100)+"";if(scrollPct>=m&&!milestoneHit[key]){milestoneHit[key]=true;showSpeech(m===0.8?"deep":"milestone");playMilestone()}});
-    clearTimeout(scrollTimer);scrollTimer=setTimeout(function(){if(state!=="victory"&&state!=="peekaboo"&&state!=="welcome")goIdle()},400);
+    // Return to idle when scrolling stops
+    clearTimeout(scrollTimer);scrollTimer=setTimeout(function(){if(state!=="victory"&&state!=="peekaboo"&&state!=="welcome"&&state!=="micro")goIdle()},400);
   });
 }
 
@@ -236,12 +304,10 @@ function onScroll(){
 function init(){
   injectDOM();
   if(C.heart!==false)updateHeart(0);
-  if(C.dancer!==false){switchTo("idle");setTimeout(function(){startWelcome()},1500)}
+  if(C.dancer!==false){switchTo("idle");setTimeout(function(){startWelcome()},1500);scheduleNextMicro()}
   window.addEventListener("scroll",onScroll,{passive:true});
 }
 
 function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
-
-// Start when DOM ready
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init)}else{init()}
 })();
