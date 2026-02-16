@@ -380,6 +380,9 @@ function plt_collect_data($request) {
     // Invalidate homepage engagement scores cache so smart grid picks up new data.
     delete_transient( 'pl_post_engagement_scores' );
 
+    // Send to GA4 (non-blocking, zero performance impact)
+    pl_send_to_ga4($session);
+
     return new WP_REST_Response(['ok' => true], 200);
 }
 
@@ -1437,6 +1440,56 @@ function plt_admin_sessions() {
 }
 
 function plt_admin_settings() {
+    // Handle GA4 test event
+    if (isset($_POST['pl_test_ga4']) && wp_verify_nonce($_POST['pl_ga4_nonce'] ?? '', 'pl_test_ga4')) {
+        $measurement_id = get_theme_mod('pl_ga4_measurement_id', '');
+        $api_secret = get_theme_mod('pl_ga4_api_secret', '');
+
+        if (empty($measurement_id) || empty($api_secret)) {
+            echo '<div class="notice notice-error"><p>GA4 Measurement ID and API Secret must be set in Appearance &rarr; Customize &rarr; Integrations</p></div>';
+        } else {
+            $debug_url = 'https://www.google-analytics.com/debug/mp/collect'
+                . '?measurement_id=' . urlencode($measurement_id)
+                . '&api_secret=' . urlencode($api_secret);
+
+            $response = wp_remote_post($debug_url, [
+                'body' => json_encode([
+                    'client_id' => 'test_' . time(),
+                    'events' => [['name' => 'pl_test', 'params' => ['test' => true]]],
+                ]),
+                'headers' => ['Content-Type' => 'application/json'],
+                'timeout' => 5,
+            ]);
+
+            if (is_wp_error($response)) {
+                echo '<div class="notice notice-error"><p>Network error: ' . esc_html($response->get_error_message()) . '</p></div>';
+            } else {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                $has_errors = !empty($data['validationMessages']);
+
+                if (!$has_errors) {
+                    pl_send_to_ga4([
+                        'visitor_id' => 'test_' . time(),
+                        'url' => home_url('/'),
+                        'referrer' => 'direct',
+                        'device' => 'desktop',
+                        'max_depth_pct' => 75,
+                        'engagement' => ['active_time_ms' => 60000],
+                        'time_on_page_ms' => 90000,
+                        'quality_score' => 80,
+                        'scroll_pattern' => 'reader',
+                        'country' => 'Test Country',
+                        'city' => 'Test City',
+                    ]);
+                    echo '<div class="notice notice-success"><p>GA4 connection verified! Test event sent. Check GA4 Realtime report in 1-2 minutes.</p></div>';
+                } else {
+                    echo '<div class="notice notice-error"><p>GA4 validation failed: ' . esc_html($body) . '</p></div>';
+                }
+            }
+        }
+    }
+
     $key = plt_get_key();
     $upload_dir = wp_upload_dir();
     $data_dir = $upload_dir['basedir'] . '/pl-tracker-data';
@@ -1521,6 +1574,22 @@ function plt_admin_settings() {
     <div class="plt-settings-card" style="border-left:4px solid #f59e0b">
         <h3>Migration Note</h3>
         <p>This tracker is now embedded in the PinLightning theme. If you still have the <strong>PinLightning Visitor Tracker</strong> plugin active, you should <strong>deactivate it</strong> to avoid duplicate tracking.</p>
+    </div>
+
+    <div class="plt-settings-card">
+        <h3>GA4 Integration</h3>
+        <?php
+        $ga4_id = get_theme_mod('pl_ga4_measurement_id', '');
+        $ga4_secret = get_theme_mod('pl_ga4_api_secret', '');
+        $ga4_on = get_theme_mod('pl_ga4_enabled', false);
+        ?>
+        <p>Status: <?php echo $ga4_on && $ga4_id && $ga4_secret
+            ? '<strong style="color:#059669">Active</strong> &mdash; ' . esc_html($ga4_id)
+            : '<strong style="color:#888">Not configured</strong> &mdash; Set up in Appearance &rarr; Customize &rarr; Integrations'; ?></p>
+        <form method="post" style="margin-top:8px">
+            <?php wp_nonce_field('pl_test_ga4', 'pl_ga4_nonce'); ?>
+            <button type="submit" name="pl_test_ga4" class="button" <?php echo (!$ga4_id || !$ga4_secret) ? 'disabled' : ''; ?>>&#x1F9EA; Send Test Event to GA4</button>
+        </form>
     </div>
 
     </div>

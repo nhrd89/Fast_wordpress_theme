@@ -336,6 +336,109 @@ function pl_add_pinterest_save_buttons( $content ) {
 }
 add_filter( 'the_content', 'pl_add_pinterest_save_buttons', 90 );
 
+/**
+ * Send session data to GA4 via Measurement Protocol.
+ * Called server-side after visitor tracker saves a session.
+ * Zero client-side JS — non-blocking wp_remote_post.
+ */
+function pl_send_to_ga4( $session_data ) {
+	$measurement_id = get_theme_mod( 'pl_ga4_measurement_id', '' );
+	$api_secret     = get_theme_mod( 'pl_ga4_api_secret', '' );
+	$enabled        = get_theme_mod( 'pl_ga4_enabled', false );
+
+	if ( ! $enabled || empty( $measurement_id ) || empty( $api_secret ) ) {
+		return;
+	}
+
+	$client_id = $session_data['visitor_id']
+		?? $session_data['fingerprint']
+		?? md5( ( $session_data['url'] ?? '' ) . ( $session_data['unix'] ?? time() ) );
+
+	if ( empty( $client_id ) ) {
+		return;
+	}
+
+	$page_url   = $session_data['url'] ?? '';
+	$referrer   = $session_data['referrer'] ?? '';
+	$device     = $session_data['device'] ?? 'desktop';
+	$depth      = round( floatval( $session_data['max_depth_pct'] ?? 0 ) );
+	$active_ms  = intval( $session_data['engagement']['active_time_ms'] ?? 0 );
+	$time_ms    = intval( $session_data['time_on_page_ms'] ?? 0 );
+	$quality    = round( floatval( $session_data['quality_score'] ?? 0 ) );
+	$pattern    = $session_data['scroll_pattern'] ?? 'unknown';
+	$country    = $session_data['country'] ?? '';
+	$city       = $session_data['city'] ?? '';
+	$pin_saves  = intval( $session_data['pin_saves']['saves'] ?? 0 );
+
+	$events = [];
+
+	$events[] = [
+		'name'   => 'page_view',
+		'params' => [
+			'page_location'       => $page_url,
+			'page_referrer'       => $referrer,
+			'engagement_time_msec' => $active_ms,
+		],
+	];
+
+	$events[] = [
+		'name'   => 'scroll',
+		'params' => [
+			'percent_scrolled' => $depth,
+			'scroll_pattern'   => $pattern,
+		],
+	];
+
+	$events[] = [
+		'name'   => 'pl_session',
+		'params' => [
+			'scroll_depth'         => $depth,
+			'active_time_seconds'  => round( $active_ms / 1000 ),
+			'time_on_page_seconds' => round( $time_ms / 1000 ),
+			'quality_score'        => $quality,
+			'scroll_pattern'       => $pattern,
+			'device_type'          => $device,
+			'pin_saves'            => $pin_saves,
+			'country'              => $country,
+			'city'                 => $city,
+		],
+	];
+
+	if ( $pin_saves > 0 ) {
+		$events[] = [
+			'name'   => 'pinterest_save',
+			'params' => [
+				'saves_count'   => $pin_saves,
+				'page_location' => $page_url,
+			],
+		];
+	}
+
+	$payload = [
+		'client_id'       => $client_id,
+		'events'          => $events,
+		'user_properties' => [],
+	];
+
+	if ( $country ) {
+		$payload['user_properties']['country'] = [ 'value' => $country ];
+	}
+	if ( $device ) {
+		$payload['user_properties']['device_type'] = [ 'value' => $device ];
+	}
+
+	$url = 'https://www.google-analytics.com/mp/collect'
+		. '?measurement_id=' . urlencode( $measurement_id )
+		. '&api_secret=' . urlencode( $api_secret );
+
+	wp_remote_post( $url, [
+		'body'     => json_encode( $payload ),
+		'headers'  => [ 'Content-Type' => 'application/json' ],
+		'timeout'  => 3,
+		'blocking' => false,
+	] );
+}
+
 // ============================================
 // Homepage: Engagement-weighted post scoring
 // ============================================

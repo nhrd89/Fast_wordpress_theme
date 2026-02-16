@@ -585,6 +585,44 @@ function pinlightning_customize_register( $wp_customize ) {
 			'section' => 'pl_home_cat_icons',
 		) ) );
 	}
+
+	// ─── Integrations ───
+	$wp_customize->add_section( 'pl_integrations', array(
+		'title'    => __( "\xF0\x9F\x94\x8C Integrations", 'pinlightning' ),
+		'priority' => 100,
+	) );
+
+	$wp_customize->add_setting( 'pl_ga4_enabled', array(
+		'default'           => false,
+		'sanitize_callback' => 'wp_validate_boolean',
+	) );
+	$wp_customize->add_control( 'pl_ga4_enabled', array(
+		'label'   => __( 'Enable GA4 Server-Side Tracking', 'pinlightning' ),
+		'section' => 'pl_integrations',
+		'type'    => 'checkbox',
+	) );
+
+	$wp_customize->add_setting( 'pl_ga4_measurement_id', array(
+		'default'           => '',
+		'sanitize_callback' => 'sanitize_text_field',
+	) );
+	$wp_customize->add_control( 'pl_ga4_measurement_id', array(
+		'label'       => __( 'GA4 Measurement ID', 'pinlightning' ),
+		'description' => __( 'Format: G-XXXXXXXXXX (from GA4 > Admin > Data Streams)', 'pinlightning' ),
+		'section'     => 'pl_integrations',
+		'type'        => 'text',
+	) );
+
+	$wp_customize->add_setting( 'pl_ga4_api_secret', array(
+		'default'           => '',
+		'sanitize_callback' => 'sanitize_text_field',
+	) );
+	$wp_customize->add_control( 'pl_ga4_api_secret', array(
+		'label'       => __( 'GA4 API Secret', 'pinlightning' ),
+		'description' => __( 'From GA4 > Admin > Data Streams > Measurement Protocol API secrets', 'pinlightning' ),
+		'section'     => 'pl_integrations',
+		'type'        => 'text',
+	) );
 }
 add_action( 'customize_register', 'pinlightning_customize_register' );
 
