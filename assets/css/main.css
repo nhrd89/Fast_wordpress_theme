@@ -902,13 +902,20 @@
 	.single-article,
 	.post-hero,
 	.comments-toggle,
-	.comment-respond,
-	.comments-area,
 	.infinite-posts,
 	.related-posts {
 		margin-left: max(1rem, calc((100vw - 1060px) / 2));
 		margin-right: auto;
 		max-width: var(--pl-content);
+	}
+
+	/* .comments-area and .comment-respond are nested inside
+	   .comments-toggle — do NOT apply margin-left again or
+	   the offsets compound and push the form into the sidebar. */
+	.comments-toggle .comments-area,
+	.comments-toggle .comment-respond {
+		margin-left: 0;
+		margin-right: 0;
 	}
 }
 
