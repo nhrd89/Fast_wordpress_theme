@@ -67,6 +67,8 @@ function plt_collect_data($request) {
         'vw' => intval($body['vw'] ?? 0),
         'vh' => intval($body['vh'] ?? 0),
         'returning' => intval($body['ret'] ?? 0),
+        'timezone' => sanitize_text_field($body['tz'] ?? ''),
+        'language' => sanitize_text_field($body['lang'] ?? ''),
 
         // === CORE SCROLL ===
         'time_on_page_ms' => intval($body['t'] ?? 0),
@@ -343,6 +345,30 @@ function plt_collect_data($request) {
         ];
         foreach (array_slice($body['pin']['images'] ?? [], 0, 20) as $img) {
             $session['pin_saves']['images'][] = sanitize_text_field(substr($img, 0, 300));
+        }
+    }
+
+    // Geo lookup via IP (cached per IP for 24h)
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    if ($ip && $ip !== '127.0.0.1' && $ip !== '::1') {
+        $geo_cache_key = 'plt_geo_' . md5($ip);
+        $geo = get_transient($geo_cache_key);
+        if ($geo === false) {
+            $response = wp_remote_get("http://ip-api.com/json/{$ip}?fields=country,countryCode,city,regionName", [
+                'timeout' => 2,
+            ]);
+            if (!is_wp_error($response)) {
+                $geo = json_decode(wp_remote_retrieve_body($response), true);
+                if (!empty($geo['country'])) {
+                    set_transient($geo_cache_key, $geo, DAY_IN_SECONDS);
+                }
+            }
+        }
+        if (!empty($geo['country'])) {
+            $session['country'] = sanitize_text_field($geo['country']);
+            $session['country_code'] = sanitize_text_field($geo['countryCode'] ?? '');
+            $session['city'] = sanitize_text_field($geo['city'] ?? '');
+            $session['region'] = sanitize_text_field($geo['regionName'] ?? '');
         }
     }
 
@@ -1542,8 +1568,10 @@ function plt_full_analytics_page() {
     $active_times = [];
     $time_on_page = [];
     $patterns = ['reader' => 0, 'scanner' => 0, 'bouncer' => 0];
-    $new_visitors = 0;
-    $returning_visitors = 0;
+    $visitor_session_count = [];
+    $daily_unique = [];
+    $countries = [];
+    $cities = [];
     $depth_buckets = array_fill(0, 10, 0);
     $realtime_cutoff = time() - 300;
     $realtime_count = 0;
@@ -1565,6 +1593,19 @@ function plt_full_analytics_page() {
         $daily_sessions[$date] = ($daily_sessions[$date] ?? 0) + 1;
         $hourly_sessions[$hour]++;
         $dow_sessions[$dow]++;
+
+        // Visitor tracking (use returning flag as pseudo-ID since no visitor_id stored)
+        $vid = $s['visitor_id'] ?? ($s['fingerprint'] ?? '');
+        if ($vid) {
+            $visitor_session_count[$vid] = ($visitor_session_count[$vid] ?? 0) + 1;
+            $daily_unique[$date][$vid] = true;
+        }
+
+        // Country / City
+        $country = $s['country'] ?? '';
+        if ($country) $countries[$country] = ($countries[$country] ?? 0) + 1;
+        $city = $s['city'] ?? '';
+        if ($city) $cities[$city] = ($cities[$city] ?? 0) + 1;
 
         $device = strtolower($s['device'] ?? 'desktop');
         if (isset($devices[$device])) $devices[$device]++;
@@ -1595,9 +1636,6 @@ function plt_full_analytics_page() {
         $pattern = strtolower($s['scroll_pattern'] ?? 'scanner');
         if (isset($patterns[$pattern])) $patterns[$pattern]++;
 
-        if (!empty($s['returning'])) $returning_visitors++;
-        else $new_visitors++;
-
         if ($ts >= $realtime_cutoff) $realtime_count++;
 
         $pin_s = $s['pin_saves']['saves'] ?? 0;
@@ -1626,14 +1664,32 @@ function plt_full_analytics_page() {
     $avg_active = $total > 0 ? round($avg($active_times), 1) : 0;
     $avg_time = $total > 0 ? round($avg($time_on_page), 1) : 0;
     $bounce_rate = $total > 0 ? round($patterns['bouncer'] / $total * 100, 1) : 0;
-    $returning_pct = $total > 0 ? round($returning_visitors / $total * 100, 1) : 0;
     $pin_rate = $total > 0 ? round($pin_sessions / $total * 100, 1) : 0;
+
+    // Unique visitor metrics
+    $unique_visitors = count($visitor_session_count);
+    $new_visitors = 0;
+    $returning_visitors = 0;
+    foreach ($visitor_session_count as $vid => $count) {
+        if ($count > 1) $returning_visitors++;
+        else $new_visitors++;
+    }
+    $returning_pct = $unique_visitors > 0 ? round($returning_visitors / $unique_visitors * 100, 1) : 0;
+    $sessions_per_visitor = $unique_visitors > 0 ? round($total / $unique_visitors, 1) : 0;
+
+    // Chart data for unique visitors per day
+    $chart_unique = [];
 
     arsort($page_views);
     arsort($referrers);
+    arsort($countries);
+    arsort($cities);
     ksort($daily_sessions);
     $chart_dates = array_keys($daily_sessions);
     $chart_counts = array_values($daily_sessions);
+    foreach ($chart_dates as $d) {
+        $chart_unique[] = count($daily_unique[$d] ?? []);
+    }
 
     // ─── RENDER PAGE ───
     ?>
@@ -1728,6 +1784,7 @@ function plt_full_analytics_page() {
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo number_format($total); ?></div>
                 <div class="pla-stat-label">Total Sessions</div>
+                <div class="pla-stat-sub"><?php echo number_format($unique_visitors); ?> unique &middot; <?php echo $sessions_per_visitor; ?> sessions/visitor</div>
             </div>
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $avg_depth; ?>%</div>
@@ -1861,7 +1918,36 @@ function plt_full_analytics_page() {
             </div>
         </div>
 
-        <!-- ROW 8: DAY OF WEEK + ACTIVE TIME -->
+        <!-- ROW 8: COUNTRIES + CITIES -->
+        <?php if (!empty($countries)) : ?>
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F30D; Top Countries</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaCountryChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F3D9; Top Cities</h3>
+                <div class="pla-scroll">
+                    <table class="pla-table">
+                        <thead><tr><th>City</th><th>Sessions</th><th>%</th></tr></thead>
+                        <tbody>
+                        <?php foreach (array_slice($cities, 0, 20, true) as $city_name => $cnt) :
+                            $pct = $total > 0 ? round($cnt / $total * 100, 1) : 0;
+                        ?>
+                        <tr>
+                            <td><?php echo esc_html($city_name); ?></td>
+                            <td><strong><?php echo number_format($cnt); ?></strong></td>
+                            <td><?php echo $pct; ?>%</td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- ROW 9: DAY OF WEEK + ACTIVE TIME -->
         <div class="pla-grid pla-grid-2">
             <div class="pla-card">
                 <h3>&#x1F4C5; Sessions by Day of Week</h3>
@@ -1918,12 +2004,15 @@ function plt_full_analytics_page() {
             var donutOpts = {responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'bottom'}}};
             var zoneLabels = ['0-10%','10-20%','20-30%','30-40%','40-50%','50-60%','60-70%','70-80%','80-90%','90-100%'];
 
-            // 1. Sessions Over Time
+            // 1. Sessions Over Time + Unique Visitors
             new Chart(document.getElementById('plaSessionsChart'),{type:'line',
                 data:{labels:<?php echo json_encode($chart_dates); ?>,datasets:[{label:'Sessions',data:<?php echo json_encode($chart_counts); ?>,
-                    borderColor:accent,backgroundColor:accent+'20',fill:true,tension:.4,
-                    pointRadius:<?php echo count($chart_dates) > 30 ? 0 : 3; ?>,pointHoverRadius:5,borderWidth:2}]},
-                options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+                    borderColor:accent,backgroundColor:accent+'15',fill:true,tension:.4,
+                    pointRadius:<?php echo count($chart_dates) > 30 ? 0 : 3; ?>,pointHoverRadius:5,borderWidth:2},
+                {label:'Unique Visitors',data:<?php echo json_encode($chart_unique); ?>,
+                    borderColor:accent2,backgroundColor:accent2+'15',fill:true,tension:.4,
+                    pointRadius:<?php echo count($chart_dates) > 30 ? 0 : 3; ?>,pointHoverRadius:5,borderWidth:2,borderDash:[5,3]}]},
+                options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top'}},
                     scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#f3f4f6'}}}}
             });
 
@@ -1984,7 +2073,16 @@ function plt_full_analytics_page() {
                     datasets:[{data:<?php echo json_encode(array_values($vw_order)); ?>,backgroundColor:colors.slice(0,5),borderWidth:0}]},
                 options:donutOpts});
 
-            // 10. Day of Week
+            // 10. Countries
+            <?php $top_countries = array_slice($countries, 0, 10, true); if (!empty($top_countries)) : ?>
+            new Chart(document.getElementById('plaCountryChart'),{type:'bar',
+                data:{labels:<?php echo json_encode(array_keys($top_countries)); ?>,
+                    datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($top_countries)); ?>,
+                        backgroundColor:accent+'80',borderRadius:4,borderSkipped:false}]},
+                options:hBarOpts});
+            <?php endif; ?>
+
+            // 11. Day of Week
             new Chart(document.getElementById('plaDowChart'),{type:'bar',
                 data:{labels:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
                     datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($dow_sessions)); ?>,backgroundColor:accent2+'80',borderRadius:4,borderSkipped:false}]},
@@ -2555,6 +2653,7 @@ function buildPayload(){
 
     return {t:timeOnPage,url:location.pathname,pid:PID,ref:document.referrer,
         dev:dev,vw:vw,vh:vh,ret:ret,
+        tz:Intl.DateTimeFormat().resolvedOptions().timeZone||'',lang:navigator.language||'',
         d:Math.round(maxDepth*10)/10,ccp:Math.round(ccp*10)/10,
         ss:Math.round(avgSpd),ms:Math.round(maxSpd),sp:pattern,
         ch:document.documentElement.scrollHeight,se:scrollEvts,dc:dirChanges,
