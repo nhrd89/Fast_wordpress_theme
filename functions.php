@@ -270,6 +270,145 @@ function pl_get_category_choices() {
 }
 
 // ============================================
+// Homepage: Engagement-weighted post scoring
+// ============================================
+
+/**
+ * Get engagement scores for posts from visitor tracker data.
+ *
+ * Reads JSON session files, groups by post_id, and computes a weighted
+ * engagement score per post. Cached in a transient for 1 hour.
+ *
+ * @return array Associative array of post_id => score.
+ */
+function pl_get_engagement_scores() {
+	$scores = get_transient( 'pl_post_engagement_scores' );
+	if ( is_array( $scores ) ) {
+		return $scores;
+	}
+
+	$scores   = array();
+	$raw      = array(); // post_id => array of per-session scores.
+	$base_dir = wp_upload_dir()['basedir'] . '/pl-tracker-data';
+
+	// Scan the last 14 days of tracker data.
+	for ( $i = 0; $i < 14; $i++ ) {
+		$day_dir = $base_dir . '/' . gmdate( 'Y-m-d', strtotime( "-{$i} days" ) );
+		if ( ! is_dir( $day_dir ) ) {
+			continue;
+		}
+		$files = glob( $day_dir . '/*.json' );
+		if ( ! $files ) {
+			continue;
+		}
+		foreach ( $files as $f ) {
+			$data = json_decode( file_get_contents( $f ), true );
+			if ( empty( $data['post_id'] ) ) {
+				continue;
+			}
+			$pid = (int) $data['post_id'];
+
+			// Weighted score: quality_score (0-100) × 0.5 + scroll_depth × 0.3 + active_time_norm × 0.2
+			$qs          = floatval( $data['quality_score'] ?? 0 );
+			$depth       = floatval( $data['max_depth_pct'] ?? 0 );
+			$active_ms   = floatval( $data['engagement']['active_time_ms'] ?? 0 );
+			$active_norm = min( 100, $active_ms / 600 ); // 60s active = 100 points.
+
+			$session_score = ( $qs * 0.5 ) + ( $depth * 0.3 ) + ( $active_norm * 0.2 );
+			$raw[ $pid ][] = $session_score;
+		}
+	}
+
+	// Average scores per post (more sessions = higher confidence).
+	foreach ( $raw as $pid => $session_scores ) {
+		$avg   = array_sum( $session_scores ) / count( $session_scores );
+		// Slight boost for posts with many sessions (log scale).
+		$boost = 1 + ( log( count( $session_scores ) + 1, 10 ) * 0.1 );
+		$scores[ $pid ] = round( $avg * $boost, 2 );
+	}
+
+	set_transient( 'pl_post_engagement_scores', $scores, HOUR_IN_SECONDS );
+	return $scores;
+}
+
+/**
+ * Get smart grid posts: one per category, engagement-weighted, randomized from top performers.
+ *
+ * @param int   $count   Number of posts to return.
+ * @param array $exclude Post IDs to exclude (e.g. hero posts).
+ * @return WP_Post[] Array of post objects.
+ */
+function pl_get_smart_grid_posts( $count = 9, $exclude = array() ) {
+	$scores     = pl_get_engagement_scores();
+	$categories = get_categories( array(
+		'orderby'    => 'count',
+		'order'      => 'DESC',
+		'hide_empty' => true,
+		'exclude'    => array( get_cat_ID( 'uncategorized' ) ),
+	) );
+
+	if ( empty( $categories ) ) {
+		// Fallback: return latest posts.
+		$fallback = new WP_Query( array(
+			'posts_per_page' => $count,
+			'post_status'    => 'publish',
+			'post__not_in'   => $exclude,
+		) );
+		$posts = $fallback->posts;
+		wp_reset_postdata();
+		return $posts;
+	}
+
+	$selected = array();
+	$used_ids = $exclude;
+
+	// Round-robin: fill slots by cycling through categories.
+	$cat_index = 0;
+	$cat_count = count( $categories );
+
+	while ( count( $selected ) < $count && $cat_index < $cat_count * 3 ) {
+		$cat = $categories[ $cat_index % $cat_count ];
+		$cat_index++;
+
+		// Get candidate posts for this category.
+		$args = array(
+			'posts_per_page' => 10,
+			'post_status'    => 'publish',
+			'cat'            => $cat->term_id,
+			'post__not_in'   => $used_ids,
+		);
+		$cat_query = new WP_Query( $args );
+
+		if ( ! $cat_query->have_posts() ) {
+			wp_reset_postdata();
+			continue;
+		}
+
+		// Score candidates.
+		$candidates = array();
+		foreach ( $cat_query->posts as $post ) {
+			$candidates[] = array(
+				'post'  => $post,
+				'score' => isset( $scores[ $post->ID ] ) ? $scores[ $post->ID ] : 0,
+			);
+		}
+		wp_reset_postdata();
+
+		// Sort by score descending, take top 5, pick one randomly.
+		usort( $candidates, function( $a, $b ) {
+			return $b['score'] <=> $a['score'];
+		} );
+		$top = array_slice( $candidates, 0, 5 );
+		$pick = $top[ array_rand( $top ) ];
+
+		$selected[] = $pick['post'];
+		$used_ids[] = $pick['post']->ID;
+	}
+
+	return $selected;
+}
+
+// ============================================
 // Homepage: Load more REST endpoint
 // ============================================
 add_action( 'rest_api_init', function() {
@@ -281,60 +420,65 @@ add_action( 'rest_api_init', function() {
 } );
 
 function pl_home_load_more( $request ) {
-	$page    = absint( $request->get_param( 'page' ) ?: 2 );
 	$exclude = array_filter( array_map( 'absint', explode( ',', $request->get_param( 'exclude' ) ?: '' ) ) );
+	$count   = absint( get_theme_mod( 'pl_grid_count', 9 ) );
 
-	$query = new WP_Query( array(
-		'posts_per_page' => 9,
-		'paged'          => $page,
+	$grid_posts = pl_get_smart_grid_posts( $count, $exclude );
+
+	// Determine if there are more posts beyond what we just picked.
+	$all_exclude = array_merge( $exclude, wp_list_pluck( $grid_posts, 'ID' ) );
+	$remaining   = new WP_Query( array(
+		'posts_per_page' => 1,
 		'post_status'    => 'publish',
-		'post__not_in'   => $exclude,
+		'post__not_in'   => $all_exclude,
+		'fields'         => 'ids',
 	) );
+	$has_more = $remaining->have_posts();
+	wp_reset_postdata();
 
 	ob_start();
-	if ( $query->have_posts() ) :
-		while ( $query->have_posts() ) :
-			$query->the_post();
-			$cats      = get_the_category();
-			$cat       = ! empty( $cats ) ? $cats[0] : null;
-			$color     = $cat ? pl_get_cat_color( $cat->slug ) : '#888';
-			$icon      = $cat ? pl_get_cat_icon( $cat->slug ) : "\xF0\x9F\x93\x8C";
-			$read_time = max( 1, ceil( str_word_count( wp_strip_all_tags( get_the_content() ) ) / 200 ) );
-			?>
-			<article class="pl-card" data-cat="<?php echo esc_attr( $cat ? $cat->slug : '' ); ?>">
-				<a href="<?php the_permalink(); ?>" class="pl-card-link">
-					<div class="pl-card-media">
-						<?php if ( has_post_thumbnail() ) :
-							the_post_thumbnail( 'medium_large', array(
-								'class'    => 'pl-card-img',
-								'loading'  => 'lazy',
-								'decoding' => 'async',
-							) );
-						endif; ?>
-						<span class="pl-card-cat" style="color:<?php echo esc_attr( $color ); ?>">
-							<?php echo esc_html( $cat ? $cat->name : '' ); ?>
+	foreach ( $grid_posts as $post ) :
+		setup_postdata( $post );
+		$cats      = get_the_category( $post->ID );
+		$cat       = ! empty( $cats ) ? $cats[0] : null;
+		$color     = $cat ? pl_get_cat_color( $cat->slug ) : '#888';
+		$icon      = $cat ? pl_get_cat_icon( $cat->slug ) : "\xF0\x9F\x93\x8C";
+		$read_time = max( 1, ceil( str_word_count( wp_strip_all_tags( $post->post_content ) ) / 200 ) );
+		?>
+		<article class="pl-card" data-cat="<?php echo esc_attr( $cat ? $cat->slug : '' ); ?>">
+			<a href="<?php echo esc_url( get_permalink( $post->ID ) ); ?>" class="pl-card-link">
+				<div class="pl-card-media">
+					<?php if ( has_post_thumbnail( $post->ID ) ) :
+						echo get_the_post_thumbnail( $post->ID, 'medium_large', array(
+							'class'    => 'pl-card-img',
+							'loading'  => 'lazy',
+							'decoding' => 'async',
+						) );
+					endif; ?>
+					<span class="pl-card-cat" style="color:<?php echo esc_attr( $color ); ?>">
+						<?php echo esc_html( $cat ? $cat->name : '' ); ?>
+					</span>
+				</div>
+				<div class="pl-card-body">
+					<h3 class="pl-card-title"><?php echo esc_html( $post->post_title ); ?></h3>
+					<div class="pl-card-footer">
+						<span class="pl-card-meta">
+							<span class="pl-card-meta-icon" style="background:<?php echo esc_attr( $color ); ?>22"><?php echo $icon; ?></span>
+							<?php echo esc_html( $read_time ); ?> min read
 						</span>
 					</div>
-					<div class="pl-card-body">
-						<h3 class="pl-card-title"><?php the_title(); ?></h3>
-						<div class="pl-card-footer">
-							<span class="pl-card-meta">
-								<span class="pl-card-meta-icon" style="background:<?php echo esc_attr( $color ); ?>22"><?php echo $icon; ?></span>
-								<?php echo esc_html( $read_time ); ?> min read
-							</span>
-						</div>
-					</div>
-				</a>
-			</article>
-			<?php
-		endwhile;
-	endif;
+				</div>
+			</a>
+		</article>
+		<?php
+	endforeach;
 	wp_reset_postdata();
 	$html = ob_get_clean();
 
 	return array(
 		'html'     => $html,
-		'has_more' => $query->max_num_pages > $page,
+		'has_more' => $has_more,
+		'exclude'  => implode( ',', $all_exclude ),
 	);
 }
 

@@ -76,14 +76,8 @@ if ( $pl_hero_show ) {
 	$hero_ids = wp_list_pluck( $hero_posts, 'ID' );
 }
 
-// Grid posts (skip the hero ones).
-$grid_query = new WP_Query( array(
-	'posts_per_page' => $pl_grid_count,
-	'post_status'    => 'publish',
-	'post__not_in'   => $hero_ids,
-	'orderby'        => 'date',
-	'order'          => 'DESC',
-) );
+// Grid posts — smart selection: one per category, engagement-weighted.
+$grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 ?>
 
 <div class="pl-home">
@@ -199,18 +193,19 @@ $grid_query = new WP_Query( array(
 	<!-- ========== POST GRID ========== -->
 	<section class="pl-container">
 		<div class="pl-post-grid" id="plPostGrid" style="grid-template-columns:repeat(<?php echo esc_attr( $pl_grid_columns ); ?>,1fr)">
-			<?php if ( $grid_query->have_posts() ) : while ( $grid_query->have_posts() ) : $grid_query->the_post();
-				$g_cats    = get_the_category();
+			<?php foreach ( $grid_posts as $g_post ) :
+				setup_postdata( $g_post );
+				$g_cats    = get_the_category( $g_post->ID );
 				$g_cat     = ! empty( $g_cats ) ? $g_cats[0] : null;
 				$g_color   = $g_cat ? pl_get_cat_color( $g_cat->slug ) : '#888';
 				$g_icon    = $g_cat ? pl_get_cat_icon( $g_cat->slug ) : "\xF0\x9F\x93\x8C";
-				$read_time = max( 1, ceil( str_word_count( wp_strip_all_tags( get_the_content() ) ) / 200 ) );
+				$read_time = max( 1, ceil( str_word_count( wp_strip_all_tags( $g_post->post_content ) ) / 200 ) );
 			?>
 			<article class="pl-card" data-cat="<?php echo esc_attr( $g_cat ? $g_cat->slug : '' ); ?>">
-				<a href="<?php the_permalink(); ?>" class="pl-card-link">
+				<a href="<?php echo esc_url( get_permalink( $g_post->ID ) ); ?>" class="pl-card-link">
 					<div class="pl-card-media" style="height:<?php echo esc_attr( $pl_grid_img_height ); ?>px">
-						<?php if ( has_post_thumbnail() ) :
-							the_post_thumbnail( 'medium_large', array(
+						<?php if ( has_post_thumbnail( $g_post->ID ) ) :
+							echo get_the_post_thumbnail( $g_post->ID, 'medium_large', array(
 								'class'    => 'pl-card-img',
 								'loading'  => 'lazy',
 								'decoding' => 'async',
@@ -223,7 +218,7 @@ $grid_query = new WP_Query( array(
 						<?php endif; ?>
 					</div>
 					<div class="pl-card-body">
-						<h3 class="pl-card-title"><?php the_title(); ?></h3>
+						<h3 class="pl-card-title"><?php echo esc_html( $g_post->post_title ); ?></h3>
 						<?php if ( $pl_grid_readtime ) : ?>
 						<div class="pl-card-footer">
 							<span class="pl-card-meta">
@@ -235,14 +230,14 @@ $grid_query = new WP_Query( array(
 					</div>
 				</a>
 			</article>
-			<?php endwhile; endif; wp_reset_postdata(); ?>
+			<?php endforeach; wp_reset_postdata(); ?>
 		</div>
 
 		<?php if ( $pl_grid_loadmore ) : ?>
 		<!-- Load More -->
 		<div class="pl-loadmore-wrap">
-			<button class="pl-loadmore" id="plLoadMore" data-page="2"
-			        data-exclude="<?php echo esc_attr( implode( ',', $hero_ids ) ); ?>">
+			<button class="pl-loadmore" id="plLoadMore"
+			        data-exclude="<?php echo esc_attr( implode( ',', array_merge( $hero_ids, wp_list_pluck( $grid_posts, 'ID' ) ) ) ); ?>">
 				<?php echo esc_html( $pl_grid_loadmore_text ); ?>
 			</button>
 		</div>
@@ -307,19 +302,18 @@ $grid_query = new WP_Query( array(
 	if(btn){
 		var loadText=<?php echo wp_json_encode( $pl_grid_loadmore_text ); ?>;
 		btn.addEventListener('click',function(){
-			var page=parseInt(this.dataset.page);
 			var exclude=this.dataset.exclude;
 			this.textContent='Loading...';
 			this.disabled=true;
 			var xhr=new XMLHttpRequest();
-			xhr.open('GET',<?php echo wp_json_encode( esc_url_raw( rest_url( 'pl/v1/home-posts' ) ) ); ?>+'?page='+page+'&exclude='+exclude);
+			xhr.open('GET',<?php echo wp_json_encode( esc_url_raw( rest_url( 'pl/v1/home-posts' ) ) ); ?>+'?exclude='+exclude);
 			xhr.onload=function(){
 				if(xhr.status===200){
 					var data=JSON.parse(xhr.responseText);
 					if(data.html){
 						document.getElementById('plPostGrid').insertAdjacentHTML('beforeend',data.html);
 						cards=document.querySelectorAll('.pl-card');
-						btn.dataset.page=page+1;
+						if(data.exclude){btn.dataset.exclude=data.exclude}
 						btn.textContent=loadText;
 						btn.disabled=false;
 						if(!data.has_more){btn.parentElement.style.display='none'}

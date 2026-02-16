@@ -339,6 +339,10 @@ function plt_collect_data($request) {
         $data_dir . '/' . uniqid('v3_') . '.json',
         json_encode($session, JSON_PRETTY_PRINT)
     );
+
+    // Invalidate homepage engagement scores cache so smart grid picks up new data.
+    delete_transient( 'pl_post_engagement_scores' );
+
     return new WP_REST_Response(['ok' => true], 200);
 }
 
