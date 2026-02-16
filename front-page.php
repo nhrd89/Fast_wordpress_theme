@@ -93,12 +93,18 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 					$main_cat  = ! empty( $main_cats ) ? $main_cats[0] : null;
 				?>
 				<a href="<?php echo esc_url( get_permalink( $main->ID ) ); ?>" class="pl-bento-main">
-					<?php echo get_the_post_thumbnail( $main->ID, 'large', array(
-						'class'         => 'pl-bento-img',
-						'loading'       => 'eager',
-						'fetchpriority' => 'high',
-						'decoding'      => 'async',
-					) ); ?>
+					<?php if ( has_post_thumbnail( $main->ID ) ) :
+						echo get_the_post_thumbnail( $main->ID, 'large', array(
+							'class'         => 'pl-bento-img',
+							'loading'       => 'eager',
+							'fetchpriority' => 'high',
+							'decoding'      => 'async',
+						) );
+					else :
+						$main_color = $main_cat ? pl_get_cat_color( $main_cat->slug ) : '#888';
+					?>
+						<div class="pl-bento-img-placeholder" style="background:linear-gradient(135deg,<?php echo esc_attr( $main_color ); ?>44,<?php echo esc_attr( $main_color ); ?>88)"></div>
+					<?php endif; ?>
 					<div class="pl-bento-overlay">
 						<?php if ( $pl_hero_badge ) : ?>
 						<span class="pl-bento-badge"><?php echo esc_html( $pl_hero_badge ); ?></span>
@@ -120,11 +126,15 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 					$p_color = $p_cat ? pl_get_cat_color( $p_cat->slug ) : '#888';
 				?>
 				<a href="<?php echo esc_url( get_permalink( $p->ID ) ); ?>" class="pl-bento-sm">
-					<?php echo get_the_post_thumbnail( $p->ID, 'medium_large', array(
-						'class'    => 'pl-bento-img',
-						'loading'  => $i <= 2 ? 'eager' : 'lazy',
-						'decoding' => 'async',
-					) ); ?>
+					<?php if ( has_post_thumbnail( $p->ID ) ) :
+						echo get_the_post_thumbnail( $p->ID, 'medium_large', array(
+							'class'    => 'pl-bento-img',
+							'loading'  => $i <= 2 ? 'eager' : 'lazy',
+							'decoding' => 'async',
+						) );
+					else : ?>
+						<div class="pl-bento-img-placeholder" style="background:linear-gradient(135deg,<?php echo esc_attr( $p_color ); ?>44,<?php echo esc_attr( $p_color ); ?>88)"></div>
+					<?php endif; ?>
 					<div class="pl-bento-overlay pl-bento-overlay-sm">
 						<span class="pl-bento-cat" style="background:<?php echo esc_attr( $p_color ); ?>cc">
 							<?php echo esc_html( $p_cat ? $p_cat->name : '' ); ?>
@@ -210,7 +220,9 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 								'loading'  => 'lazy',
 								'decoding' => 'async',
 							) );
-						endif; ?>
+						else : ?>
+							<div class="pl-card-img-placeholder" style="background:linear-gradient(135deg,<?php echo esc_attr( $g_color ); ?>22,<?php echo esc_attr( $g_color ); ?>44)"></div>
+						<?php endif; ?>
 						<?php if ( $pl_grid_cat_badge ) : ?>
 						<span class="pl-card-cat" style="color:<?php echo esc_attr( $g_color ); ?>">
 							<?php echo esc_html( $g_cat ? $g_cat->name : '' ); ?>
