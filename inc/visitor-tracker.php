@@ -2931,52 +2931,28 @@ else setTimeout(init,300);
 // ============================================
 // GA4 CLIENT-SIDE PAGE_VIEW BEACON (all pages)
 // Sends page_view from visitor's browser so GA4 gets real IP for geo.
+// NOT inside is_singular() — fires on home, category, single, archive.
 // ============================================
 add_action('wp_footer', function() {
     if (!PLT_ACTIVE) return;
-    $ga4_id = get_theme_mod('pl_ga4_measurement_id', '');
-    $ga4_secret = get_theme_mod('pl_ga4_api_secret', '');
-    $ga4_enabled = get_theme_mod('pl_ga4_enabled', false);
-    if (!$ga4_enabled || !$ga4_id || !$ga4_secret) return;
+    $ga4mid = get_theme_mod('pl_ga4_measurement_id', '');
+    $ga4sec = get_theme_mod('pl_ga4_api_secret', '');
+    $ga4on  = get_theme_mod('pl_ga4_enabled', false);
+    if (!$ga4on || !$ga4mid || !$ga4sec) return;
     ?>
 <script>
-// ─── GA4 Client-Side Beacon ───
-(function(){
-    var cid;
-    try {
-        cid = localStorage.getItem('pl_ga4cid');
-        if (!cid) {
-            var hash = Math.floor(Math.random() * 2147483647) + 1;
-            var ts = Math.floor(Date.now() / 1000);
-            cid = hash + '.' + ts;
-            localStorage.setItem('pl_ga4cid', cid);
-        }
-    } catch(e) {
-        cid = Math.floor(Math.random() * 2147483647) + '.' + Math.floor(Date.now() / 1000);
+;(function(){
+    var c;
+    try{c=localStorage.getItem('pl_ga4cid')}catch(e){}
+    if(!c){
+        c=(Math.floor(Math.random()*2147483647)+1)+'.'+Math.floor(Date.now()/1000);
+        try{localStorage.setItem('pl_ga4cid',c)}catch(e){}
     }
-    var url = 'https://www.google-analytics.com/mp/collect'
-        + '?measurement_id=<?php echo esc_js($ga4_id); ?>'
-        + '&api_secret=<?php echo esc_js($ga4_secret); ?>';
-    var payload = JSON.stringify({
-        client_id: cid,
-        events: [{
-            name: 'page_view',
-            params: {
-                page_location: location.href,
-                page_title: document.title,
-                page_referrer: document.referrer || '',
-                engagement_time_msec: 100,
-                session_id: cid.split('.')[1],
-                language: navigator.language || ''
-            }
-        }]
-    });
-    if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, new Blob([payload], {type:'application/json'}));
-    } else {
-        fetch(url, {method:'POST', body:payload, keepalive:true}).catch(function(){});
+    var u='https://www.google-analytics.com/mp/collect?measurement_id=<?php echo esc_js($ga4mid); ?>&api_secret=<?php echo esc_js($ga4sec); ?>';
+    var p=JSON.stringify({client_id:c,events:[{name:'page_view',params:{page_location:location.href,page_title:document.title,page_referrer:document.referrer||'',engagement_time_msec:'100',session_id:c.split('.')[1]}}]});
+    if(navigator.sendBeacon){
+        navigator.sendBeacon(u,new Blob([p],{type:'application/json'}));
     }
-    try { localStorage.setItem('plt_ga4cid', cid); } catch(e) {}
 })();
 </script>
 <?php
