@@ -200,6 +200,118 @@ function pinlightning_meta_description() {
 }
 add_action( 'wp_head', 'pinlightning_meta_description', 1 );
 
+// ============================================
+// Homepage: Category icon/color helpers
+// ============================================
+function pl_get_cat_icon( $slug ) {
+	$icons = array(
+		'fashion' => "\xF0\x9F\x91\x97", 'home-decor' => "\xF0\x9F\x8F\xA0", 'architecture' => "\xF0\x9F\x8F\x9B\xEF\xB8\x8F",
+		'hairstyles' => "\xF0\x9F\x92\x87\xE2\x80\x8D\xE2\x99\x80\xEF\xB8\x8F", 'bridal' => "\xF0\x9F\x92\x8D", 'garden' => "\xF0\x9F\x8C\xBF",
+		'travel' => "\xE2\x9C\x88\xEF\xB8\x8F", 'wallpapers' => "\xF0\x9F\x8E\xA8", 'home' => "\xF0\x9F\x8F\xA0",
+		'decor' => "\xF0\x9F\x8F\xA0", 'hair' => "\xF0\x9F\x92\x87\xE2\x80\x8D\xE2\x99\x80\xEF\xB8\x8F", 'wedding' => "\xF0\x9F\x92\x8D",
+		'beauty' => "\xF0\x9F\x92\x84", 'lifestyle' => "\xE2\x9C\xA8", 'interior' => "\xF0\x9F\x9B\x8B\xEF\xB8\x8F",
+		'outdoor' => "\xF0\x9F\x8C\xB3", 'diy' => "\xF0\x9F\x94\xA8", 'food' => "\xF0\x9F\x8D\xBD\xEF\xB8\x8F",
+	);
+	if ( isset( $icons[ $slug ] ) ) {
+		return $icons[ $slug ];
+	}
+	foreach ( $icons as $key => $icon ) {
+		if ( strpos( $slug, $key ) !== false || strpos( $key, $slug ) !== false ) {
+			return $icon;
+		}
+	}
+	return "\xF0\x9F\x93\x8C";
+}
+
+function pl_get_cat_color( $slug ) {
+	$colors = array(
+		'fashion' => '#e84393', 'home-decor' => '#6c5ce7', 'architecture' => '#0984e3',
+		'hairstyles' => '#e17055', 'bridal' => '#d63031', 'garden' => '#00b894',
+		'travel' => '#0984e3', 'wallpapers' => '#e17055', 'home' => '#6c5ce7',
+		'decor' => '#6c5ce7', 'hair' => '#e17055', 'wedding' => '#d63031',
+		'beauty' => '#e84393', 'lifestyle' => '#6c5ce7', 'interior' => '#0984e3',
+		'outdoor' => '#00b894', 'diy' => '#f39c12', 'food' => '#e17055',
+	);
+	if ( isset( $colors[ $slug ] ) ) {
+		return $colors[ $slug ];
+	}
+	foreach ( $colors as $key => $color ) {
+		if ( strpos( $slug, $key ) !== false || strpos( $key, $slug ) !== false ) {
+			return $color;
+		}
+	}
+	return '#888';
+}
+
+// ============================================
+// Homepage: Load more REST endpoint
+// ============================================
+add_action( 'rest_api_init', function() {
+	register_rest_route( 'pl/v1', '/home-posts', array(
+		'methods'             => 'GET',
+		'callback'            => 'pl_home_load_more',
+		'permission_callback' => '__return_true',
+	) );
+} );
+
+function pl_home_load_more( $request ) {
+	$page    = absint( $request->get_param( 'page' ) ?: 2 );
+	$exclude = array_filter( array_map( 'absint', explode( ',', $request->get_param( 'exclude' ) ?: '' ) ) );
+
+	$query = new WP_Query( array(
+		'posts_per_page' => 9,
+		'paged'          => $page,
+		'post_status'    => 'publish',
+		'post__not_in'   => $exclude,
+	) );
+
+	ob_start();
+	if ( $query->have_posts() ) :
+		while ( $query->have_posts() ) :
+			$query->the_post();
+			$cats      = get_the_category();
+			$cat       = ! empty( $cats ) ? $cats[0] : null;
+			$color     = $cat ? pl_get_cat_color( $cat->slug ) : '#888';
+			$icon      = $cat ? pl_get_cat_icon( $cat->slug ) : "\xF0\x9F\x93\x8C";
+			$read_time = max( 1, ceil( str_word_count( wp_strip_all_tags( get_the_content() ) ) / 200 ) );
+			?>
+			<article class="pl-card" data-cat="<?php echo esc_attr( $cat ? $cat->slug : '' ); ?>">
+				<a href="<?php the_permalink(); ?>" class="pl-card-link">
+					<div class="pl-card-media">
+						<?php if ( has_post_thumbnail() ) :
+							the_post_thumbnail( 'medium_large', array(
+								'class'    => 'pl-card-img',
+								'loading'  => 'lazy',
+								'decoding' => 'async',
+							) );
+						endif; ?>
+						<span class="pl-card-cat" style="color:<?php echo esc_attr( $color ); ?>">
+							<?php echo esc_html( $cat ? $cat->name : '' ); ?>
+						</span>
+					</div>
+					<div class="pl-card-body">
+						<h3 class="pl-card-title"><?php the_title(); ?></h3>
+						<div class="pl-card-footer">
+							<span class="pl-card-meta">
+								<span class="pl-card-meta-icon" style="background:<?php echo esc_attr( $color ); ?>22"><?php echo $icon; ?></span>
+								<?php echo esc_html( $read_time ); ?> min read
+							</span>
+						</div>
+					</div>
+				</a>
+			</article>
+			<?php
+		endwhile;
+	endif;
+	wp_reset_postdata();
+	$html = ob_get_clean();
+
+	return array(
+		'html'     => $html,
+		'has_more' => $query->max_num_pages > $page,
+	);
+}
+
 // Load helper files.
 require_once PINLIGHTNING_DIR . '/inc/template-tags.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer.php';

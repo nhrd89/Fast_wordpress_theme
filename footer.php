@@ -2,7 +2,7 @@
 /**
  * The footer template.
  *
- * 3-column footer.
+ * 4-column footer with brand, categories, about, and legal links.
  *
  * @package PinLightning
  * @since 1.0.0
@@ -10,55 +10,73 @@
 ?>
 </main><!-- #primary -->
 
-<footer class="site-footer" role="contentinfo">
-	<div class="footer-inner">
-		<div class="footer-columns">
-			<div class="footer-col footer-about">
-				<h3 class="footer-heading"><?php esc_html_e( 'About', 'pinlightning' ); ?></h3>
-				<p><?php echo esc_html( get_bloginfo( 'description' ) ); ?></p>
-			</div>
-
-			<div class="footer-col footer-links">
-				<h3 class="footer-heading"><?php esc_html_e( 'Quick Links', 'pinlightning' ); ?></h3>
-				<?php
-				wp_nav_menu( array(
-					'theme_location' => 'footer',
-					'menu_id'        => 'footer-menu',
-					'container'      => false,
-					'fallback_cb'    => false,
-					'depth'          => 1,
-				) );
-				?>
-			</div>
-
-			<div class="footer-col footer-social">
-				<h3 class="footer-heading"><?php esc_html_e( 'Follow Us', 'pinlightning' ); ?></h3>
-				<div class="social-links">
+<footer class="pl-footer" role="contentinfo">
+	<div class="pl-container">
+		<div class="pl-footer-grid">
+			<!-- Brand -->
+			<div class="pl-footer-brand">
+				<div class="pl-footer-logo">
+					<span class="pl-footer-logo-icon">&#x26A1;</span>
+					<span class="pl-footer-logo-text">cheerlives</span>
+				</div>
+				<p class="pl-footer-about">Your daily destination for curated style, home design, beauty, and lifestyle inspiration from Pinterest and beyond.</p>
+				<div class="pl-footer-social">
 					<?php
 					$social_links = array(
-						'pinlightning_pinterest_url'  => 'Pinterest',
-						'pinlightning_instagram_url'  => 'Instagram',
-						'pinlightning_facebook_url'   => 'Facebook',
-						'pinlightning_twitter_url'    => 'X / Twitter',
+						'pinlightning_pinterest_url' => 'Pinterest',
+						'pinlightning_instagram_url' => 'Instagram',
+						'pinlightning_facebook_url'  => 'Facebook',
+						'pinlightning_twitter_url'   => 'X / Twitter',
 					);
 					foreach ( $social_links as $mod => $label ) :
 						$url = get_theme_mod( $mod, '' );
 						if ( $url ) :
-							?>
-							<a href="<?php echo esc_url( $url ); ?>" class="social-link" target="_blank" rel="noopener noreferrer">
-								<?php echo esc_html( $label ); ?>
-							</a>
-						<?php endif; ?>
+					?>
+						<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $label ); ?></a>
+					<?php endif; ?>
 					<?php endforeach; ?>
 				</div>
 			</div>
+
+			<!-- Categories -->
+			<div>
+				<h4 class="pl-footer-heading">Categories</h4>
+				<ul class="pl-footer-links">
+					<?php
+					$footer_cats = get_categories( array( 'orderby' => 'count', 'order' => 'DESC', 'number' => 6, 'hide_empty' => true ) );
+					foreach ( $footer_cats as $fc ) :
+					?>
+					<li><a href="<?php echo esc_url( get_category_link( $fc->term_id ) ); ?>"><?php echo esc_html( $fc->name ); ?></a></li>
+					<?php endforeach; ?>
+				</ul>
+			</div>
+
+			<!-- About -->
+			<div>
+				<h4 class="pl-footer-heading">About</h4>
+				<ul class="pl-footer-links">
+					<li><a href="<?php echo esc_url( home_url( '/about' ) ); ?>">About Us</a></li>
+					<li><a href="<?php echo esc_url( home_url( '/contact' ) ); ?>">Contact</a></li>
+				</ul>
+			</div>
+
+			<!-- Legal -->
+			<div>
+				<h4 class="pl-footer-heading">Legal</h4>
+				<ul class="pl-footer-links">
+					<li><a href="<?php echo esc_url( get_privacy_policy_url() ); ?>">Privacy Policy</a></li>
+					<li><a href="<?php echo esc_url( home_url( '/terms' ) ); ?>">Terms of Use</a></li>
+					<li><a href="<?php echo esc_url( home_url( '/disclaimer' ) ); ?>">Disclaimer</a></li>
+					<li><a href="<?php echo esc_url( home_url( '/affiliate-disclosure' ) ); ?>">Affiliate Disclosure</a></li>
+				</ul>
+			</div>
 		</div>
 
-		<div class="footer-bottom">
-			<p class="copyright">&copy; <?php echo esc_html( date_i18n( 'Y' ) ); ?> <a href="<?php echo esc_url( home_url( '/' ) ); ?>" aria-label="<?php esc_attr_e( 'Home', 'pinlightning' ); ?>"><?php bloginfo( 'name' ); ?></a></p>
+		<div class="pl-footer-bottom">
+			<span>&copy; <?php echo esc_html( gmdate( 'Y' ) ); ?> Cheerlives. All rights reserved.</span>
+			<span>Made with &#x26A1; by PinLightning</span>
 		</div>
 	</div>
-
 </footer>
 
 <?php wp_footer(); ?>
