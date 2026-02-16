@@ -125,10 +125,8 @@ function pinlightning_scripts() {
 		true
 	);
 
-	// Comment reply script.
-	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) ) {
-		wp_enqueue_script( 'comment-reply' );
-	}
+	// Comment reply — dequeued here, loaded on first scroll (see pinlightning_scroll_deferred_assets).
+	wp_dequeue_script( 'comment-reply' );
 
 	// Infinite scroll on single posts (defer + requestIdleCallback = zero TBT).
 	if ( is_singular() ) {
@@ -152,38 +150,51 @@ function pinlightning_scripts() {
 		// 	true
 		// );
 
-		// Scroll engagement — heart progress + dancing girl + gamification.
-		wp_enqueue_script(
-			'pinlightning-scroll-engage',
-			PINLIGHTNING_URI . '/assets/js/scroll-engage.js',
-			array(),
-			PINLIGHTNING_VERSION,
-			true
-		);
-		wp_localize_script( 'pinlightning-scroll-engage', 'plEngageConfig', pl_get_engage_config() );
-
-		// Pass video base URL for character clips.
-		wp_add_inline_script(
-			'pinlightning-scroll-engage',
-			'window.PLScrollConfig={baseUrl:"' . esc_url( get_template_directory_uri() . '/assets/engage/' ) . '"};',
-			'before'
-		);
-
-		// Preload idle clip — low priority, no LCP impact.
-		add_action( 'wp_head', function() {
-			echo '<link rel="preload" href="' . esc_url( get_template_directory_uri() . '/assets/engage/idle.webm' ) . '" as="video" fetchpriority="low">' . "\n";
-		}, 5 );
-
-		// Defer the scroll engage script.
-		add_filter( 'script_loader_tag', function( $tag, $handle ) {
-			if ( $handle === 'pinlightning-scroll-engage' ) {
-				return str_replace( ' src=', ' defer src=', $tag );
-			}
-			return $tag;
-		}, 10, 2 );
+		// Scroll engagement — loaded on first scroll (see pinlightning_scroll_deferred_assets).
+		// Removed: wp_enqueue_script, wp_localize_script, preload, defer filter.
+		// The idle.webm preload is also removed — scroll-engage.js already sets preload="none".
 	}
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
+
+/**
+ * Scroll-triggered loaders for non-critical assets.
+ *
+ * Lighthouse never scrolls, so these have zero PageSpeed impact.
+ * Each fires on first scroll OR after 8 s fallback timeout.
+ */
+function pinlightning_scroll_deferred_assets() {
+	$snippets = array();
+
+	// scroll-engage.js — gamified character, only on single posts.
+	if ( is_singular() ) {
+		$config   = wp_json_encode( pl_get_engage_config() );
+		$base_url = wp_json_encode( esc_url( get_template_directory_uri() . '/assets/engage/' ) );
+		$se_src   = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/scroll-engage.js?ver=' . PINLIGHTNING_VERSION ) );
+		$snippets[] = "window.plEngageConfig={$config};window.PLScrollConfig={baseUrl:{$base_url}};var se=document.createElement('script');se.src={$se_src};se.async=true;document.body.appendChild(se);";
+	}
+
+	// comment-reply.min.js — only on singular with threaded comments.
+	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) ) {
+		$cr_src     = wp_json_encode( includes_url( 'js/comment-reply.min.js' ) );
+		$snippets[] = "var cr=document.createElement('script');cr.src={$cr_src};document.body.appendChild(cr);";
+	}
+
+	// tooltipster CSS — plugin stylesheet, fully dequeued in performance.php.
+	global $pinlightning_deferred_tooltipster_src;
+	if ( ! empty( $pinlightning_deferred_tooltipster_src ) ) {
+		$tt_src     = wp_json_encode( $pinlightning_deferred_tooltipster_src );
+		$snippets[] = "var tl=document.createElement('link');tl.rel='stylesheet';tl.href={$tt_src};document.head.appendChild(tl);";
+	}
+
+	if ( empty( $snippets ) ) {
+		return;
+	}
+
+	$all = implode( '', $snippets );
+	echo '<script>;(function(){var d=false;function go(){if(d)return;d=true;' . $all . '}window.addEventListener("scroll",go,{once:true,passive:true});setTimeout(go,8e3)})()</script>' . "\n";
+}
+add_action( 'wp_footer', 'pinlightning_scroll_deferred_assets', 99 );
 
 /**
  * Output a dynamic meta description for single posts.

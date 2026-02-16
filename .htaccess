@@ -2,7 +2,7 @@
 # Sets 1-year immutable cache for JS, CSS, fonts, and images served from the theme directory.
 
 <IfModule mod_headers.c>
-    <FilesMatch "\.(js|css|woff2?|ttf|eot|svg|jpg|jpeg|png|gif|webp|ico)$">
+    <FilesMatch "\.(js|css|woff2?|ttf|eot|svg|jpg|jpeg|png|gif|webp|webm|mp4|ico)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 </IfModule>
@@ -21,4 +21,6 @@
     ExpiresByType image/webp "access plus 1 year"
     ExpiresByType image/svg+xml "access plus 1 year"
     ExpiresByType image/x-icon "access plus 1 year"
+    ExpiresByType video/webm "access plus 1 year"
+    ExpiresByType video/mp4 "access plus 1 year"
 </IfModule>

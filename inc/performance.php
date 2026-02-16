@@ -96,10 +96,18 @@ function pinlightning_remove_bloat_styles() {
 		wp_deregister_style( 'dashicons' );
 	}
 
-	// Dequeue render-blocking third-party plugin CSS.
-	// These are re-added as non-blocking via style_loader_tag filter below.
+	// Fully dequeue tooltipster — loaded on first scroll via pinlightning_scroll_deferred_assets().
+	global $pinlightning_deferred_tooltipster_src;
+	if ( wp_style_is( 'smpush-smiotooltipster', 'enqueued' ) ) {
+		$styles = wp_styles();
+		if ( isset( $styles->registered['smpush-smiotooltipster'] ) ) {
+			$pinlightning_deferred_tooltipster_src = $styles->registered['smpush-smiotooltipster']->src;
+		}
+		wp_dequeue_style( 'smpush-smiotooltipster' );
+	}
+
+	// Defer remaining non-critical plugin CSS via media="print" onload trick.
 	$defer_styles = array(
-		'smpush-smiotooltipster',   // Smart Notification / SMIO Push
 		'wp-block-paragraph',       // WP core block paragraph
 	);
 	foreach ( $defer_styles as $handle ) {
@@ -119,7 +127,6 @@ function pinlightning_defer_plugin_styles( $tag, $handle, $src ) {
 	}
 
 	$defer_handles = array(
-		'smpush-smiotooltipster',
 		'wp-block-paragraph',
 	);
 
@@ -456,10 +463,8 @@ function pinlightning_optimize_scripts() {
 	wp_deregister_script( 'jquery-migrate' );
 	wp_deregister_script( 'jquery' );
 
-	// Dequeue comment-reply unless the post actually needs threaded comments.
-	if ( ! is_singular() || ! comments_open() || ! get_option( 'thread_comments' ) ) {
-		wp_dequeue_script( 'comment-reply' );
-	}
+	// Always dequeue comment-reply — loaded on first scroll via pinlightning_scroll_deferred_assets().
+	wp_dequeue_script( 'comment-reply' );
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_optimize_scripts', 100 );
 
