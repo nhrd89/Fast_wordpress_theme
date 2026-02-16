@@ -244,10 +244,11 @@ function pinlightning_rewrite_featured_image_cdn( $html, $post_id, $post_thumbna
 	// Build resized src (720px default, q=65 for faster LCP download).
 	$new_src = $base_url . '&w=720&q=65';
 
-	// Build srcset — 360w, 480w, 720w. 480w serves mobile (412px Moto G).
+	// Build srcset — 240w, 360w, 480w, 720w. Progressive quality scaling.
 	$srcset = implode( ', ', array(
-		$base_url . '&w=360&q=65 360w',
-		$base_url . '&w=480&q=65 480w',
+		$base_url . '&w=240&q=50 240w',
+		$base_url . '&w=360&q=55 360w',
+		$base_url . '&w=480&q=60 480w',
 		$base_url . '&w=720&q=65 720w',
 	) );
 
@@ -469,9 +470,10 @@ function pinlightning_rewrite_cdn_img( $matches ) {
 	// Build resized src (665px — max content display width).
 	$new_src = $base_url . '&w=665&q=80';
 
-	// Build srcset with 3 widths (665w cap eliminates oversized downloads).
+	// Build srcset with 4 widths (665w cap eliminates oversized downloads).
 	$srcset = implode( ', ', array(
-		$base_url . '&w=360&q=80 360w',
+		$base_url . '&w=240&q=70 240w',
+		$base_url . '&w=360&q=75 360w',
 		$base_url . '&w=480&q=80 480w',
 		$base_url . '&w=665&q=80 665w',
 	) );

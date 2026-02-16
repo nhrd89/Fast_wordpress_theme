@@ -83,6 +83,7 @@ function ext_to_mime( $ext ) {
 		'jpeg' => 'image/jpeg',
 		'png'  => 'image/png',
 		'webp' => 'image/webp',
+		'avif' => 'image/avif',
 		'gif'  => 'image/gif',
 	);
 	return isset( $map[ $ext ] ) ? $map[ $ext ] : 'application/octet-stream';
@@ -93,6 +94,13 @@ function ext_to_mime( $ext ) {
  */
 function browser_accepts_webp() {
 	return isset( $_SERVER['HTTP_ACCEPT'] ) && strpos( $_SERVER['HTTP_ACCEPT'], 'image/webp' ) !== false;
+}
+
+/**
+ * Check if the browser supports AVIF.
+ */
+function browser_accepts_avif() {
+	return isset( $_SERVER['HTTP_ACCEPT'] ) && strpos( $_SERVER['HTTP_ACCEPT'], 'image/avif' ) !== false;
 }
 
 // ── Validate input ─────────────────────────────────────────────
@@ -134,8 +142,12 @@ if ( $w <= 0 && $h <= 0 ) {
 // ── Determine output format ────────────────────────────────────
 
 $output_ext = $ext;
-if ( $ext !== 'gif' && browser_accepts_webp() ) {
-	$output_ext = 'webp';
+if ( $ext !== 'gif' ) {
+	if ( browser_accepts_avif() && function_exists( 'imageavif' ) ) {
+		$output_ext = 'avif';
+	} elseif ( browser_accepts_webp() ) {
+		$output_ext = 'webp';
+	}
 }
 $output_mime = ext_to_mime( $output_ext );
 
@@ -269,6 +281,9 @@ switch ( $output_ext ) {
 	case 'png':
 		$png_quality = (int) round( ( 100 - $q ) * 9 / 100 );
 		imagepng( $dst_img, $cache_path, $png_quality );
+		break;
+	case 'avif':
+		imageavif( $dst_img, $cache_path, $q );
 		break;
 	case 'webp':
 		imagewebp( $dst_img, $cache_path, $q );

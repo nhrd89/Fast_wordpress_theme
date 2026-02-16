@@ -361,8 +361,9 @@ function pinlightning_preload_featured_image() {
 		// href must match the rendered img src (720w) for preload to hit cache.
 		$href   = $base_url . '&w=720&q=65';
 		$srcset = implode( ', ', array(
-			$base_url . '&w=360&q=65 360w',
-			$base_url . '&w=480&q=65 480w',
+			$base_url . '&w=240&q=50 240w',
+			$base_url . '&w=360&q=55 360w',
+			$base_url . '&w=480&q=60 480w',
 			$base_url . '&w=720&q=65 720w',
 		) );
 		$sizes = '(max-width: 480px) 100vw, 720px';
@@ -430,7 +431,8 @@ function pinlightning_preload_first_content_image() {
 
 		$href   = $base_url . '&w=665&q=80';
 		$srcset = implode( ', ', array(
-			$base_url . '&w=360&q=80 360w',
+			$base_url . '&w=240&q=70 240w',
+			$base_url . '&w=360&q=75 360w',
 			$base_url . '&w=480&q=80 480w',
 			$base_url . '&w=665&q=80 665w',
 		) );
@@ -456,8 +458,9 @@ function pinlightning_preload_first_content_image() {
 		// href must match the rendered img src (720w) for preload to hit cache.
 		$href   = $base_url . '&w=720&q=65';
 		$srcset = implode( ', ', array(
-			$base_url . '&w=360&q=65 360w',
-			$base_url . '&w=480&q=65 480w',
+			$base_url . '&w=240&q=50 240w',
+			$base_url . '&w=360&q=55 360w',
+			$base_url . '&w=480&q=60 480w',
 			$base_url . '&w=720&q=65 720w',
 		) );
 		$sizes = '(max-width: 480px) 100vw, 720px';
