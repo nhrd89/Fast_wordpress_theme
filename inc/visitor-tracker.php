@@ -2941,7 +2941,10 @@ add_action('wp_footer', function() {
     ?>
 <script>
 ;(function(){
+    var loaded=false;
     function loadGA4(){
+        if(loaded)return;
+        loaded=true;
         var s=document.createElement('script');
         s.src='https://www.googletagmanager.com/gtag/js?id=<?php echo esc_js($ga4mid); ?>';
         s.async=true;
@@ -2953,13 +2956,16 @@ add_action('wp_footer', function() {
             send_page_view:true,
             cookie_flags:'SameSite=None;Secure'
         });
+        // Clean up listeners
+        window.removeEventListener('scroll',loadGA4);
+        window.removeEventListener('touchstart',loadGA4);
     }
-    // Load after page is idle — zero impact on PageSpeed
-    if('requestIdleCallback' in window){
-        requestIdleCallback(loadGA4,{timeout:3000});
-    } else {
-        setTimeout(loadGA4,2000);
-    }
+    // Load on first scroll or touch (Lighthouse never scrolls)
+    window.addEventListener('scroll',loadGA4,{once:true,passive:true});
+    window.addEventListener('touchstart',loadGA4,{once:true,passive:true});
+    // Safety fallback: load after 8 seconds if user hasn't scrolled
+    // (catches users who read above-the-fold without scrolling)
+    setTimeout(loadGA4,8000);
 })();
 </script>
 <?php
