@@ -1291,6 +1291,19 @@
 .pl-card-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:#bbb}
 .pl-card-meta-icon{width:18px;height:18px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px}
 
+/* ====== PINTEREST SAVE BUTTON ====== */
+.pl-pin-wrap{position:relative;overflow:hidden}
+.pl-pin-btn{position:absolute;top:10px;right:10px;z-index:5;display:flex;align-items:center;gap:5px;background:#e60023;color:#fff;border:none;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;opacity:0;transform:translateY(-6px) scale(.95);transition:opacity .25s ease,transform .25s ease,background .15s ease;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.18);-webkit-tap-highlight-color:transparent}
+.pl-pin-btn svg{width:16px;height:16px;fill:#fff;flex-shrink:0}
+.pl-pin-wrap:hover .pl-pin-btn,.pl-pin-wrap:focus-within .pl-pin-btn{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.pl-pin-btn:hover{background:#ad081b;transform:translateY(0) scale(1.04)}
+.pl-pin-wrap.pl-pin-visible .pl-pin-btn{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.pl-pin-wrap.pl-pin-engaged .pl-pin-btn{animation:plPinNudge 2s ease .5s 1}
+@keyframes plPinNudge{0%,100%{transform:translateY(0) scale(1)}15%{transform:translateY(0) scale(1.08);box-shadow:0 3px 12px rgba(230,0,35,.35)}30%{transform:translateY(0) scale(1)}45%{transform:translateY(0) scale(1.05)}60%{transform:translateY(0) scale(1)}}
+.pl-pin-btn.pl-pin-saved{background:#00b894;pointer-events:none}
+@media(hover:hover){.pl-pin-btn::after{content:'Save for later';position:absolute;top:100%;right:0;margin-top:6px;background:rgba(0,0,0,.8);color:#fff;font-size:11px;font-weight:500;padding:4px 10px;border-radius:6px;white-space:nowrap;opacity:0;transform:translateY(-4px);transition:opacity .2s,transform .2s;pointer-events:none}.pl-pin-btn:hover::after{opacity:1;transform:translateY(0)}}
+.pl-pin-wrap[data-width="small"] .pl-pin-btn{display:none}
+
 /* Load More */
 .pl-loadmore-wrap{text-align:center;margin:32px 0}
 .pl-loadmore{padding:12px 36px;border-radius:12px;border:1.5px solid #ddd;background:#fff;font-size:13px;font-weight:600;color:#555;cursor:pointer;transition:all .2s}

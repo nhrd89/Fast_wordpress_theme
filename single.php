@@ -159,5 +159,42 @@ while ( have_posts() ) :
 
 <?php endwhile; ?>
 
+<?php if ( get_theme_mod( 'pl_pin_button_show', true ) && is_singular( 'post' ) ) : ?>
+<script>
+(function(){
+	var wraps=document.querySelectorAll('.pl-pin-wrap');
+	if(!wraps.length)return;
+	if('IntersectionObserver' in window){
+		var io=new IntersectionObserver(function(entries){
+			entries.forEach(function(e){
+				if(e.isIntersecting){setTimeout(function(){e.target.classList.add('pl-pin-visible')},1500)}
+				else{e.target.classList.remove('pl-pin-visible')}
+			});
+		},{threshold:0.5});
+		wraps.forEach(function(w){io.observe(w)});
+		var eo=new IntersectionObserver(function(entries){
+			entries.forEach(function(e){
+				if(e.isIntersecting){setTimeout(function(){
+					if(e.target.getBoundingClientRect().top<window.innerHeight)e.target.classList.add('pl-pin-engaged');
+				},2000)}
+			});
+		},{threshold:0.3});
+		wraps.forEach(function(w){eo.observe(w)});
+	}
+	var pinData={saves:0,images:[]};
+	document.addEventListener('click',function(e){
+		var btn=e.target.closest('.pl-pin-btn');
+		if(!btn)return;
+		btn.classList.add('pl-pin-saved');
+		btn.innerHTML='<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Saved!';
+		pinData.saves++;
+		var img=btn.getAttribute('data-img');
+		if(img)pinData.images.push(img);
+		window.__plPinData=pinData;
+	});
+})();
+</script>
+<?php endif; ?>
+
 <?php
 get_footer();

@@ -335,6 +335,17 @@ function plt_collect_data($request) {
         }
     }
 
+    // Pinterest pin saves
+    if (!empty($body['pin']) && is_array($body['pin'])) {
+        $session['pin_saves'] = [
+            'saves' => intval($body['pin']['saves'] ?? 0),
+            'images' => [],
+        ];
+        foreach (array_slice($body['pin']['images'] ?? [], 0, 20) as $img) {
+            $session['pin_saves']['images'][] = sanitize_text_field(substr($img, 0, 300));
+        }
+    }
+
     file_put_contents(
         $data_dir . '/' . uniqid('v3_') . '.json',
         json_encode($session, JSON_PRETTY_PRINT)
@@ -435,6 +446,9 @@ function plt_get_report($request) {
     $img_taps_by_depth = array_fill(0, 10, 0);
     $img_taps_by_section = [];
     $img_to_chat = 0;
+
+    // Pinterest
+    $pin_sessions = 0; $pin_total_saves = 0; $pin_images = [];
 
     foreach ($sessions as $s) {
         $dev=$s['device']??'unknown'; if(isset($devices[$dev])) $devices[$dev]++;
@@ -570,6 +584,16 @@ function plt_get_report($request) {
             $ci_nontappers_depths[] = $s['max_depth_pct'] ?? 0;
             $ci_nontappers_total++;
             if (!empty($s['returning'])) $ci_nontappers_return++;
+        }
+
+        // Pinterest saves
+        $ps = $s['pin_saves'] ?? [];
+        if (!empty($ps['saves'])) {
+            $pin_sessions++;
+            $pin_total_saves += intval($ps['saves']);
+            foreach ($ps['images'] ?? [] as $pi) {
+                $pin_images[$pi] = ($pin_images[$pi] ?? 0) + 1;
+            }
         }
 
         // Image interaction
@@ -853,6 +877,17 @@ function plt_get_report($request) {
                 return $z;
             })(),
             'taps_by_section' => !empty($img_taps_by_section) ? $img_taps_by_section : new \stdClass(),
+        ],
+
+        'pinterest' => [
+            'sessions_with_saves' => $pin_sessions,
+            'save_rate_pct' => $total > 0 ? round(($pin_sessions / $total) * 100, 1) : 0,
+            'total_saves' => $pin_total_saves,
+            'avg_saves_per_saver' => $pin_sessions > 0 ? round($pin_total_saves / $pin_sessions, 1) : 0,
+            'top_pinned_images' => (function() use ($pin_images) {
+                arsort($pin_images);
+                return array_slice($pin_images, 0, 10, true);
+            })(),
         ],
     ], 200);
 }
@@ -1226,6 +1261,26 @@ function plt_admin_dashboard() {
             <div class="plt-card"><h2><?php echo $pe['avg_engagement_score'] ?? 'N/A'; ?></h2><p>Engagement Score</p></div>
             <div class="plt-card orange"><h2><?php echo $pe['most_common_slowest_zone'] ?? 'N/A'; ?>%</h2><p>Slowest Zone</p></div>
         </div>
+    </div>
+
+    <!-- PINTEREST -->
+    <?php $pin = $data['pinterest'] ?? []; ?>
+    <div class="plt-section">
+        <h3>Pinterest Performance</h3>
+        <div class="plt-grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="plt-card"><h2><?php echo intval($pin['sessions_with_saves'] ?? 0); ?></h2><p>Sessions with Saves</p></div>
+            <div class="plt-card"><h2><?php echo floatval($pin['save_rate_pct'] ?? 0); ?>%</h2><p>Save Rate</p></div>
+            <div class="plt-card green"><h2><?php echo intval($pin['total_saves'] ?? 0); ?></h2><p>Total Saves</p></div>
+            <div class="plt-card"><h2><?php echo floatval($pin['avg_saves_per_saver'] ?? 0); ?></h2><p>Avg Saves/Saver</p></div>
+        </div>
+        <?php $top_pins = $pin['top_pinned_images'] ?? []; if (!empty($top_pins)) : ?>
+        <h4 style="margin-top:16px">Top Pinned Images</h4>
+        <table class="plt-table"><tr><th>Image</th><th>Saves</th></tr>
+        <?php foreach (array_slice($top_pins, 0, 5, true) as $img_url => $count) : ?>
+            <tr><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="<?php echo esc_url($img_url); ?>" target="_blank"><?php echo esc_html(basename($img_url)); ?></a></td><td><?php echo intval($count); ?></td></tr>
+        <?php endforeach; ?>
+        </table>
+        <?php endif; ?>
     </div>
 
     <!-- API ENDPOINT -->
@@ -1886,7 +1941,7 @@ function buildPayload(){
         sec:secData,td:TD,ei:EI,eng:ENG,
         lnk:LNK.slice(-50),img:imgData,cta:ctaData,
         az:AZ.slice(-50),pe:PE,qs:Math.round(qs*10)/10,
-        ci:window.__plt||null};
+        ci:window.__plt||null,pin:window.__plPinData||null};
 }
 
 function send(){

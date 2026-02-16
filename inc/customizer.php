@@ -366,6 +366,17 @@ function pinlightning_customize_register( $wp_customize ) {
 		'type'    => 'checkbox',
 	) );
 
+	$wp_customize->add_setting( 'pl_pin_button_show', array(
+		'default'           => true,
+		'sanitize_callback' => 'wp_validate_boolean',
+	) );
+	$wp_customize->add_control( 'pl_pin_button_show', array(
+		'label'       => __( 'Show Pinterest Save Buttons', 'pinlightning' ),
+		'description' => __( 'Display Save to Pinterest buttons on post images and homepage cards.', 'pinlightning' ),
+		'section'     => 'pl_home_grid',
+		'type'        => 'checkbox',
+	) );
+
 	// --- Explore by Category ---
 	$wp_customize->add_section( 'pl_home_explore', array(
 		'title'    => __( 'Explore Section', 'pinlightning' ),
