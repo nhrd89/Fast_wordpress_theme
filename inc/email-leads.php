@@ -342,6 +342,55 @@ function pl_chat_capture_email( $email, $session_data ) {
 	rest_do_request( $request );
 }
 
+// ─── CSV EXPORT (before any HTML output) ───
+add_action( 'admin_init', function() {
+	if ( ! isset( $_GET['page'] ) || $_GET['page'] !== 'pl-email-leads' ) return;
+	if ( ! isset( $_GET['export'] ) || $_GET['export'] !== 'csv' ) return;
+	if ( ! current_user_can( 'manage_options' ) ) return;
+
+	global $wpdb;
+	$table = $wpdb->prefix . 'pl_email_leads_v2';
+
+	$filter_status = sanitize_text_field( $_GET['status'] ?? 'all' );
+	$filter_source = sanitize_text_field( $_GET['source_filter'] ?? 'all' );
+	$filter_tag    = sanitize_text_field( $_GET['tag_filter'] ?? '' );
+
+	$where = 'WHERE 1=1';
+	$args  = [];
+	if ( $filter_status !== 'all' ) { $where .= $wpdb->prepare( ' AND status=%s', $filter_status ); }
+	if ( $filter_source !== 'all' ) { $where .= $wpdb->prepare( ' AND source=%s', $filter_source ); }
+	if ( $filter_tag )              { $where .= $wpdb->prepare( ' AND tags LIKE %s', '%' . $filter_tag . '%' ); }
+
+	$leads = $wpdb->get_results( "SELECT * FROM {$table} {$where} ORDER BY created_at DESC", ARRAY_A );
+
+	if ( ob_get_level() ) ob_end_clean();
+
+	header( 'Content-Type: text/csv; charset=utf-8' );
+	header( 'Content-Disposition: attachment; filename="email-leads-' . gmdate( 'Y-m-d' ) . '.csv"' );
+	header( 'Pragma: no-cache' );
+	header( 'Expires: 0' );
+
+	$out = fopen( 'php://output', 'w' );
+	fwrite( $out, "\xEF\xBB\xBF" );
+
+	fputcsv( $out, [ 'Email', 'Source', 'Status', 'Score', 'Device', 'Country', 'City',
+		'Scroll Depth', 'Active Time', 'Quality Score', 'Pattern', 'Interests', 'Tags',
+		'Returning', 'Sessions', 'Pin Saves', 'Referrer', 'Page', 'Date' ] );
+
+	foreach ( $leads as $l ) {
+		fputcsv( $out, [
+			$l['email'], $l['source'], $l['status'], $l['score'],
+			$l['device'], $l['country'], $l['city'],
+			$l['scroll_depth'], $l['active_time'], $l['quality_score'],
+			$l['scroll_pattern'], $l['interests'], $l['tags'],
+			$l['returning_visitor'], $l['total_sessions'], $l['pin_saves'],
+			$l['referrer'], $l['page_url'], $l['created_at'],
+		] );
+	}
+	fclose( $out );
+	exit;
+} );
+
 // ─── ADMIN MENU ───
 add_action( 'admin_menu', function() {
 	add_submenu_page(
@@ -357,6 +406,13 @@ add_action( 'admin_menu', function() {
 function pl_email_leads_page() {
 	global $wpdb;
 	$table = $wpdb->prefix . 'pl_email_leads_v2';
+
+	// Handle single delete
+	if ( isset( $_GET['delete_lead'] ) && wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'pl_delete_lead_' . absint( $_GET['delete_lead'] ) ) ) {
+		$del_id = absint( $_GET['delete_lead'] );
+		$wpdb->delete( $table, [ 'id' => $del_id ] );
+		echo '<div class="notice notice-success"><p>Lead deleted.</p></div>';
+	}
 
 	// Handle bulk actions
 	if ( isset( $_POST['pl_email_action'] ) && wp_verify_nonce( $_POST['pl_email_nonce'] ?? '', 'pl_email_manage' ) ) {
@@ -394,41 +450,6 @@ function pl_email_leads_page() {
 				}
 			}
 		}
-	}
-
-	// CSV export
-	if ( isset( $_GET['export'] ) && $_GET['export'] === 'csv' && current_user_can( 'manage_options' ) ) {
-		$f_status = sanitize_text_field( $_GET['status'] ?? 'all' );
-		$f_source = sanitize_text_field( $_GET['source_filter'] ?? 'all' );
-		$f_tag    = sanitize_text_field( $_GET['tag_filter'] ?? '' );
-
-		$where = '1=1';
-		$args  = [];
-		if ( $f_status !== 'all' ) { $where .= ' AND status=%s'; $args[] = $f_status; }
-		if ( $f_source !== 'all' ) { $where .= ' AND source=%s'; $args[] = $f_source; }
-		if ( $f_tag )              { $where .= ' AND tags LIKE %s'; $args[] = '%' . $f_tag . '%'; }
-
-		$query = "SELECT * FROM {$table} WHERE {$where} ORDER BY created_at DESC";
-		$leads = $args ? $wpdb->get_results( $wpdb->prepare( $query, ...$args ), ARRAY_A ) : $wpdb->get_results( $query, ARRAY_A );
-
-		header( 'Content-Type: text/csv' );
-		header( 'Content-Disposition: attachment; filename="email-leads-' . gmdate( 'Y-m-d' ) . '.csv"' );
-		$out = fopen( 'php://output', 'w' );
-		fputcsv( $out, [ 'Email', 'Source', 'Status', 'Score', 'Device', 'Country', 'City',
-			'Scroll Depth', 'Active Time', 'Quality Score', 'Pattern', 'Interests', 'Tags',
-			'Returning', 'Sessions', 'Pin Saves', 'Referrer', 'Page', 'Date' ] );
-		foreach ( $leads as $l ) {
-			fputcsv( $out, [
-				$l['email'], $l['source'], $l['status'], $l['score'],
-				$l['device'], $l['country'], $l['city'],
-				$l['scroll_depth'], $l['active_time'], $l['quality_score'],
-				$l['scroll_pattern'], $l['interests'], $l['tags'],
-				$l['returning_visitor'], $l['total_sessions'], $l['pin_saves'],
-				$l['referrer'], $l['page_url'], $l['created_at'],
-			] );
-		}
-		fclose( $out );
-		exit;
 	}
 
 	// Filters
@@ -581,11 +602,12 @@ function pl_email_leads_page() {
 						<th>Tags</th>
 						<th>Status</th>
 						<th>Date</th>
+						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody>
 				<?php if ( empty( $leads ) ) : ?>
-					<tr><td colspan="11" style="text-align:center;padding:40px;color:#aaa">No leads found</td></tr>
+					<tr><td colspan="12" style="text-align:center;padding:40px;color:#aaa">No leads found</td></tr>
 				<?php endif; ?>
 				<?php foreach ( $leads as $lead ) :
 					$score_color      = $lead->score >= 70 ? '#059669' : ( $lead->score >= 40 ? '#f59e0b' : '#9ca3af' );
@@ -654,6 +676,11 @@ function pl_email_leads_page() {
 					<td style="white-space:nowrap;font-size:12px;color:#888">
 						<?php echo esc_html( date( 'M j', strtotime( $lead->created_at ) ) ); ?><br>
 						<?php echo esc_html( date( 'H:i', strtotime( $lead->created_at ) ) ); ?>
+					</td>
+					<td>
+						<a href="<?php echo esc_url( wp_nonce_url( add_query_arg( [ 'delete_lead' => $lead->id ] ), 'pl_delete_lead_' . $lead->id ) ); ?>"
+						   onclick="return confirm('Delete this lead?')"
+						   style="color:#ef4444;font-size:11px;text-decoration:none">&#x1F5D1;&#xFE0F; Delete</a>
 					</td>
 				</tr>
 				<?php endforeach; ?>
