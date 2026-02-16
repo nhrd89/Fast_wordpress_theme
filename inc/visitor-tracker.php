@@ -427,7 +427,7 @@ function plt_collect_data($request) {
     delete_transient( 'pl_post_engagement_scores' );
 
     // Send to GA4 (non-blocking, zero performance impact)
-    pl_send_to_ga4($session);
+    pl_send_to_ga4($session, $_SERVER['REMOTE_ADDR'] ?? '');
 
     return new WP_REST_Response(['ok' => true], 200);
 }
