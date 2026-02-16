@@ -582,6 +582,11 @@ add_action( 'rest_api_init', function() {
 		'callback'            => 'pl_home_load_more',
 		'permission_callback' => '__return_true',
 	) );
+	register_rest_route( 'pl/v1', '/category-posts', array(
+		'methods'             => 'GET',
+		'callback'            => 'pl_rest_category_posts',
+		'permission_callback' => '__return_true',
+	) );
 } );
 
 function pl_home_load_more( $request ) {
@@ -645,6 +650,214 @@ function pl_home_load_more( $request ) {
 		'has_more' => $has_more,
 		'exclude'  => implode( ',', $all_exclude ),
 	);
+}
+
+// ============================================
+// Category page: Engagement-weighted post selection
+// ============================================
+
+/**
+ * Get engagement-weighted category posts.
+ *
+ * @param int    $cat_id Category term ID.
+ * @param string $sort   Sort mode: popular|latest|saved.
+ * @param int    $limit  Posts per page.
+ * @param int    $offset Pagination offset.
+ * @return array ['posts' => WP_Post[], 'has_more' => bool]
+ */
+function pl_get_category_posts( $cat_id, $sort = 'popular', $limit = 18, $offset = 0 ) {
+	$scores = get_transient( 'pl_post_engagement_scores' ) ?: array();
+
+	if ( $sort === 'latest' ) {
+		$query = new WP_Query( array(
+			'cat'            => $cat_id,
+			'posts_per_page' => $limit,
+			'offset'         => $offset,
+			'post_status'    => 'publish',
+			'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+			'orderby'        => 'date',
+			'order'          => 'DESC',
+		) );
+		return array(
+			'posts'    => $query->posts,
+			'has_more' => ( $offset + $limit ) < $query->found_posts,
+		);
+	}
+
+	if ( $sort === 'saved' ) {
+		$query = new WP_Query( array(
+			'cat'            => $cat_id,
+			'posts_per_page' => $limit,
+			'offset'         => $offset,
+			'post_status'    => 'publish',
+			'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+			'meta_key'       => '_pl_pin_saves',
+			'orderby'        => 'meta_value_num',
+			'order'          => 'DESC',
+		) );
+		// Fallback to date if no pin save data.
+		if ( empty( $query->posts ) ) {
+			$query = new WP_Query( array(
+				'cat'            => $cat_id,
+				'posts_per_page' => $limit,
+				'offset'         => $offset,
+				'post_status'    => 'publish',
+				'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+			) );
+		}
+		return array(
+			'posts'    => $query->posts,
+			'has_more' => ( $offset + $limit ) < $query->found_posts,
+		);
+	}
+
+	// --- POPULAR (default): Engagement-weighted random ---
+	$pool_size = max( 50, $limit * 3 );
+	$query     = new WP_Query( array(
+		'cat'            => $cat_id,
+		'posts_per_page' => $pool_size,
+		'post_status'    => 'publish',
+		'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+		'orderby'        => 'date',
+		'order'          => 'DESC',
+	) );
+
+	if ( empty( $query->posts ) ) {
+		return array( 'posts' => array(), 'has_more' => false );
+	}
+
+	// Score each post.
+	$scored = array();
+	foreach ( $query->posts as $post ) {
+		$base          = $scores[ $post->ID ] ?? 0;
+		$age_days      = max( 1, ( time() - strtotime( $post->post_date ) ) / DAY_IN_SECONDS );
+		$recency_boost = max( 0.1, 1 / log10( $age_days + 10 ) );
+		$comments      = $post->comment_count ?: 0;
+		$comment_boost = min( 0.5, $comments * 0.05 );
+
+		$scored[ $post->ID ] = max( 0.01, $base + $recency_boost + $comment_boost );
+	}
+
+	// Weighted random selection with deterministic daily seed.
+	$selected_ids = array();
+	$remaining    = $scored;
+	$need         = min( $limit, count( $remaining ) );
+	$skip         = $offset;
+
+	$seed = crc32( gmdate( 'Y-m-d' ) . '_cat_' . $cat_id );
+	mt_srand( $seed + $offset );
+
+	$attempts = 0;
+	while ( count( $selected_ids ) < $need + $skip && ! empty( $remaining ) && $attempts < 500 ) {
+		$total_weight = array_sum( $remaining );
+		if ( $total_weight <= 0 ) {
+			break;
+		}
+
+		$rand       = mt_rand( 0, (int) ( $total_weight * 1000 ) ) / 1000;
+		$cumulative = 0;
+
+		foreach ( $remaining as $pid => $weight ) {
+			$cumulative += $weight;
+			if ( $cumulative >= $rand ) {
+				$selected_ids[] = $pid;
+				unset( $remaining[ $pid ] );
+				break;
+			}
+		}
+		$attempts++;
+	}
+
+	// Apply offset.
+	$selected_ids = array_slice( $selected_ids, $skip, $limit );
+
+	// Get post objects in selected order.
+	$posts_map = array();
+	foreach ( $query->posts as $p ) {
+		$posts_map[ $p->ID ] = $p;
+	}
+
+	$result = array();
+	foreach ( $selected_ids as $pid ) {
+		if ( isset( $posts_map[ $pid ] ) ) {
+			$result[] = $posts_map[ $pid ];
+		}
+	}
+
+	$total_available = count( $query->posts );
+	$has_more        = ( $offset + $limit ) < $total_available;
+
+	return array( 'posts' => $result, 'has_more' => $has_more );
+}
+
+/**
+ * REST callback for category Load More.
+ */
+function pl_rest_category_posts( $request ) {
+	$cat_id = absint( $request->get_param( 'cat' ) );
+	$sort   = sanitize_text_field( $request->get_param( 'sort' ) ?: 'popular' );
+	$offset = absint( $request->get_param( 'offset' ) );
+
+	if ( ! $cat_id ) {
+		return new WP_REST_Response( array( 'error' => 'Missing category' ), 400 );
+	}
+
+	$data = pl_get_category_posts( $cat_id, $sort, 18, $offset );
+
+	ob_start();
+	foreach ( $data['posts'] as $post ) {
+		setup_postdata( $post );
+		$pid       = $post->ID;
+		$thumb_id  = get_post_thumbnail_id( $pid );
+		$permalink = get_permalink( $pid );
+		$title     = get_the_title( $pid );
+		$img_data  = $thumb_id ? wp_get_attachment_image_src( $thumb_id, 'medium_large' ) : null;
+		$img_full  = $img_data[0] ?? '';
+		$img_srcset = $thumb_id ? wp_get_attachment_image_srcset( $thumb_id, 'medium_large' ) : '';
+		$content   = get_the_content( null, false, $pid );
+		$words     = str_word_count( strip_tags( $content ) );
+		$read_time = max( 1, round( $words / 200 ) );
+		$pin_url   = 'https://www.pinterest.com/pin/create/button/?url=' . urlencode( $permalink ) . '&media=' . urlencode( $img_full ) . '&description=' . urlencode( $title );
+		$pin_saves = intval( get_post_meta( $pid, '_pl_pin_saves', true ) );
+		?>
+		<article class="pl-cat-card">
+			<?php if ( $img_full ) : ?>
+			<div class="pl-cat-card-img-wrap">
+				<a href="<?php echo esc_url( $permalink ); ?>">
+					<img class="pl-cat-card-img"
+					     src="<?php echo esc_url( $img_full ); ?>"
+					     <?php if ( $img_srcset ) : ?>srcset="<?php echo esc_attr( $img_srcset ); ?>" sizes="(max-width:580px) 100vw,(max-width:900px) 50vw,33vw"<?php endif; ?>
+					     alt="<?php echo esc_attr( $title ); ?>" loading="lazy" decoding="async" />
+				</a>
+				<a href="<?php echo esc_url( $pin_url ); ?>" class="pl-cat-pin" target="_blank" rel="noopener">
+					<svg viewBox="0 0 24 24" fill="#fff" width="12" height="12"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
+					Save
+				</a>
+				<?php if ( $pin_saves > 0 ) : ?>
+				<span class="pl-cat-saves"><?php echo number_format( $pin_saves ); ?> saves</span>
+				<?php endif; ?>
+			</div>
+			<?php endif; ?>
+			<div class="pl-cat-card-body">
+				<h3><a href="<?php echo esc_url( $permalink ); ?>"><?php echo esc_html( $title ); ?></a></h3>
+				<div class="pl-cat-card-meta">
+					<span><?php echo $read_time; ?> min read</span>
+					<span><?php echo get_the_date( 'M j', $pid ); ?></span>
+				</div>
+			</div>
+		</article>
+		<?php
+	}
+	wp_reset_postdata();
+	$html = ob_get_clean();
+
+	return new WP_REST_Response( array(
+		'html'     => $html,
+		'has_more' => $data['has_more'],
+		'count'    => count( $data['posts'] ),
+	) );
 }
 
 // Load helper files.
