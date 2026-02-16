@@ -57,23 +57,80 @@ $categories = get_categories( array(
 	'number'     => $pl_cats_max,
 ) );
 
-// Featured posts for hero (with thumbnails).
+// Featured posts for hero — one per category, engagement-weighted.
 $hero_posts = array();
 $hero_ids   = array();
 if ( $pl_hero_show ) {
-	$hero_args = array(
-		'posts_per_page' => $pl_hero_count,
-		'post_status'    => 'publish',
-		'meta_query'     => array( array( 'key' => '_thumbnail_id' ) ),
-		'orderby'        => 'date',
-		'order'          => 'DESC',
-	);
 	if ( $pl_hero_category > 0 ) {
-		$hero_args['cat'] = $pl_hero_category;
+		// Specific category selected in Customizer — use original behavior.
+		$hero_query = new WP_Query( array(
+			'posts_per_page' => $pl_hero_count,
+			'post_status'    => 'publish',
+			'cat'            => $pl_hero_category,
+			'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+			'orderby'        => 'date',
+			'order'          => 'DESC',
+		) );
+		$hero_posts = $hero_query->posts;
+		wp_reset_postdata();
+	} else {
+		// Smart selection: one post per top category, engagement-weighted.
+		$hero_categories = get_categories( array(
+			'orderby'    => 'count',
+			'order'      => 'DESC',
+			'hide_empty' => true,
+			'exclude'    => array( get_cat_ID( 'uncategorized' ) ),
+			'number'     => $pl_hero_count,
+		) );
+
+		$scores = get_transient( 'pl_post_engagement_scores' );
+
+		foreach ( $hero_categories as $cat ) {
+			$candidates = get_posts( array(
+				'category__in'   => array( $cat->term_id ),
+				'posts_per_page' => 10,
+				'post_status'    => 'publish',
+				'post__not_in'   => wp_list_pluck( $hero_posts, 'ID' ),
+				'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'fields'         => 'ids',
+			) );
+
+			if ( empty( $candidates ) ) continue;
+
+			if ( ! empty( $scores ) ) {
+				$scored = array();
+				foreach ( $candidates as $pid ) {
+					$scored[ $pid ] = $scores[ $pid ] ?? 0.01;
+				}
+				arsort( $scored );
+				$top  = array_slice( array_keys( $scored ), 0, 3 );
+				$pick = $top[ array_rand( $top ) ];
+			} else {
+				$top  = array_slice( $candidates, 0, 3 );
+				$pick = $top[ array_rand( $top ) ];
+			}
+
+			$post_obj = get_post( $pick );
+			if ( $post_obj && has_post_thumbnail( $pick ) ) {
+				$hero_posts[] = $post_obj;
+			}
+
+			if ( count( $hero_posts ) >= $pl_hero_count ) break;
+		}
+
+		// Sort by engagement score so the best post gets the main slot.
+		if ( ! empty( $scores ) && count( $hero_posts ) > 1 ) {
+			usort( $hero_posts, function( $a, $b ) use ( $scores ) {
+				return ( $scores[ $b->ID ] ?? 0 ) <=> ( $scores[ $a->ID ] ?? 0 );
+			} );
+		} else {
+			$first = array_shift( $hero_posts );
+			shuffle( $hero_posts );
+			array_unshift( $hero_posts, $first );
+		}
 	}
-	$hero_query = new WP_Query( $hero_args );
-	$hero_posts = $hero_query->posts;
-	wp_reset_postdata();
 	$hero_ids = wp_list_pluck( $hero_posts, 'ID' );
 }
 
@@ -88,7 +145,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 	<section class="pl-hero">
 		<div class="pl-container">
 			<div class="pl-bento">
-				<?php if ( ! empty( $hero_posts[0] ) ) :
+				<?php if ( ! empty( $hero_posts[0] ) && has_post_thumbnail( $hero_posts[0]->ID ) ) :
 					$main      = $hero_posts[0];
 					$main_cats = get_the_category( $main->ID );
 					$main_cat  = ! empty( $main_cats ) ? $main_cats[0] : null;
@@ -120,7 +177,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 				<?php endif; ?>
 
 				<?php for ( $i = 1; $i < $pl_hero_count; $i++ ) :
-					if ( empty( $hero_posts[ $i ] ) ) continue;
+					if ( empty( $hero_posts[ $i ] ) || ! has_post_thumbnail( $hero_posts[ $i ]->ID ) ) continue;
 					$p       = $hero_posts[ $i ];
 					$p_cats  = get_the_category( $p->ID );
 					$p_cat   = ! empty( $p_cats ) ? $p_cats[0] : null;
