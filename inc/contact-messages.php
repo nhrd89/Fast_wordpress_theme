@@ -181,6 +181,15 @@ function pl_messages_page() {
         return;
     }
 
+    // Handle single delete
+    if (isset($_GET['delete_msg'])) {
+        $del_id = absint($_GET['delete_msg']);
+        if (wp_verify_nonce($_GET['_wpnonce'] ?? '', 'pl_delete_msg_' . $del_id)) {
+            $wpdb->delete($table, ['id' => $del_id]);
+            echo '<div class="notice notice-success"><p>Message deleted.</p></div>';
+        }
+    }
+
     // Handle bulk actions
     if (isset($_POST['pl_msg_action']) && wp_verify_nonce($_POST['pl_msg_nonce'] ?? '', 'pl_msg_manage')) {
         $action = sanitize_text_field($_POST['pl_msg_action']);
@@ -278,7 +287,15 @@ function pl_messages_page() {
             <?php endforeach; ?>
         </div>
 
-        <!-- Actions & Search -->
+        <!-- Search (separate form) -->
+        <form method="get" class="plm-actions" style="justify-content:flex-end">
+            <input type="hidden" name="page" value="pl-messages" />
+            <input type="hidden" name="status" value="<?php echo esc_attr($status); ?>" />
+            <input type="text" name="s" value="<?php echo esc_attr($search); ?>" placeholder="Search messages..." style="width:220px" />
+            <button type="submit" class="button">Search</button>
+        </form>
+
+        <!-- Bulk Actions -->
         <form method="post" id="plmForm">
         <?php wp_nonce_field('pl_msg_manage', 'pl_msg_nonce'); ?>
         <div class="plm-actions">
@@ -292,13 +309,6 @@ function pl_messages_page() {
             <button type="submit" class="button" onclick="return confirm('Apply to selected?')">Apply</button>
         </div>
 
-        <!-- Search -->
-        <form method="get" style="display:inline-flex;gap:4px;margin-bottom:14px">
-            <input type="hidden" name="page" value="pl-messages" />
-            <input type="text" name="s" value="<?php echo esc_attr($search); ?>" placeholder="Search messages..." style="width:220px;padding:6px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px" />
-            <button type="submit" class="button">Search</button>
-        </form>
-
         <!-- Messages Table -->
         <table class="plm-table">
             <thead>
@@ -310,11 +320,12 @@ function pl_messages_page() {
                     <th>Device</th>
                     <th>Date</th>
                     <th>Status</th>
+                    <th style="width:60px">Actions</th>
                 </tr>
             </thead>
             <tbody>
             <?php if (empty($messages)) : ?>
-                <tr><td colspan="7" style="text-align:center;padding:40px;color:#aaa">No messages found</td></tr>
+                <tr><td colspan="8" style="text-align:center;padding:40px;color:#aaa">No messages found</td></tr>
             <?php endif; ?>
             <?php foreach ($messages as $msg) :
                 $is_unread = $msg->status === 'unread';
@@ -348,6 +359,11 @@ function pl_messages_page() {
                     <?php echo human_time_diff(strtotime($msg->created_at), current_time('timestamp')); ?> ago
                 </td>
                 <td><span class="plm-badge" style="background:<?php echo $sc['bg']; ?>;color:<?php echo $sc['color']; ?>"><?php echo esc_html($msg->status); ?></span></td>
+                <td>
+                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=pl-messages&delete_msg=' . $msg->id), 'pl_delete_msg_' . $msg->id)); ?>"
+                       onclick="return confirm('Delete this message?')"
+                       style="color:#ef4444;font-size:11px;text-decoration:none">&#x1F5D1;&#xFE0F;</a>
+                </td>
             </tr>
             <?php endforeach; ?>
             </tbody>
