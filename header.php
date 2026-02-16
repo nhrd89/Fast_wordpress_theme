@@ -26,11 +26,16 @@
 <header class="site-header" role="banner">
 	<div class="site-header-inner">
 		<div class="site-branding">
-			<?php if ( has_custom_logo() ) : ?>
-				<?php the_custom_logo(); ?>
-			<?php else : ?>
-				<a href="<?php echo esc_url( home_url( '/' ) ); ?>" class="site-title" rel="home" aria-label="<?php esc_attr_e( 'Home', 'pinlightning' ); ?>"><?php bloginfo( 'name' ); ?></a>
-			<?php endif; ?>
+			<a href="<?php echo esc_url( home_url( '/' ) ); ?>" class="pl-nav-logo" aria-label="<?php bloginfo( 'name' ); ?> - Home">
+				<?php
+				$logo_img = get_theme_mod( 'pl_logo_image', '' );
+				if ( $logo_img ) : ?>
+					<img src="<?php echo esc_url( $logo_img ); ?>" alt="<?php bloginfo( 'name' ); ?>" class="pl-nav-logo-custom" height="32">
+				<?php else : ?>
+					<span class="pl-nav-logo-icon"><?php echo esc_html( get_theme_mod( 'pl_logo_icon', "\xE2\x9A\xA1" ) ); ?></span>
+					<span class="pl-nav-logo-text"><?php echo esc_html( get_theme_mod( 'pl_brand_name', 'cheerlives' ) ); ?></span>
+				<?php endif; ?>
+			</a>
 		</div>
 
 		<input type="checkbox" id="menu-toggle" class="menu-toggle-checkbox" aria-hidden="true">

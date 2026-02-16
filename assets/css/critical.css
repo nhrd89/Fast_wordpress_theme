@@ -11,6 +11,10 @@ a:hover{text-decoration:underline}
 .site-header-inner{max-width:var(--pl-max);margin:0 auto;padding:0 1rem;height:50px;display:flex;align-items:center;justify-content:space-between}
 .site-branding a,.site-title{font-size:1.125rem;font-weight:700;color:var(--pl-text);text-decoration:none;letter-spacing:-.01em}
 .site-branding img{height:30px;width:auto}
+.pl-nav-logo{display:flex;align-items:center;gap:8px;text-decoration:none;color:#111}
+.pl-nav-logo-icon{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#e84393,#6c5ce7);display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;box-shadow:0 2px 8px rgba(232,67,147,.25)}
+.pl-nav-logo-text{font-size:20px;font-weight:700;letter-spacing:-.5px}
+.pl-nav-logo-custom{height:32px;width:auto}
 .menu-toggle-checkbox{display:none}
 .menu-toggle{display:none;cursor:pointer;width:24px;height:18px;position:relative}
 .hamburger,.hamburger::before,.hamburger::after{display:block;width:24px;height:2px;background:var(--pl-text);position:absolute;left:0;transition:transform .2s}
