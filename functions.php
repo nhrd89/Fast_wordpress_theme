@@ -350,10 +350,15 @@ function pl_send_to_ga4( $session_data ) {
 		return;
 	}
 
-	$client_id = $session_data['visitor_id'] ?? '';
-
+	// Use GA4-compatible client_id (numeric.numeric) if available,
+	// otherwise derive one from visitor_id for consistency with client-side beacon.
+	$client_id = $session_data['ga4cid'] ?? '';
 	if ( empty( $client_id ) ) {
-		return;
+		$vid = $session_data['visitor_id'] ?? '';
+		if ( empty( $vid ) ) {
+			return;
+		}
+		$client_id = abs( crc32( $vid ) ) . '.' . intval( $session_data['unix'] ?? time() );
 	}
 
 	$page_url   = $session_data['url'] ?? '';

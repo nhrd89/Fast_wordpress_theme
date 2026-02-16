@@ -113,6 +113,7 @@ function plt_collect_data($request) {
         'vh' => intval($body['vh'] ?? 0),
         'returning' => intval($body['ret'] ?? 0),
         'visitor_id' => sanitize_text_field($body['vid'] ?? ''),
+        'ga4cid' => sanitize_text_field($body['ga4cid'] ?? ''),
         'timezone' => sanitize_text_field($body['tz'] ?? ''),
         'language' => sanitize_text_field($body['lang'] ?? ''),
 
@@ -2868,8 +2869,10 @@ function buildPayload(){
     imgData.sort(function(a,b){return b.v-a.v;});
     imgData=imgData.slice(0,20);
 
+    var ga4cid='';try{ga4cid=localStorage.getItem('plt_ga4cid')||'';}catch(e){}
+
     return {t:timeOnPage,url:location.pathname,pid:PID,ref:document.referrer,
-        dev:dev,vw:vw,vh:vh,ret:ret,vid:vid,
+        dev:dev,vw:vw,vh:vh,ret:ret,vid:vid,ga4cid:ga4cid,
         tz:Intl.DateTimeFormat().resolvedOptions().timeZone||'',lang:navigator.language||'',
         d:Math.round(maxDepth*10)/10,ccp:Math.round(ccp*10)/10,
         ss:Math.round(avgSpd),ms:Math.round(maxSpd),sp:pattern,
@@ -2902,20 +2905,30 @@ else setTimeout(init,300);
 })();
 </script>
 <?php
-$ga4_id = get_theme_mod('pl_ga4_measurement_id', '');
-$ga4_secret = get_theme_mod('pl_ga4_api_secret', '');
-$ga4_enabled = get_theme_mod('pl_ga4_enabled', false);
-if ($ga4_enabled && $ga4_id && $ga4_secret) :
-?>
+}, 999);
+
+// ============================================
+// GA4 CLIENT-SIDE PAGE_VIEW BEACON (all pages)
+// Sends page_view from visitor's browser so GA4 gets real IP for geo.
+// ============================================
+add_action('wp_footer', function() {
+    if (!PLT_ACTIVE) return;
+    $ga4_id = get_theme_mod('pl_ga4_measurement_id', '');
+    $ga4_secret = get_theme_mod('pl_ga4_api_secret', '');
+    $ga4_enabled = get_theme_mod('pl_ga4_enabled', false);
+    if (!$ga4_enabled || !$ga4_id || !$ga4_secret) return;
+    ?>
 <script>
 (function(){
-var vid=localStorage.getItem('plt_vid')||'anon_'+Math.random().toString(36).substr(2);
-var payload=JSON.stringify({client_id:vid,events:[{name:'page_view',params:{
+var vid=localStorage.getItem('plt_vid')||'';
+if(!vid){vid='v_'+Math.random().toString(36).substr(2,9)+'_'+Date.now().toString(36);try{localStorage.setItem('plt_vid',vid);}catch(e){}}
+var cid=localStorage.getItem('plt_ga4cid')||'';
+if(!cid){var h=0;for(var i=0;i<vid.length;i++){h=((h<<5)-h)+vid.charCodeAt(i);h|=0;}cid=Math.abs(h)+'.'+Math.floor(Date.now()/1000);try{localStorage.setItem('plt_ga4cid',cid);}catch(e){}}
+var payload=JSON.stringify({client_id:cid,events:[{name:'page_view',params:{
 page_location:location.href,page_title:document.title,page_referrer:document.referrer,engagement_time_msec:100}}]});
 if(navigator.sendBeacon){navigator.sendBeacon('https://www.google-analytics.com/mp/collect?measurement_id=<?php echo esc_js($ga4_id); ?>&api_secret=<?php echo esc_js($ga4_secret); ?>',new Blob([payload],{type:'application/json'}));}
 })();
 </script>
-<?php endif; ?>
 <?php
-}, 999);
+}, 1000);
 
