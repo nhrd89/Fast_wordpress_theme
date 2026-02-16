@@ -2396,6 +2396,27 @@ if(!vid){vid='v_'+Math.random().toString(36).substr(2,9)+'_'+Date.now().toString
 if(localStorage.getItem('plt_v')){ret=1;}localStorage.setItem('plt_v','1');
 }catch(e){}
 
+// Category interest tracking
+try{
+var cats=JSON.parse(localStorage.getItem('pl_visited_cats')||'{}');
+var bodyEl=document.body,cls=bodyEl.className;
+var catMatch=cls.match(/category-([a-z0-9_-]+)/g);
+if(catMatch){
+for(var ci=0;ci<catMatch.length;ci++){
+var cn=catMatch[ci].replace('category-','');
+if(/^\d+$/.test(cn))continue;
+cats[cn]=(cats[cn]||0)+1;
+}
+localStorage.setItem('pl_visited_cats',JSON.stringify(cats));
+}
+var metaCat=document.querySelector('meta[property="article:section"]');
+if(metaCat&&metaCat.content){
+var mc=metaCat.content.toLowerCase().replace(/\s+/g,'-');
+cats[mc]=(cats[mc]||0)+1;
+localStorage.setItem('pl_visited_cats',JSON.stringify(cats));
+}
+}catch(e){}
+
 // STATE
 var lastY=0,lastT=0,speeds=[],maxSpd=0,scrollEvts=0,dirChanges=0,lastDir='down';
 var touchEvts=0,idlePeriods=0,lastActivity=Date.now(),lastInteractType='';

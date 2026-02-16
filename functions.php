@@ -659,3 +659,4 @@ require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
 require_once PINLIGHTNING_DIR . '/inc/visitor-tracker.php';
 require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';
+require_once PINLIGHTNING_DIR . '/inc/email-leads.php';

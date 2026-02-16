@@ -569,6 +569,20 @@ function plchat_api_message($request) {
                 'city' => sanitize_text_field($session->city ?? ''),
                 'created_at' => current_time('mysql'),
             ]);
+
+            // Bridge to unified email leads system
+            if ( function_exists( 'pl_chat_capture_email' ) ) {
+                pl_chat_capture_email( sanitize_email( $email_match[0] ), [
+                    'visitor_id'       => $session->visitor_id ?? '',
+                    'post_id'          => $session->post_id ?? 0,
+                    'post_title'       => $session->post_title ?? '',
+                    'referrer'         => $session->referrer ?? '',
+                    'device'           => $session->device ?? '',
+                    'country'          => $session->country ?? '',
+                    'city'             => $session->city ?? '',
+                    'interest_context' => $interest_context ?? '',
+                ] );
+            }
         }
     }
 

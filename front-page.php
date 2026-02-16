@@ -404,8 +404,71 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 		form.addEventListener('submit',function(e){
 			e.preventDefault();
 			var input=this.querySelector('input[type="email"]');
-			if(!input.value)return;
-			this.innerHTML='<div style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.3);border-radius:14px;padding:14px 24px;font-size:14px;color:#00b894;font-weight:500">'+<?php echo wp_json_encode( $pl_newsletter_success ); ?>+'</div>';
+			var email=input.value.trim();
+			if(!email)return;
+
+			var btn=this.querySelector('button');
+			var origText=btn.textContent;
+			btn.textContent='Subscribing...';
+			btn.disabled=true;
+
+			var vid='';try{vid=localStorage.getItem('plt_vid')||'';}catch(ex){}
+			var visitCount=0;try{visitCount=parseInt(localStorage.getItem('plt_v')||'0');}catch(ex){}
+			var tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone;}catch(ex){}
+
+			var ua=navigator.userAgent;
+			var browser='Unknown';
+			if(ua.indexOf('Chrome')>-1&&ua.indexOf('Edg')===-1)browser='Chrome';
+			else if(ua.indexOf('Safari')>-1&&ua.indexOf('Chrome')===-1)browser='Safari';
+			else if(ua.indexOf('Firefox')>-1)browser='Firefox';
+			else if(ua.indexOf('Edg')>-1)browser='Edge';
+
+			var pinSaves=0;
+			if(window.__plPinData)pinSaves=window.__plPinData.saves||0;
+
+			var interests=[];
+			try{interests=JSON.parse(localStorage.getItem('pl_visited_cats')||'[]').slice(0,10);}catch(ex){}
+
+			var payload={
+				email:email,
+				source:'newsletter',
+				source_detail:'footer',
+				page_url:location.href,
+				page_title:document.title,
+				visitor_id:vid,
+				device:window.innerWidth<768?'mobile':(window.innerWidth<1024?'tablet':'desktop'),
+				browser:browser,
+				viewport_width:window.innerWidth,
+				user_agent:ua,
+				timezone:tz,
+				language:navigator.language||'',
+				returning:visitCount>1?1:0,
+				total_sessions:visitCount,
+				pin_saves:pinSaves,
+				referrer:document.referrer||'',
+				interests:interests
+			};
+
+			fetch(<?php echo wp_json_encode( esc_url_raw( rest_url( 'pl/v1/subscribe' ) ) ); ?>,{
+				method:'POST',
+				headers:{'Content-Type':'application/json'},
+				body:JSON.stringify(payload)
+			})
+			.then(function(r){return r.json();})
+			.then(function(data){
+				if(data.success){
+					form.innerHTML='<div style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.3);border-radius:14px;padding:14px 24px;font-size:14px;color:#00b894;font-weight:500">'+<?php echo wp_json_encode( $pl_newsletter_success ); ?>+'</div>';
+				}else{
+					btn.textContent=data.error||'Error \u2014 try again';
+					btn.disabled=false;
+					setTimeout(function(){btn.textContent=origText;},3000);
+				}
+			})
+			.catch(function(){
+				btn.textContent='Error \u2014 try again';
+				btn.disabled=false;
+				setTimeout(function(){btn.textContent=origText;},3000);
+			});
 		});
 	}
 })();
