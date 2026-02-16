@@ -202,7 +202,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 
 	<!-- ========== POST GRID ========== -->
 	<section class="pl-container">
-		<div class="pl-post-grid" id="plPostGrid" style="grid-template-columns:repeat(<?php echo esc_attr( $pl_grid_columns ); ?>,1fr)">
+		<div class="pl-post-grid" id="plPostGrid" style="--pl-cols:<?php echo esc_attr( $pl_grid_columns ); ?>">
 			<?php foreach ( $grid_posts as $g_post ) :
 				setup_postdata( $g_post );
 				$g_cats    = get_the_category( $g_post->ID );
@@ -213,7 +213,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 			?>
 			<article class="pl-card" data-cat="<?php echo esc_attr( $g_cat ? $g_cat->slug : '' ); ?>">
 				<a href="<?php echo esc_url( get_permalink( $g_post->ID ) ); ?>" class="pl-card-link">
-					<div class="pl-card-media" style="height:<?php echo esc_attr( $pl_grid_img_height ); ?>px">
+					<div class="pl-card-media" style="--pl-img-h:<?php echo esc_attr( $pl_grid_img_height ); ?>px">
 						<?php if ( has_post_thumbnail( $g_post->ID ) ) :
 							echo get_the_post_thumbnail( $g_post->ID, 'medium_large', array(
 								'class'    => 'pl-card-img',
