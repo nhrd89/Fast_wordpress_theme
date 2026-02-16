@@ -341,7 +341,7 @@ add_filter( 'the_content', 'pl_add_pinterest_save_buttons', 90 );
  * Called server-side after visitor tracker saves a session.
  * Zero client-side JS — non-blocking wp_remote_post.
  */
-function pl_send_to_ga4( $session_data, $visitor_ip = '' ) {
+function pl_send_to_ga4( $session_data ) {
 	$measurement_id = get_theme_mod( 'pl_ga4_measurement_id', '' );
 	$api_secret     = get_theme_mod( 'pl_ga4_api_secret', '' );
 	$enabled        = get_theme_mod( 'pl_ga4_enabled', false );
@@ -350,9 +350,7 @@ function pl_send_to_ga4( $session_data, $visitor_ip = '' ) {
 		return;
 	}
 
-	$client_id = $session_data['visitor_id']
-		?? $session_data['fingerprint']
-		?? md5( ( $session_data['url'] ?? '' ) . ( $session_data['unix'] ?? time() ) );
+	$client_id = $session_data['visitor_id'] ?? '';
 
 	if ( empty( $client_id ) ) {
 		return;
@@ -370,16 +368,8 @@ function pl_send_to_ga4( $session_data, $visitor_ip = '' ) {
 	$city       = $session_data['city'] ?? '';
 	$pin_saves  = intval( $session_data['pin_saves']['saves'] ?? 0 );
 
+	// page_view is sent client-side (so GA4 gets real visitor IP for geo).
 	$events = [];
-
-	$events[] = [
-		'name'   => 'page_view',
-		'params' => [
-			'page_location'       => $page_url,
-			'page_referrer'       => $referrer,
-			'engagement_time_msec' => $active_ms,
-		],
-	];
 
 	$events[] = [
 		'name'   => 'scroll',
@@ -431,14 +421,9 @@ function pl_send_to_ga4( $session_data, $visitor_ip = '' ) {
 		. '?measurement_id=' . urlencode( $measurement_id )
 		. '&api_secret=' . urlencode( $api_secret );
 
-	$headers = [ 'Content-Type' => 'application/json' ];
-	if ( ! empty( $visitor_ip ) && $visitor_ip !== '127.0.0.1' && $visitor_ip !== '::1' ) {
-		$headers['X-Forwarded-For'] = $visitor_ip;
-	}
-
 	wp_remote_post( $url, [
 		'body'     => json_encode( $payload ),
-		'headers'  => $headers,
+		'headers'  => [ 'Content-Type' => 'application/json' ],
 		'timeout'  => 3,
 		'blocking' => false,
 	] );

@@ -427,7 +427,7 @@ function plt_collect_data($request) {
     delete_transient( 'pl_post_engagement_scores' );
 
     // Send to GA4 (non-blocking, zero performance impact)
-    pl_send_to_ga4($session, $_SERVER['REMOTE_ADDR'] ?? '');
+    pl_send_to_ga4($session);
 
     return new WP_REST_Response(['ok' => true], 200);
 }
@@ -2901,6 +2901,21 @@ if('requestIdleCallback' in window)requestIdleCallback(init);
 else setTimeout(init,300);
 })();
 </script>
+<?php
+$ga4_id = get_theme_mod('pl_ga4_measurement_id', '');
+$ga4_secret = get_theme_mod('pl_ga4_api_secret', '');
+$ga4_enabled = get_theme_mod('pl_ga4_enabled', false);
+if ($ga4_enabled && $ga4_id && $ga4_secret) :
+?>
+<script>
+(function(){
+var vid=localStorage.getItem('plt_vid')||'anon_'+Math.random().toString(36).substr(2);
+var payload=JSON.stringify({client_id:vid,events:[{name:'page_view',params:{
+page_location:location.href,page_title:document.title,page_referrer:document.referrer,engagement_time_msec:100}}]});
+if(navigator.sendBeacon){navigator.sendBeacon('https://www.google-analytics.com/mp/collect?measurement_id=<?php echo esc_js($ga4_id); ?>&api_secret=<?php echo esc_js($ga4_secret); ?>',new Blob([payload],{type:'application/json'}));}
+})();
+</script>
+<?php endif; ?>
 <?php
 }, 999);
 
