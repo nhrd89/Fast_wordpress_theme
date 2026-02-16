@@ -2951,7 +2951,7 @@ add_action('wp_footer', function() {
     var u='https://www.google-analytics.com/mp/collect?measurement_id=<?php echo esc_js($ga4mid); ?>&api_secret=<?php echo esc_js($ga4sec); ?>';
     var p=JSON.stringify({client_id:c,events:[{name:'page_view',params:{page_location:location.href,page_title:document.title,page_referrer:document.referrer||'',engagement_time_msec:'100',session_id:c.split('.')[1]}}]});
     if(navigator.sendBeacon){
-        navigator.sendBeacon(u,new Blob([p],{type:'application/json'}));
+        navigator.sendBeacon(u,new Blob([p],{type:'text/plain'}));
     }
 })();
 </script>
