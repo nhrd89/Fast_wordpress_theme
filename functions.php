@@ -198,15 +198,36 @@ add_action( 'wp_footer', 'pinlightning_scroll_deferred_assets', 99 );
 
 /**
  * Output a dynamic meta description for single posts.
+ *
+ * Uses the raw excerpt field or strips tags from raw content instead of
+ * get_the_excerpt(), which triggers wp_trim_excerpt() → the_content filters
+ * and poisons static counters in the CDN image rewriter.
  */
 function pinlightning_meta_description() {
-	if ( is_singular() ) {
-		$excerpt = get_the_excerpt();
-		if ( $excerpt ) {
-			$desc = wp_strip_all_tags( $excerpt );
-			$desc = mb_substr( $desc, 0, 160 );
-			echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
-		}
+	if ( ! is_singular() ) {
+		return;
+	}
+
+	$post = get_queried_object();
+	if ( ! $post ) {
+		return;
+	}
+
+	// Prefer manual excerpt; fall back to raw content (no the_content filters).
+	$text = ! empty( $post->post_excerpt )
+		? $post->post_excerpt
+		: $post->post_content;
+
+	if ( empty( $text ) ) {
+		return;
+	}
+
+	$desc = wp_strip_all_tags( strip_shortcodes( $text ) );
+	$desc = preg_replace( '/\s+/', ' ', trim( $desc ) );
+	$desc = mb_substr( $desc, 0, 160 );
+
+	if ( $desc ) {
+		echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
 	}
 }
 add_action( 'wp_head', 'pinlightning_meta_description', 1 );

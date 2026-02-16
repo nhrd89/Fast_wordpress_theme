@@ -343,9 +343,13 @@ function pinlightning_build_pinterest_attrs( $post_id, $attachment_id ) {
 
 	$attrs = array();
 
-	// data-pin-description: title + trimmed excerpt.
+	// data-pin-description: title + excerpt.
+	// Use raw post_excerpt to avoid get_the_excerpt() → wp_trim_excerpt()
+	// which applies the_content filters and poisons CDN rewriter counters.
 	$description = get_the_title( $post_id );
-	$excerpt     = get_the_excerpt( $post );
+	$excerpt     = ! empty( $post->post_excerpt )
+		? $post->post_excerpt
+		: wp_trim_words( wp_strip_all_tags( strip_shortcodes( $post->post_content ) ), 30, '...' );
 	if ( $excerpt ) {
 		$description .= ' — ' . $excerpt;
 	}
@@ -396,11 +400,23 @@ function pinlightning_rewrite_cdn_images( $content ) {
 		return $content;
 	}
 
-	return preg_replace_callback(
+	// Guard against re-entry: get_the_excerpt() → wp_trim_excerpt() applies
+	// the_content filters, which would increment the static CDN image counter
+	// before the real template call. Only process during the primary call.
+	static $running = false;
+	if ( $running ) {
+		return $content;
+	}
+	$running = true;
+
+	$content = preg_replace_callback(
 		'/<img\b([^>]*)>/i',
 		'pinlightning_rewrite_cdn_img',
 		$content
 	);
+
+	$running = false;
+	return $content;
 }
 add_filter( 'the_content', 'pinlightning_rewrite_cdn_images', 25 );
 
