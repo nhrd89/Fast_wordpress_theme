@@ -204,6 +204,13 @@ add_action( 'wp_head', 'pinlightning_meta_description', 1 );
 // Homepage: Category icon/color helpers
 // ============================================
 function pl_get_cat_icon( $slug ) {
+	// Check Customizer override first.
+	$custom = get_theme_mod( "pl_cat_icon_{$slug}" );
+	if ( $custom ) {
+		return $custom;
+	}
+
+	// Fallback defaults.
 	$icons = array(
 		'fashion' => "\xF0\x9F\x91\x97", 'home-decor' => "\xF0\x9F\x8F\xA0", 'architecture' => "\xF0\x9F\x8F\x9B\xEF\xB8\x8F",
 		'hairstyles' => "\xF0\x9F\x92\x87\xE2\x80\x8D\xE2\x99\x80\xEF\xB8\x8F", 'bridal' => "\xF0\x9F\x92\x8D", 'garden' => "\xF0\x9F\x8C\xBF",
@@ -224,6 +231,13 @@ function pl_get_cat_icon( $slug ) {
 }
 
 function pl_get_cat_color( $slug ) {
+	// Check Customizer override first.
+	$custom = get_theme_mod( "pl_cat_color_{$slug}" );
+	if ( $custom ) {
+		return $custom;
+	}
+
+	// Fallback defaults.
 	$colors = array(
 		'fashion' => '#e84393', 'home-decor' => '#6c5ce7', 'architecture' => '#0984e3',
 		'hairstyles' => '#e17055', 'bridal' => '#d63031', 'garden' => '#00b894',
@@ -241,6 +255,18 @@ function pl_get_cat_color( $slug ) {
 		}
 	}
 	return '#888';
+}
+
+/**
+ * Get category choices for Customizer dropdowns.
+ */
+function pl_get_category_choices() {
+	$choices = array( 0 => '-- All Categories --' );
+	$cats = get_categories( array( 'hide_empty' => true, 'orderby' => 'count', 'order' => 'DESC' ) );
+	foreach ( $cats as $cat ) {
+		$choices[ $cat->term_id ] = $cat->name . ' (' . $cat->count . ')';
+	}
+	return $choices;
 }
 
 // ============================================
