@@ -660,3 +660,17 @@ require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
 require_once PINLIGHTNING_DIR . '/inc/visitor-tracker.php';
 require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';
 require_once PINLIGHTNING_DIR . '/inc/email-leads.php';
+require_once PINLIGHTNING_DIR . '/inc/contact-messages.php';
+
+// Auto-assign contact template to the contact page (run once).
+add_action( 'init', function() {
+	if ( get_option( 'pl_contact_template_set' ) ) return;
+
+	$contact_page = get_page_by_path( 'contact-us' );
+	if ( ! $contact_page ) $contact_page = get_page_by_path( 'contact' );
+
+	if ( $contact_page ) {
+		update_post_meta( $contact_page->ID, '_wp_page_template', 'page-contact.php' );
+		update_option( 'pl_contact_template_set', true );
+	}
+} );
