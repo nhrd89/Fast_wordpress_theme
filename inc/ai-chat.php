@@ -930,137 +930,147 @@ function plchat_admin_dashboard() {
 }
 
 // ============================================
+// ADMIN: Chat Export Handler (runs on admin_init before HTML output)
+// ============================================
+add_action('admin_init', 'plchat_handle_export');
+function plchat_handle_export() {
+    // Only run on our admin page with export param
+    if (!isset($_GET['page']) || $_GET['page'] !== 'pl-ai-chat-history') return;
+    if (!isset($_GET['export'])) return;
+    if (!current_user_can('manage_options')) return;
+
+    check_admin_referer('pl_export_chats');
+
+    global $wpdb;
+    $format = sanitize_text_field($_GET['export']);
+
+    $days_filter = intval($_GET['export_days'] ?? 0);
+    $where = '';
+    if ($days_filter > 0) {
+        $after = gmdate('Y-m-d H:i:s', strtotime("-{$days_filter} days"));
+        $where = $wpdb->prepare(" WHERE s.created_at >= %s", $after);
+    }
+
+    $sessions_table = $wpdb->prefix . 'pl_chat_sessions';
+    $messages_table = $wpdb->prefix . 'pl_chat_messages';
+
+    if ($format === 'csv') {
+        // CSV: One row per message with session context
+        $rows = $wpdb->get_results("
+            SELECT s.id as session_id, s.created_at as session_start, s.post_title, s.post_id,
+                   s.device, s.scroll_pattern, s.scroll_depth, s.visit_number,
+                   s.referrer, s.country, s.city, s.email_captured, s.converted,
+                   s.conversion_type, s.messages_count, s.total_tokens_in, s.total_tokens_out,
+                   s.estimated_cost_usd, s.visitor_id, s.updated_at,
+                   m.role, m.content, m.created_at as msg_time, m.tokens_in as msg_tokens_in,
+                   m.tokens_out as msg_tokens_out
+            FROM $sessions_table s
+            LEFT JOIN $messages_table m ON m.session_id = s.id
+            $where
+            ORDER BY s.created_at DESC, m.id ASC
+        ");
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="cheer-chats-' . gmdate('Y-m-d') . '.csv"');
+        $output = fopen('php://output', 'w');
+        // BOM for Excel UTF-8
+        fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+        fputcsv($output, [
+            'Session ID', 'Session Start', 'Session End', 'Post Title', 'Post ID',
+            'Device', 'Scroll Pattern', 'Scroll Depth %', 'Visit #',
+            'Referrer', 'Country', 'City', 'Email Captured', 'Converted', 'Conversion Type',
+            'Message Count', 'Tokens In', 'Tokens Out', 'Cost USD',
+            'Visitor ID', 'Message Role', 'Message Content', 'Message Time',
+            'Msg Tokens In', 'Msg Tokens Out'
+        ]);
+        foreach ($rows as $r) {
+            fputcsv($output, [
+                $r->session_id, $r->session_start, $r->updated_at, $r->post_title, $r->post_id,
+                $r->device, $r->scroll_pattern, $r->scroll_depth, $r->visit_number,
+                $r->referrer, $r->country, $r->city, $r->email_captured, $r->converted,
+                $r->conversion_type, $r->messages_count, $r->total_tokens_in, $r->total_tokens_out,
+                $r->estimated_cost_usd, $r->visitor_id, $r->role, $r->content, $r->msg_time,
+                $r->msg_tokens_in, $r->msg_tokens_out
+            ]);
+        }
+        fclose($output);
+        exit;
+    }
+
+    if ($format === 'json') {
+        // JSON: Full structured export — sessions with nested messages
+        $sessions = $wpdb->get_results("
+            SELECT * FROM $sessions_table s $where ORDER BY s.created_at DESC
+        ");
+
+        $export = [
+            'exported_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'total_sessions' => count($sessions),
+            'site' => home_url(),
+            'sessions' => []
+        ];
+
+        foreach ($sessions as $s) {
+            $messages = $wpdb->get_results($wpdb->prepare(
+                "SELECT role, content, created_at, tokens_in, tokens_out, response_ms FROM $messages_table WHERE session_id = %d ORDER BY id ASC",
+                $s->id
+            ));
+
+            $export['sessions'][] = [
+                'session_id' => (int)$s->id,
+                'created_at' => $s->created_at,
+                'updated_at' => $s->updated_at,
+                'post_title' => $s->post_title,
+                'post_id' => (int)$s->post_id,
+                'post_category' => $s->post_category,
+                'visitor_id' => $s->visitor_id,
+                'device' => $s->device,
+                'scroll_pattern' => $s->scroll_pattern,
+                'scroll_depth' => (float)$s->scroll_depth,
+                'scroll_speed' => (float)$s->scroll_speed,
+                'visit_number' => (int)$s->visit_number,
+                'referrer' => $s->referrer,
+                'country' => $s->country,
+                'city' => $s->city,
+                'timezone' => $s->timezone,
+                'local_hour' => (int)$s->local_hour,
+                'email_captured' => $s->email_captured,
+                'converted' => (bool)$s->converted,
+                'conversion_type' => $s->conversion_type,
+                'messages_count' => (int)$s->messages_count,
+                'session_duration_s' => (int)$s->session_duration_s,
+                'total_tokens_in' => (int)$s->total_tokens_in,
+                'total_tokens_out' => (int)$s->total_tokens_out,
+                'estimated_cost_usd' => (float)$s->estimated_cost_usd,
+                'char_taps_before' => (int)$s->char_taps_before,
+                'heart_taps_before' => (int)$s->heart_taps_before,
+                'starred' => (bool)$s->starred,
+                'admin_notes' => $s->admin_notes,
+                'messages' => array_map(function($m) {
+                    return [
+                        'role' => $m->role,
+                        'content' => $m->content,
+                        'time' => $m->created_at,
+                        'tokens_in' => (int)$m->tokens_in,
+                        'tokens_out' => (int)$m->tokens_out,
+                        'response_ms' => (int)$m->response_ms
+                    ];
+                }, $messages)
+            ];
+        }
+
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="cheer-chats-' . gmdate('Y-m-d') . '.json"');
+        echo wp_json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
+// ============================================
 // ADMIN: Chat History (list + single view)
 // ============================================
 function plchat_admin_history() {
     global $wpdb;
-
-    // === EXPORT HANDLERS (must run before any HTML output) ===
-    if (isset($_GET['export']) && current_user_can('manage_options')) {
-        $format = sanitize_text_field($_GET['export']);
-        check_admin_referer('pl_export_chats');
-
-        $days_filter = intval($_GET['export_days'] ?? 0);
-        $where = '';
-        if ($days_filter > 0) {
-            $after = gmdate('Y-m-d H:i:s', strtotime("-{$days_filter} days"));
-            $where = $wpdb->prepare(" WHERE s.created_at >= %s", $after);
-        }
-
-        $sessions_table = $wpdb->prefix . 'pl_chat_sessions';
-        $messages_table = $wpdb->prefix . 'pl_chat_messages';
-
-        if ($format === 'csv') {
-            // CSV: One row per message with session context
-            $rows = $wpdb->get_results("
-                SELECT s.id as session_id, s.created_at as session_start, s.post_title, s.post_id,
-                       s.device, s.scroll_pattern, s.scroll_depth, s.visit_number,
-                       s.referrer, s.country, s.city, s.email_captured, s.converted,
-                       s.conversion_type, s.messages_count, s.total_tokens_in, s.total_tokens_out,
-                       s.estimated_cost_usd, s.visitor_id, s.updated_at,
-                       m.role, m.content, m.created_at as msg_time, m.tokens_in as msg_tokens_in,
-                       m.tokens_out as msg_tokens_out
-                FROM $sessions_table s
-                LEFT JOIN $messages_table m ON m.session_id = s.id
-                $where
-                ORDER BY s.created_at DESC, m.id ASC
-            ");
-
-            header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename="cheer-chats-' . gmdate('Y-m-d') . '.csv"');
-            $output = fopen('php://output', 'w');
-            // BOM for Excel UTF-8
-            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-            fputcsv($output, [
-                'Session ID', 'Session Start', 'Session End', 'Post Title', 'Post ID',
-                'Device', 'Scroll Pattern', 'Scroll Depth %', 'Visit #',
-                'Referrer', 'Country', 'City', 'Email Captured', 'Converted', 'Conversion Type',
-                'Message Count', 'Tokens In', 'Tokens Out', 'Cost USD',
-                'Visitor ID', 'Message Role', 'Message Content', 'Message Time',
-                'Msg Tokens In', 'Msg Tokens Out'
-            ]);
-            foreach ($rows as $r) {
-                fputcsv($output, [
-                    $r->session_id, $r->session_start, $r->updated_at, $r->post_title, $r->post_id,
-                    $r->device, $r->scroll_pattern, $r->scroll_depth, $r->visit_number,
-                    $r->referrer, $r->country, $r->city, $r->email_captured, $r->converted,
-                    $r->conversion_type, $r->messages_count, $r->total_tokens_in, $r->total_tokens_out,
-                    $r->estimated_cost_usd, $r->visitor_id, $r->role, $r->content, $r->msg_time,
-                    $r->msg_tokens_in, $r->msg_tokens_out
-                ]);
-            }
-            fclose($output);
-            exit;
-        }
-
-        if ($format === 'json') {
-            // JSON: Full structured export — sessions with nested messages
-            $sessions = $wpdb->get_results("
-                SELECT * FROM $sessions_table s $where ORDER BY s.created_at DESC
-            ");
-
-            $export = [
-                'exported_at' => gmdate('Y-m-d\TH:i:s\Z'),
-                'total_sessions' => count($sessions),
-                'site' => home_url(),
-                'sessions' => []
-            ];
-
-            foreach ($sessions as $s) {
-                $messages = $wpdb->get_results($wpdb->prepare(
-                    "SELECT role, content, created_at, tokens_in, tokens_out, response_ms FROM $messages_table WHERE session_id = %d ORDER BY id ASC",
-                    $s->id
-                ));
-
-                $export['sessions'][] = [
-                    'session_id' => (int)$s->id,
-                    'created_at' => $s->created_at,
-                    'updated_at' => $s->updated_at,
-                    'post_title' => $s->post_title,
-                    'post_id' => (int)$s->post_id,
-                    'post_category' => $s->post_category,
-                    'visitor_id' => $s->visitor_id,
-                    'device' => $s->device,
-                    'scroll_pattern' => $s->scroll_pattern,
-                    'scroll_depth' => (float)$s->scroll_depth,
-                    'scroll_speed' => (float)$s->scroll_speed,
-                    'visit_number' => (int)$s->visit_number,
-                    'referrer' => $s->referrer,
-                    'country' => $s->country,
-                    'city' => $s->city,
-                    'timezone' => $s->timezone,
-                    'local_hour' => (int)$s->local_hour,
-                    'email_captured' => $s->email_captured,
-                    'converted' => (bool)$s->converted,
-                    'conversion_type' => $s->conversion_type,
-                    'messages_count' => (int)$s->messages_count,
-                    'session_duration_s' => (int)$s->session_duration_s,
-                    'total_tokens_in' => (int)$s->total_tokens_in,
-                    'total_tokens_out' => (int)$s->total_tokens_out,
-                    'estimated_cost_usd' => (float)$s->estimated_cost_usd,
-                    'char_taps_before' => (int)$s->char_taps_before,
-                    'heart_taps_before' => (int)$s->heart_taps_before,
-                    'starred' => (bool)$s->starred,
-                    'admin_notes' => $s->admin_notes,
-                    'messages' => array_map(function($m) {
-                        return [
-                            'role' => $m->role,
-                            'content' => $m->content,
-                            'time' => $m->created_at,
-                            'tokens_in' => (int)$m->tokens_in,
-                            'tokens_out' => (int)$m->tokens_out,
-                            'response_ms' => (int)$m->response_ms
-                        ];
-                    }, $messages)
-                ];
-            }
-
-            header('Content-Type: application/json; charset=utf-8');
-            header('Content-Disposition: attachment; filename="cheer-chats-' . gmdate('Y-m-d') . '.json"');
-            echo wp_json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-    }
 
     // Handle bulk delete all
     if (!empty($_POST['plchat_delete_all']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'plchat_delete_all')) {
