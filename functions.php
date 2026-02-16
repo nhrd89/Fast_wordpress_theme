@@ -25,6 +25,18 @@ function pl_fix_title_asterisks() {
 	update_option( 'pl_titles_cleaned', 1 );
 }
 add_action( 'init', 'pl_fix_title_asterisks' );
+
+// Temporary: verify title cleanup ran. Remove after checking.
+add_action( 'admin_notices', function() {
+	global $wpdb;
+	$cleaned   = get_option( 'pl_titles_cleaned', 0 );
+	$remaining = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_title LIKE '%**%'" );
+	echo '<div class="notice notice-info"><p>';
+	echo 'Title cleanup ran: ' . ( $cleaned ? "\xe2\x9c\x85 Yes" : "\xe2\x9d\x8c No" );
+	echo ' | Titles still with **: ' . intval( $remaining );
+	echo '</p></div>';
+} );
+
 define( 'PINLIGHTNING_URI', get_template_directory_uri() );
 
 /**
