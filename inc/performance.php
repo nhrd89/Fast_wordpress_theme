@@ -300,7 +300,7 @@ add_action( 'template_redirect', 'pinlightning_start_gzip', -1 );
 function pinlightning_early_preconnect() {
 	echo '<link rel="preconnect" href="https://myquickurl.com" crossorigin>' . "\n";
 }
-add_action( 'wp_head', 'pinlightning_early_preconnect', -1 );
+// Called directly from header.php before meta charset — not via wp_head.
 
 /**
  * Add resource hints: dns-prefetch and preconnect.
@@ -318,8 +318,9 @@ add_action( 'wp_head', 'pinlightning_resource_hints', 1 );
 /**
  * Preload the LCP hero image with fetchpriority and srcset support.
  *
- * Runs at priority 0 so it appears first in <head> (before CSS), starting
- * the image download as early as possible to reduce LCP resource load delay.
+ * Called directly from header.php as the first thing in <head> (before meta
+ * charset, CSS, or any wp_head output), so the browser's preload scanner
+ * discovers the hero image at byte 0 and starts fetching immediately.
  *
  * Handles two cases:
  * 1. Post has a featured image → preload the resized featured image.
@@ -336,7 +337,7 @@ function pinlightning_preload_lcp_image() {
 		pinlightning_preload_first_content_image();
 	}
 }
-add_action( 'wp_head', 'pinlightning_preload_lcp_image', 0 );
+// Called directly from header.php before meta charset — not via wp_head.
 
 /**
  * Preload a featured image (post thumbnail) as LCP.
@@ -472,6 +473,96 @@ function pinlightning_preload_first_content_image() {
 	// Fallback: preload the raw src as-is.
 	echo '<link rel="preload" as="image" href="' . esc_url( $first_src ) . '" fetchpriority="high">' . "\n";
 }
+
+/**
+ * Return the LCP hero image URL for the current singular page.
+ *
+ * Used by 103 Early Hints so the browser starts fetching the hero image
+ * before the HTML body arrives (saves up to TTFB worth of load delay).
+ *
+ * @return string The hero image URL, or empty string if not applicable.
+ */
+function pinlightning_get_lcp_hero_url() {
+	if ( ! is_singular() ) {
+		return '';
+	}
+
+	if ( has_post_thumbnail() ) {
+		$thumbnail_id  = get_post_thumbnail_id();
+		$thumbnail_url = wp_get_attachment_image_url( $thumbnail_id, 'large' );
+		if ( ! $thumbnail_url ) {
+			return '';
+		}
+
+		if ( strpos( $thumbnail_url, '/wp-content/uploads/' ) !== false ) {
+			preg_match( '#/wp-content/uploads/(.+?)(?:\?|$)#', $thumbnail_url, $pm );
+			$uploads_path = isset( $pm[1] ) ? $pm[1] : '';
+			return PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path ) . '&w=720&q=65';
+		}
+
+		return $thumbnail_url;
+	}
+
+	// No featured image — scan content for first image.
+	$post = get_queried_object();
+	if ( ! $post || empty( $post->post_content ) ) {
+		return '';
+	}
+
+	if ( ! preg_match( '/<img\b[^>]*\bsrc=["\']([^"\']+)["\']/i', $post->post_content, $m ) ) {
+		return '';
+	}
+
+	$first_src = $m[1];
+
+	if ( strpos( $first_src, 'myquickurl.com' ) !== false ) {
+		$cdn_path = '';
+		if ( preg_match( '/myquickurl\.com\/img\.php\?.*?src=([^&"\']+)/', $first_src, $cm ) ) {
+			$cdn_path = urldecode( $cm[1] );
+		} elseif ( preg_match( '/myquickurl\.com\/img\/(.+?)(?:\?|$)/', $first_src, $cm ) ) {
+			$cdn_path = $cm[1];
+		} elseif ( preg_match( '/myquickurl\.com\/(.+?)(?:\?|$)/', $first_src, $cm ) ) {
+			$cdn_path = $cm[1];
+		}
+		if ( empty( $cdn_path ) ) {
+			return '';
+		}
+		$cdn_path_encoded = rawurlencode( $cdn_path );
+		$cdn_path_encoded = str_replace( '%2F', '/', $cdn_path_encoded );
+		return 'https://myquickurl.com/img.php?src=' . $cdn_path_encoded . '&w=665&q=80';
+	}
+
+	if ( strpos( $first_src, '/wp-content/uploads/' ) !== false ) {
+		preg_match( '#/wp-content/uploads/(.+?)(?:\?|$)#', $first_src, $pm );
+		$uploads_path = isset( $pm[1] ) ? $pm[1] : '';
+		if ( empty( $uploads_path ) ) {
+			return '';
+		}
+		return PINLIGHTNING_URI . '/img-resize.php?src=' . rawurlencode( $uploads_path ) . '&w=720&q=65';
+	}
+
+	return $first_src;
+}
+
+/**
+ * Send 103 Early Hints for the LCP hero image.
+ *
+ * Fires at template_redirect (before any HTML output) so the browser can start
+ * fetching the hero image while the server is still generating the HTML response.
+ * LiteSpeed natively converts Link headers into HTTP/2 103 Early Hints.
+ *
+ * This complements the <link rel="preload"> in <head> — browsers that support
+ * Early Hints get a head start, others fall back to the inline preload tag.
+ */
+function pinlightning_send_early_hints() {
+	$hero_url = pinlightning_get_lcp_hero_url();
+	if ( ! $hero_url ) {
+		return;
+	}
+
+	header( 'Link: <' . $hero_url . '>; rel=preload; as=image; fetchpriority=high', false, 103 );
+}
+add_action( 'template_redirect', 'pinlightning_send_early_hints', -2 );
 
 /*--------------------------------------------------------------
  * 5. SCRIPT OPTIMIZATION

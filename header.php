@@ -11,6 +11,13 @@
 <!doctype html>
 <html <?php language_attributes(); ?>>
 <head>
+<?php
+// LCP preload + preconnect FIRST — before meta, CSS, or any wp_head output.
+// The browser's preload scanner discovers these at byte 0 of <head>,
+// starting the hero image fetch immediately instead of after parsing CSS.
+pinlightning_early_preconnect();
+pinlightning_preload_lcp_image();
+?>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<?php wp_head(); ?>
