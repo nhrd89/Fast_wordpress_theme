@@ -181,8 +181,6 @@ while ( have_posts() ) :
 		},{threshold:0.3});
 		wraps.forEach(function(w){eo.observe(w)});
 	}
-	var savedScroll=sessionStorage.getItem('pl_pin_scroll');
-	if(savedScroll){window.scrollTo(0,parseInt(savedScroll));sessionStorage.removeItem('pl_pin_scroll');}
 	var pinData={saves:0,images:[]};
 	document.addEventListener('click',function(e){
 		var btn=e.target.closest('.pl-pin-btn');
@@ -194,13 +192,7 @@ while ( have_posts() ) :
 		var img=btn.getAttribute('data-img');
 		if(img)pinData.images.push(img);
 		window.__plPinData=pinData;
-		var href=btn.href;
-		if('ontouchstart' in window||navigator.maxTouchPoints>0){
-			sessionStorage.setItem('pl_pin_scroll',String(window.scrollY));
-			location.href=href;
-		}else{
-			window.open(href,'_blank','noopener');
-		}
+		window.open(btn.href,'_blank','noopener');
 	});
 })();
 </script>
