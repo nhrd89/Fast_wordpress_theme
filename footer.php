@@ -19,6 +19,11 @@ $footer_bg         = get_theme_mod( 'pl_footer_bg', '#111111' );
 $footer_accent     = get_theme_mod( 'pl_accent_color', '#e84393' );
 $footer_accent2    = get_theme_mod( 'pl_accent_color_2', '#6c5ce7' );
 
+$footer_cat_heading   = get_theme_mod( 'pl_footer_cat_heading', 'Categories' );
+$footer_cat_count     = get_theme_mod( 'pl_footer_cat_count', 6 );
+$footer_about_heading = get_theme_mod( 'pl_footer_about_heading', 'About' );
+$footer_legal_heading = get_theme_mod( 'pl_footer_legal_heading', 'Legal' );
+
 $footer_socials = array(
 	'pinterest' => array( 'label' => 'Pinterest' ),
 	'instagram' => array( 'label' => 'Instagram' ),
@@ -67,10 +72,10 @@ $footer_socials = array(
 
 			<!-- Categories -->
 			<nav role="navigation" aria-label="<?php esc_attr_e( 'Footer categories', 'pinlightning' ); ?>">
-				<h4 class="pl-footer-heading"><?php esc_html_e( 'Categories', 'pinlightning' ); ?></h4>
+				<h4 class="pl-footer-heading"><?php echo esc_html( $footer_cat_heading ); ?></h4>
 				<ul class="pl-footer-links">
 					<?php
-					$footer_cats = get_categories( array( 'orderby' => 'count', 'order' => 'DESC', 'number' => 6, 'hide_empty' => true ) );
+					$footer_cats = get_categories( array( 'orderby' => 'count', 'order' => 'DESC', 'number' => $footer_cat_count, 'hide_empty' => true ) );
 					foreach ( $footer_cats as $fc ) :
 					?>
 					<li><a href="<?php echo esc_url( get_category_link( $fc->term_id ) ); ?>"><?php echo esc_html( $fc->name ); ?></a></li>
@@ -80,21 +85,29 @@ $footer_socials = array(
 
 			<!-- About -->
 			<nav role="navigation" aria-label="<?php esc_attr_e( 'About links', 'pinlightning' ); ?>">
-				<h4 class="pl-footer-heading"><?php esc_html_e( 'About', 'pinlightning' ); ?></h4>
+				<h4 class="pl-footer-heading"><?php echo esc_html( $footer_about_heading ); ?></h4>
 				<ul class="pl-footer-links">
-					<li><a href="<?php echo esc_url( home_url( '/about' ) ); ?>"><?php esc_html_e( 'About Us', 'pinlightning' ); ?></a></li>
-					<li><a href="<?php echo esc_url( home_url( '/contact' ) ); ?>"><?php esc_html_e( 'Contact', 'pinlightning' ); ?></a></li>
+					<?php for ( $i = 1; $i <= 4; $i++ ) :
+						$about_label = get_theme_mod( "pl_footer_about_label_{$i}", '' );
+						$about_url   = get_theme_mod( "pl_footer_about_url_{$i}", '' );
+						if ( empty( $about_label ) ) continue;
+					?>
+					<li><a href="<?php echo esc_url( home_url( $about_url ) ); ?>"><?php echo esc_html( $about_label ); ?></a></li>
+					<?php endfor; ?>
 				</ul>
 			</nav>
 
 			<!-- Legal -->
 			<nav role="navigation" aria-label="<?php esc_attr_e( 'Legal links', 'pinlightning' ); ?>">
-				<h4 class="pl-footer-heading"><?php esc_html_e( 'Legal', 'pinlightning' ); ?></h4>
+				<h4 class="pl-footer-heading"><?php echo esc_html( $footer_legal_heading ); ?></h4>
 				<ul class="pl-footer-links">
-					<li><a href="<?php echo esc_url( get_privacy_policy_url() ); ?>"><?php esc_html_e( 'Privacy Policy', 'pinlightning' ); ?></a></li>
-					<li><a href="<?php echo esc_url( home_url( '/terms' ) ); ?>"><?php esc_html_e( 'Terms of Use', 'pinlightning' ); ?></a></li>
-					<li><a href="<?php echo esc_url( home_url( '/disclaimer' ) ); ?>"><?php esc_html_e( 'Disclaimer', 'pinlightning' ); ?></a></li>
-					<li><a href="<?php echo esc_url( home_url( '/affiliate-disclosure' ) ); ?>"><?php esc_html_e( 'Affiliate Disclosure', 'pinlightning' ); ?></a></li>
+					<?php for ( $i = 1; $i <= 5; $i++ ) :
+						$legal_label = get_theme_mod( "pl_footer_legal_label_{$i}", '' );
+						$legal_url   = get_theme_mod( "pl_footer_legal_url_{$i}", '' );
+						if ( empty( $legal_label ) ) continue;
+					?>
+					<li><a href="<?php echo esc_url( home_url( $legal_url ) ); ?>"><?php echo esc_html( $legal_label ); ?></a></li>
+					<?php endfor; ?>
 				</ul>
 			</nav>
 		</div>

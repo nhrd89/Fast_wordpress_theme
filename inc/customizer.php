@@ -556,6 +556,109 @@ function pinlightning_customize_register( $wp_customize ) {
 		'section' => 'pl_home_footer',
 	) ) );
 
+	// --- Footer Section Headings ---
+	$wp_customize->add_setting( 'pl_footer_cat_heading', array(
+		'default'           => 'Categories',
+		'sanitize_callback' => 'sanitize_text_field',
+	) );
+	$wp_customize->add_control( 'pl_footer_cat_heading', array(
+		'label'   => __( 'Categories Heading', 'pinlightning' ),
+		'section' => 'pl_home_footer',
+		'type'    => 'text',
+	) );
+
+	$wp_customize->add_setting( 'pl_footer_cat_count', array(
+		'default'           => 6,
+		'sanitize_callback' => 'absint',
+	) );
+	$wp_customize->add_control( 'pl_footer_cat_count', array(
+		'label'       => __( 'Number of Categories in Footer', 'pinlightning' ),
+		'section'     => 'pl_home_footer',
+		'type'        => 'number',
+		'input_attrs' => array( 'min' => 3, 'max' => 12 ),
+	) );
+
+	$wp_customize->add_setting( 'pl_footer_about_heading', array(
+		'default'           => 'About',
+		'sanitize_callback' => 'sanitize_text_field',
+	) );
+	$wp_customize->add_control( 'pl_footer_about_heading', array(
+		'label'   => __( 'About Section Heading', 'pinlightning' ),
+		'section' => 'pl_home_footer',
+		'type'    => 'text',
+	) );
+
+	$wp_customize->add_setting( 'pl_footer_legal_heading', array(
+		'default'           => 'Legal',
+		'sanitize_callback' => 'sanitize_text_field',
+	) );
+	$wp_customize->add_control( 'pl_footer_legal_heading', array(
+		'label'   => __( 'Legal Section Heading', 'pinlightning' ),
+		'section' => 'pl_home_footer',
+		'type'    => 'text',
+	) );
+
+	// --- Footer About Links (up to 4) ---
+	$about_defaults = array(
+		array( 'About Us', '/about-us' ),
+		array( 'Contact', '/contact-us' ),
+		array( '', '' ),
+		array( '', '' ),
+	);
+	for ( $i = 1; $i <= 4; $i++ ) {
+		$wp_customize->add_setting( "pl_footer_about_label_{$i}", array(
+			'default'           => $about_defaults[ $i - 1 ][0],
+			'sanitize_callback' => 'sanitize_text_field',
+		) );
+		$wp_customize->add_control( "pl_footer_about_label_{$i}", array(
+			'label'       => sprintf( __( 'About Link %d Label', 'pinlightning' ), $i ),
+			'description' => __( 'Leave empty to hide this link.', 'pinlightning' ),
+			'section'     => 'pl_home_footer',
+			'type'        => 'text',
+		) );
+
+		$wp_customize->add_setting( "pl_footer_about_url_{$i}", array(
+			'default'           => $about_defaults[ $i - 1 ][1],
+			'sanitize_callback' => 'esc_url_raw',
+		) );
+		$wp_customize->add_control( "pl_footer_about_url_{$i}", array(
+			'label'   => sprintf( __( 'About Link %d URL', 'pinlightning' ), $i ),
+			'section' => 'pl_home_footer',
+			'type'    => 'url',
+		) );
+	}
+
+	// --- Footer Legal Links (up to 5) ---
+	$legal_defaults = array(
+		array( 'Privacy Policy', '/privacy-policy' ),
+		array( 'Terms of Use', '/terms' ),
+		array( 'Disclaimer', '/disclaimer' ),
+		array( 'Affiliate Disclosure', '/affiliate-disclosure' ),
+		array( '', '' ),
+	);
+	for ( $i = 1; $i <= 5; $i++ ) {
+		$wp_customize->add_setting( "pl_footer_legal_label_{$i}", array(
+			'default'           => $legal_defaults[ $i - 1 ][0],
+			'sanitize_callback' => 'sanitize_text_field',
+		) );
+		$wp_customize->add_control( "pl_footer_legal_label_{$i}", array(
+			'label'       => sprintf( __( 'Legal Link %d Label', 'pinlightning' ), $i ),
+			'description' => __( 'Leave empty to hide.', 'pinlightning' ),
+			'section'     => 'pl_home_footer',
+			'type'        => 'text',
+		) );
+
+		$wp_customize->add_setting( "pl_footer_legal_url_{$i}", array(
+			'default'           => $legal_defaults[ $i - 1 ][1],
+			'sanitize_callback' => 'esc_url_raw',
+		) );
+		$wp_customize->add_control( "pl_footer_legal_url_{$i}", array(
+			'label'   => sprintf( __( 'Legal Link %d URL', 'pinlightning' ), $i ),
+			'section' => 'pl_home_footer',
+			'type'    => 'url',
+		) );
+	}
+
 	// --- Category Icons & Colors ---
 	$wp_customize->add_section( 'pl_home_cat_icons', array(
 		'title'       => __( 'Category Icons & Colors', 'pinlightning' ),
