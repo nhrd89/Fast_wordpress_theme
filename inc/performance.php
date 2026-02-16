@@ -544,25 +544,6 @@ function pinlightning_get_lcp_hero_url() {
 	return $first_src;
 }
 
-/**
- * Send 103 Early Hints for the LCP hero image.
- *
- * Fires at template_redirect (before any HTML output) so the browser can start
- * fetching the hero image while the server is still generating the HTML response.
- * LiteSpeed natively converts Link headers into HTTP/2 103 Early Hints.
- *
- * This complements the <link rel="preload"> in <head> — browsers that support
- * Early Hints get a head start, others fall back to the inline preload tag.
- */
-function pinlightning_send_early_hints() {
-	$hero_url = pinlightning_get_lcp_hero_url();
-	if ( ! $hero_url ) {
-		return;
-	}
-
-	header( 'Link: <' . $hero_url . '>; rel=preload; as=image; fetchpriority=high', false, 103 );
-}
-add_action( 'template_redirect', 'pinlightning_send_early_hints', -2 );
 
 /*--------------------------------------------------------------
  * 5. SCRIPT OPTIMIZATION
