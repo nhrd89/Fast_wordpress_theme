@@ -2890,7 +2890,7 @@ function buildPayload(){
     imgData.sort(function(a,b){return b.v-a.v;});
     imgData=imgData.slice(0,20);
 
-    var ga4cid='';try{ga4cid=localStorage.getItem('plt_ga4cid')||'';}catch(e){}
+    var ga4cid='';try{ga4cid=localStorage.getItem('pl_ga4cid')||'';}catch(e){}
 
     return {t:timeOnPage,url:location.pathname,pid:PID,ref:document.referrer,
         dev:dev,vw:vw,vh:vh,ret:ret,vid:vid,ga4cid:ga4cid,
@@ -2940,14 +2940,43 @@ add_action('wp_footer', function() {
     if (!$ga4_enabled || !$ga4_id || !$ga4_secret) return;
     ?>
 <script>
+// ─── GA4 Client-Side Beacon ───
 (function(){
-var vid=localStorage.getItem('plt_vid')||'';
-if(!vid){vid='v_'+Math.random().toString(36).substr(2,9)+'_'+Date.now().toString(36);try{localStorage.setItem('plt_vid',vid);}catch(e){}}
-var cid=localStorage.getItem('plt_ga4cid')||'';
-if(!cid){var h=0;for(var i=0;i<vid.length;i++){h=((h<<5)-h)+vid.charCodeAt(i);h|=0;}cid=Math.abs(h)+'.'+Math.floor(Date.now()/1000);try{localStorage.setItem('plt_ga4cid',cid);}catch(e){}}
-var payload=JSON.stringify({client_id:cid,events:[{name:'page_view',params:{
-page_location:location.href,page_title:document.title,page_referrer:document.referrer,engagement_time_msec:100}}]});
-if(navigator.sendBeacon){navigator.sendBeacon('https://www.google-analytics.com/mp/collect?measurement_id=<?php echo esc_js($ga4_id); ?>&api_secret=<?php echo esc_js($ga4_secret); ?>',new Blob([payload],{type:'application/json'}));}
+    var cid;
+    try {
+        cid = localStorage.getItem('pl_ga4cid');
+        if (!cid) {
+            var hash = Math.floor(Math.random() * 2147483647) + 1;
+            var ts = Math.floor(Date.now() / 1000);
+            cid = hash + '.' + ts;
+            localStorage.setItem('pl_ga4cid', cid);
+        }
+    } catch(e) {
+        cid = Math.floor(Math.random() * 2147483647) + '.' + Math.floor(Date.now() / 1000);
+    }
+    var url = 'https://www.google-analytics.com/mp/collect'
+        + '?measurement_id=<?php echo esc_js($ga4_id); ?>'
+        + '&api_secret=<?php echo esc_js($ga4_secret); ?>';
+    var payload = JSON.stringify({
+        client_id: cid,
+        events: [{
+            name: 'page_view',
+            params: {
+                page_location: location.href,
+                page_title: document.title,
+                page_referrer: document.referrer || '',
+                engagement_time_msec: 100,
+                session_id: cid.split('.')[1],
+                language: navigator.language || ''
+            }
+        }]
+    });
+    if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([payload], {type:'application/json'}));
+    } else {
+        fetch(url, {method:'POST', body:payload, keepalive:true}).catch(function(){});
+    }
+    try { localStorage.setItem('plt_ga4cid', cid); } catch(e) {}
 })();
 </script>
 <?php

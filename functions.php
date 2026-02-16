@@ -355,10 +355,9 @@ function pl_send_to_ga4( $session_data ) {
 	$client_id = $session_data['ga4cid'] ?? '';
 	if ( empty( $client_id ) ) {
 		$vid = $session_data['visitor_id'] ?? '';
-		if ( empty( $vid ) ) {
-			return;
-		}
-		$client_id = abs( crc32( $vid ) ) . '.' . intval( $session_data['unix'] ?? time() );
+		$client_id = $vid
+			? ( crc32( $vid ) & 0x7FFFFFFF ) . '.' . time()
+			: rand( 1000000, 9999999 ) . '.' . time();
 	}
 
 	$page_url   = $session_data['url'] ?? '';
