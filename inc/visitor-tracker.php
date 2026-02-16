@@ -934,6 +934,24 @@ add_action('admin_menu', function() {
 function plt_admin_dashboard() {
     $days = intval($_GET['days'] ?? 7);
     if ($days < 1 || $days > 90) $days = 7;
+
+    // Handle Pinterest data clear
+    if (isset($_POST['pl_clear_pin_data']) && wp_verify_nonce($_POST['pl_pin_nonce'] ?? '', 'pl_clear_pin_data')) {
+        $upload_dir = wp_upload_dir();
+        $base = $upload_dir['basedir'] . '/pl-tracker-data';
+        if (is_dir($base)) {
+            foreach (glob($base . '/*/v3_*.json') as $file) {
+                $session = json_decode(file_get_contents($file), true);
+                if ($session && isset($session['pin_saves'])) {
+                    unset($session['pin_saves']);
+                    file_put_contents($file, json_encode($session, JSON_PRETTY_PRINT));
+                }
+            }
+        }
+        delete_transient('pl_post_engagement_scores');
+        echo '<div class="notice notice-success is-dismissible"><p>Pinterest save data cleared.</p></div>';
+    }
+
     $data = plt_get_report_data($days);
 
     // Count raw sessions for today
@@ -1223,8 +1241,12 @@ function plt_admin_dashboard() {
     <?php if (!empty($data['sections'])): ?>
     <div class="plt-section">
         <h3>Section Timing (H2/H3 Headings)</h3>
-        <table class="plt-tbl">
+        <div style="max-height:400px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">
+        <table class="plt-tbl" style="margin:0">
+        <thead style="position:sticky;top:0;background:#f9fafb;z-index:1">
         <tr><th>Section</th><th>View Rate</th><th>Avg Read Time</th><th>Scroll Speed</th></tr>
+        </thead>
+        <tbody>
         <?php foreach ($data['sections'] as $heading => $sec): ?>
         <tr>
             <td><?php echo esc_html($heading); ?></td>
@@ -1233,7 +1255,9 @@ function plt_admin_dashboard() {
             <td><?php echo $sec['avg_scroll_speed'] ?? 0; ?> px/s</td>
         </tr>
         <?php endforeach; ?>
+        </tbody>
         </table>
+        </div>
     </div>
     <?php endif; ?>
 
@@ -1281,6 +1305,10 @@ function plt_admin_dashboard() {
         <?php endforeach; ?>
         </table>
         <?php endif; ?>
+        <form method="post" style="margin-top:12px">
+            <?php wp_nonce_field('pl_clear_pin_data', 'pl_pin_nonce'); ?>
+            <button type="submit" name="pl_clear_pin_data" class="button" onclick="return confirm('Clear all Pinterest save data? This cannot be undone.')">&#x1F5D1;&#xFE0F; Clear Pinterest Data</button>
+        </form>
     </div>
 
     <!-- API ENDPOINT -->
