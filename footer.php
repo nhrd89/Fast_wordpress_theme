@@ -72,7 +72,7 @@ $footer_socials = array(
 
 			<!-- Categories -->
 			<nav role="navigation" aria-label="<?php esc_attr_e( 'Footer categories', 'pinlightning' ); ?>">
-				<h4 class="pl-footer-heading"><?php echo esc_html( $footer_cat_heading ); ?></h4>
+				<h3 class="pl-footer-heading"><?php echo esc_html( $footer_cat_heading ); ?></h3>
 				<ul class="pl-footer-links">
 					<?php
 					$footer_cats = get_categories( array( 'orderby' => 'count', 'order' => 'DESC', 'number' => $footer_cat_count, 'hide_empty' => true ) );
@@ -85,7 +85,7 @@ $footer_socials = array(
 
 			<!-- About -->
 			<nav role="navigation" aria-label="<?php esc_attr_e( 'About links', 'pinlightning' ); ?>">
-				<h4 class="pl-footer-heading"><?php echo esc_html( $footer_about_heading ); ?></h4>
+				<h3 class="pl-footer-heading"><?php echo esc_html( $footer_about_heading ); ?></h3>
 				<ul class="pl-footer-links">
 					<?php for ( $i = 1; $i <= 4; $i++ ) :
 						$about_label = get_theme_mod( "pl_footer_about_label_{$i}", '' );
@@ -99,7 +99,7 @@ $footer_socials = array(
 
 			<!-- Legal -->
 			<nav role="navigation" aria-label="<?php esc_attr_e( 'Legal links', 'pinlightning' ); ?>">
-				<h4 class="pl-footer-heading"><?php echo esc_html( $footer_legal_heading ); ?></h4>
+				<h3 class="pl-footer-heading"><?php echo esc_html( $footer_legal_heading ); ?></h3>
 				<ul class="pl-footer-links">
 					<?php for ( $i = 1; $i <= 5; $i++ ) :
 						$legal_label = get_theme_mod( "pl_footer_legal_label_{$i}", '' );

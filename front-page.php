@@ -140,6 +140,8 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 
 <div class="pl-home">
 
+	<h1 class="screen-reader-text"><?php bloginfo( 'name' ); ?></h1>
+
 	<?php if ( $pl_hero_show && ! empty( $hero_posts ) ) : ?>
 	<!-- ========== HERO BENTO GRID ========== -->
 	<section class="pl-hero">

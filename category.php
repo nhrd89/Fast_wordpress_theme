@@ -176,7 +176,7 @@ $has_more   = $posts_data['has_more'];
 				</div>
 				<?php endif; ?>
 				<div class="pl-cat-card-body">
-					<h3><a href="<?php echo esc_url( $permalink ); ?>"><?php echo esc_html( $title ); ?></a></h3>
+					<h2><a href="<?php echo esc_url( $permalink ); ?>"><?php echo esc_html( $title ); ?></a></h2>
 					<div class="pl-cat-card-meta">
 						<span><?php echo $read_time; ?> min read</span>
 						<span><?php echo get_the_date( 'M j' ); ?></span>

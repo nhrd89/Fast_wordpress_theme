@@ -119,6 +119,33 @@ function pinlightning_remove_bloat_styles() {
 add_action( 'wp_enqueue_scripts', 'pinlightning_remove_bloat_styles', 100 );
 
 /**
+ * Nuclear dequeue for tooltipster — the Smart Notification plugin re-enqueues
+ * after priority 100. Fire at wp_print_styles (latest hook) with priority 9999.
+ */
+add_action( 'wp_print_styles', function() {
+	if ( is_admin() ) {
+		return;
+	}
+
+	// Capture URL before deregistering so scroll-loader can still use it.
+	global $pinlightning_deferred_tooltipster_src;
+	if ( empty( $pinlightning_deferred_tooltipster_src ) ) {
+		$styles = wp_styles();
+		foreach ( array( 'smpush-smiotooltipster', 'tooltipster' ) as $h ) {
+			if ( isset( $styles->registered[ $h ] ) ) {
+				$pinlightning_deferred_tooltipster_src = $styles->registered[ $h ]->src;
+				break;
+			}
+		}
+	}
+
+	wp_dequeue_style( 'smpush-smiotooltipster' );
+	wp_deregister_style( 'smpush-smiotooltipster' );
+	wp_dequeue_style( 'tooltipster' );
+	wp_deregister_style( 'tooltipster' );
+}, 9999 );
+
+/**
  * Convert deferred plugin stylesheets to non-blocking via media="print" onload trick.
  */
 function pinlightning_defer_plugin_styles( $tag, $handle, $src ) {
