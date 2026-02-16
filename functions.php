@@ -13,6 +13,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'PINLIGHTNING_VERSION', '1.0.0' );
 define( 'PINLIGHTNING_DIR', get_template_directory() );
+
+// One-time cleanup: remove markdown bold artifacts from post titles.
+function pl_fix_title_asterisks() {
+	if ( get_option( 'pl_titles_cleaned' ) ) {
+		return;
+	}
+	global $wpdb;
+	$wpdb->query( "UPDATE {$wpdb->posts} SET post_title = REPLACE(post_title, '** **', '') WHERE post_title LIKE '%** **%'" );
+	$wpdb->query( "UPDATE {$wpdb->posts} SET post_title = REPLACE(post_title, '**', '') WHERE post_title LIKE '%**%'" );
+	update_option( 'pl_titles_cleaned', 1 );
+}
+add_action( 'init', 'pl_fix_title_asterisks' );
 define( 'PINLIGHTNING_URI', get_template_directory_uri() );
 
 /**
