@@ -2936,22 +2936,29 @@ else setTimeout(init,300);
 add_action('wp_footer', function() {
     if (!PLT_ACTIVE) return;
     $ga4mid = get_theme_mod('pl_ga4_measurement_id', '');
-    $ga4sec = get_theme_mod('pl_ga4_api_secret', '');
     $ga4on  = get_theme_mod('pl_ga4_enabled', false);
-    if (!$ga4on || !$ga4mid || !$ga4sec) return;
+    if (!$ga4on || !$ga4mid) return;
     ?>
 <script>
 ;(function(){
-    var c;
-    try{c=localStorage.getItem('pl_ga4cid')}catch(e){}
-    if(!c){
-        c=(Math.floor(Math.random()*2147483647)+1)+'.'+Math.floor(Date.now()/1000);
-        try{localStorage.setItem('pl_ga4cid',c)}catch(e){}
+    function loadGA4(){
+        var s=document.createElement('script');
+        s.src='https://www.googletagmanager.com/gtag/js?id=<?php echo esc_js($ga4mid); ?>';
+        s.async=true;
+        document.head.appendChild(s);
+        window.dataLayer=window.dataLayer||[];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js',new Date());
+        gtag('config','<?php echo esc_js($ga4mid); ?>',{
+            send_page_view:true,
+            cookie_flags:'SameSite=None;Secure'
+        });
     }
-    var u='https://www.google-analytics.com/mp/collect?measurement_id=<?php echo esc_js($ga4mid); ?>&api_secret=<?php echo esc_js($ga4sec); ?>';
-    var p=JSON.stringify({client_id:c,events:[{name:'page_view',params:{page_location:location.href,page_title:document.title,page_referrer:document.referrer||'',engagement_time_msec:'100',session_id:c.split('.')[1]}}]});
-    if(navigator.sendBeacon){
-        navigator.sendBeacon(u,new Blob([p],{type:'text/plain'}));
+    // Load after page is idle — zero impact on PageSpeed
+    if('requestIdleCallback' in window){
+        requestIdleCallback(loadGA4,{timeout:3000});
+    } else {
+        setTimeout(loadGA4,2000);
     }
 })();
 </script>
