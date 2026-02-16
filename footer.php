@@ -66,7 +66,7 @@ $footer_socials = array(
 			</div>
 
 			<!-- Categories -->
-			<div>
+			<nav role="navigation" aria-label="<?php esc_attr_e( 'Footer categories', 'pinlightning' ); ?>">
 				<h4 class="pl-footer-heading"><?php esc_html_e( 'Categories', 'pinlightning' ); ?></h4>
 				<ul class="pl-footer-links">
 					<?php
@@ -76,19 +76,19 @@ $footer_socials = array(
 					<li><a href="<?php echo esc_url( get_category_link( $fc->term_id ) ); ?>"><?php echo esc_html( $fc->name ); ?></a></li>
 					<?php endforeach; ?>
 				</ul>
-			</div>
+			</nav>
 
 			<!-- About -->
-			<div>
+			<nav role="navigation" aria-label="<?php esc_attr_e( 'About links', 'pinlightning' ); ?>">
 				<h4 class="pl-footer-heading"><?php esc_html_e( 'About', 'pinlightning' ); ?></h4>
 				<ul class="pl-footer-links">
 					<li><a href="<?php echo esc_url( home_url( '/about' ) ); ?>"><?php esc_html_e( 'About Us', 'pinlightning' ); ?></a></li>
 					<li><a href="<?php echo esc_url( home_url( '/contact' ) ); ?>"><?php esc_html_e( 'Contact', 'pinlightning' ); ?></a></li>
 				</ul>
-			</div>
+			</nav>
 
 			<!-- Legal -->
-			<div>
+			<nav role="navigation" aria-label="<?php esc_attr_e( 'Legal links', 'pinlightning' ); ?>">
 				<h4 class="pl-footer-heading"><?php esc_html_e( 'Legal', 'pinlightning' ); ?></h4>
 				<ul class="pl-footer-links">
 					<li><a href="<?php echo esc_url( get_privacy_policy_url() ); ?>"><?php esc_html_e( 'Privacy Policy', 'pinlightning' ); ?></a></li>
@@ -96,7 +96,7 @@ $footer_socials = array(
 					<li><a href="<?php echo esc_url( home_url( '/disclaimer' ) ); ?>"><?php esc_html_e( 'Disclaimer', 'pinlightning' ); ?></a></li>
 					<li><a href="<?php echo esc_url( home_url( '/affiliate-disclosure' ) ); ?>"><?php esc_html_e( 'Affiliate Disclosure', 'pinlightning' ); ?></a></li>
 				</ul>
-			</div>
+			</nav>
 		</div>
 
 		<div class="pl-footer-bottom">

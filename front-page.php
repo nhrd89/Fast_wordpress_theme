@@ -165,7 +165,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 			   class="pl-cat-pill"
 			   data-cat="<?php echo esc_attr( $cat->slug ); ?>"
 			   style="--pill-color:<?php echo esc_attr( $color ); ?>">
-				<span class="pl-pill-icon"><?php echo $icon; ?></span>
+				<span class="pl-pill-icon" aria-hidden="true"><?php echo $icon; ?></span>
 				<span class="pl-pill-name"><?php echo esc_html( $cat->name ); ?></span>
 				<?php if ( $pl_cats_counts ) : ?>
 				<span class="pl-pill-count"><?php echo esc_html( $cat->count ); ?></span>
@@ -222,7 +222,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 						<?php if ( $pl_grid_readtime ) : ?>
 						<div class="pl-card-footer">
 							<span class="pl-card-meta">
-								<span class="pl-card-meta-icon" style="background:<?php echo esc_attr( $g_color ); ?>22"><?php echo $g_icon; ?></span>
+								<span class="pl-card-meta-icon" style="background:<?php echo esc_attr( $g_color ); ?>22" aria-hidden="true"><?php echo $g_icon; ?></span>
 								<?php echo esc_html( $read_time ); ?> min read
 							</span>
 						</div>
@@ -236,7 +236,7 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 		<?php if ( $pl_grid_loadmore ) : ?>
 		<!-- Load More -->
 		<div class="pl-loadmore-wrap">
-			<button class="pl-loadmore" id="plLoadMore"
+			<button class="pl-loadmore" id="plLoadMore" aria-label="<?php esc_attr_e( 'Load more posts', 'pinlightning' ); ?>"
 			        data-exclude="<?php echo esc_attr( implode( ',', array_merge( $hero_ids, wp_list_pluck( $grid_posts, 'ID' ) ) ) ); ?>">
 				<?php echo esc_html( $pl_grid_loadmore_text ); ?>
 			</button>
@@ -270,11 +270,11 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 	<!-- ========== NEWSLETTER ========== -->
 	<section class="pl-newsletter" style="background:linear-gradient(135deg,<?php echo esc_attr( $pl_newsletter_bg ); ?> 0%,<?php echo esc_attr( $pl_newsletter_bg ); ?>ee 50%,<?php echo esc_attr( $pl_newsletter_bg ); ?> 100%)">
 		<div class="pl-newsletter-inner">
-			<div class="pl-newsletter-icon">&#x2709;&#xFE0F;</div>
+			<div class="pl-newsletter-icon" aria-hidden="true">&#x2709;&#xFE0F;</div>
 			<h2 class="pl-newsletter-title"><?php echo esc_html( $pl_newsletter_heading ); ?></h2>
 			<p class="pl-newsletter-desc"><?php echo esc_html( $pl_newsletter_desc ); ?></p>
-			<form class="pl-newsletter-form" id="plNewsletterForm">
-				<input type="email" class="pl-newsletter-input" placeholder="<?php echo esc_attr( $pl_newsletter_placeholder ); ?>" required />
+			<form class="pl-newsletter-form" id="plNewsletterForm" aria-label="<?php esc_attr_e( 'Subscribe to newsletter', 'pinlightning' ); ?>">
+				<input type="email" class="pl-newsletter-input" placeholder="<?php echo esc_attr( $pl_newsletter_placeholder ); ?>" aria-label="<?php esc_attr_e( 'Email address', 'pinlightning' ); ?>" required />
 				<button type="submit" class="pl-newsletter-btn" style="background:linear-gradient(135deg,<?php echo esc_attr( $pl_accent ); ?>,<?php echo esc_attr( $pl_accent2 ); ?>)"><?php echo esc_html( $pl_newsletter_btn ); ?></button>
 			</form>
 			<p class="pl-newsletter-note"><?php echo esc_html( $pl_newsletter_note ); ?></p>

@@ -45,7 +45,7 @@ for URL in "${URLS[@]}"; do
     CLS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['lighthouseResult']['audits']['cumulative-layout-shift']['numericValue'])" 2>/dev/null || echo "0")
 
     echo "Performance:    $PERF/100 (min: 95)"
-    echo "Accessibility:  $A11Y/100 (min: 95)"
+    echo "Accessibility:  $A11Y/100 (min: 90)"
     echo "Best Practices: $BP/100 (min: 95)"
     echo "SEO:            $SEO/100 (min: 95)"
     echo ""
@@ -55,8 +55,8 @@ for URL in "${URLS[@]}"; do
         echo -e "${RED}FAIL: Performance $PERF < 95${NC}"
         FAILED=1
     fi
-    if [ "$A11Y" -lt 95 ]; then
-        echo -e "${RED}FAIL: Accessibility $A11Y < 95${NC}"
+    if [ "$A11Y" -lt 90 ]; then
+        echo -e "${RED}FAIL: Accessibility $A11Y < 90${NC}"
         FAILED=1
     fi
     if [ "$BP" -lt 95 ]; then

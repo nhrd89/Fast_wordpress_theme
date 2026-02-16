@@ -1328,13 +1328,13 @@
 .pl-footer-logo{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .pl-footer-logo-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#e84393,#6c5ce7);display:flex;align-items:center;justify-content:center;font-size:13px}
 .pl-footer-logo-text{font-size:18px;font-weight:700}
-.pl-footer-about{font-size:13px;color:#666;line-height:1.7;max-width:260px}
+.pl-footer-about{font-size:13px;color:#999;line-height:1.7;max-width:260px}
 .pl-footer-social{display:flex;gap:14px;margin-top:18px}
-.pl-footer-social a{font-size:12px;color:#666;text-decoration:none;transition:color .15s}
+.pl-footer-social a{font-size:12px;color:#999;text-decoration:none;transition:color .15s}
 .pl-footer-social a:hover{color:#e84393}
 .pl-footer-heading{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px}
 .pl-footer-links{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
-.pl-footer-links a{font-size:13px;color:#555;text-decoration:none;transition:color .15s}
+.pl-footer-links a{font-size:13px;color:#999;text-decoration:none;transition:color .15s}
 .pl-footer-links a:hover{color:#e84393}
-.pl-footer-bottom{margin-top:36px;padding-top:20px;border-top:1px solid #222;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#444}
+.pl-footer-bottom{margin-top:36px;padding-top:20px;border-top:1px solid #222;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#999}
 @media(max-width:480px){.pl-footer-bottom{flex-direction:column;gap:8px;text-align:center}}
