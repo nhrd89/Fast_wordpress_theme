@@ -913,6 +913,36 @@ function plt_load_sessions($days) {
     return $sessions;
 }
 
+/**
+ * Load visitor sessions within a specific timestamp range.
+ */
+function plt_get_sessions_in_range($start_ts, $end_ts) {
+    $upload_dir = wp_upload_dir();
+    $base = $upload_dir['basedir'] . '/pl-tracker-data';
+    if (!is_dir($base)) return [];
+
+    $sessions = [];
+    $current = strtotime(date('Y-m-d', $start_ts));
+    $end_day = strtotime(date('Y-m-d', $end_ts));
+
+    while ($current <= $end_day) {
+        $d = $base . '/' . date('Y-m-d', $current);
+        if (is_dir($d)) {
+            foreach (glob($d . '/*.json') as $f) {
+                $data = json_decode(file_get_contents($f), true);
+                if ($data) {
+                    $ts = $data['unix'] ?? strtotime($data['ts'] ?? '');
+                    if ($ts >= $start_ts && $ts <= $end_ts) {
+                        $sessions[] = $data;
+                    }
+                }
+            }
+        }
+        $current += DAY_IN_SECONDS;
+    }
+    return $sessions;
+}
+
 // ============================================
 // ADMIN DASHBOARD
 // ============================================
@@ -929,6 +959,12 @@ add_action('admin_menu', function() {
     add_submenu_page('pl-analytics', 'Dashboard', 'Dashboard', 'manage_options', 'pl-analytics', 'plt_admin_dashboard');
     add_submenu_page('pl-analytics', 'Sessions', 'Sessions', 'manage_options', 'pl-analytics-sessions', 'plt_admin_sessions');
     add_submenu_page('pl-analytics', 'Settings', 'Settings', 'manage_options', 'pl-analytics-settings', 'plt_admin_settings');
+    add_submenu_page('pl-analytics', 'Full Analytics', "\xF0\x9F\x93\x8A Full Analytics", 'manage_options', 'pl-analytics-full', 'plt_full_analytics_page');
+});
+
+add_action('admin_enqueue_scripts', function($hook) {
+    if (strpos($hook, 'pl-analytics-full') === false) return;
+    wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js', [], '4.4', true);
 });
 
 function plt_admin_dashboard() {
@@ -1461,6 +1497,565 @@ function plt_admin_settings() {
         <p>This tracker is now embedded in the PinLightning theme. If you still have the <strong>PinLightning Visitor Tracker</strong> plugin active, you should <strong>deactivate it</strong> to avoid duplicate tracking.</p>
     </div>
 
+    </div>
+    <?php
+}
+
+// ============================================
+// FULL ANALYTICS DASHBOARD
+// ============================================
+
+function plt_full_analytics_page() {
+    // ─── PERIOD HANDLING ───
+    $period = sanitize_text_field($_GET['period'] ?? '7d');
+    $custom_from = sanitize_text_field($_GET['from'] ?? '');
+    $custom_to = sanitize_text_field($_GET['to'] ?? '');
+
+    $now = current_time('timestamp');
+    switch ($period) {
+        case 'today':   $start = strtotime('today', $now); break;
+        case '7d':      $start = $now - 7 * DAY_IN_SECONDS; break;
+        case '14d':     $start = $now - 14 * DAY_IN_SECONDS; break;
+        case '30d':     $start = $now - 30 * DAY_IN_SECONDS; break;
+        case '90d':     $start = $now - 90 * DAY_IN_SECONDS; break;
+        case 'custom':
+            $start = $custom_from ? strtotime($custom_from) : $now - 7 * DAY_IN_SECONDS;
+            $now = $custom_to ? strtotime($custom_to . ' 23:59:59') : $now;
+            break;
+        default:        $start = $now - 7 * DAY_IN_SECONDS;
+    }
+
+    // ─── LOAD SESSION DATA ───
+    $sessions = plt_get_sessions_in_range($start, $now);
+    $total = count($sessions);
+
+    // ─── AGGREGATE ALL METRICS ───
+    $daily_sessions = [];
+    $hourly_sessions = array_fill(0, 24, 0);
+    $dow_sessions = array_fill(0, 7, 0);
+    $devices = ['desktop' => 0, 'mobile' => 0, 'tablet' => 0];
+    $referrers = [];
+    $referrer_types = ['pinterest' => 0, 'direct' => 0, 'search' => 0, 'social' => 0, 'other' => 0];
+    $page_views = [];
+    $scroll_depths = [];
+    $quality_scores = [];
+    $active_times = [];
+    $time_on_page = [];
+    $patterns = ['reader' => 0, 'scanner' => 0, 'bouncer' => 0];
+    $new_visitors = 0;
+    $returning_visitors = 0;
+    $depth_buckets = array_fill(0, 10, 0);
+    $realtime_cutoff = time() - 300;
+    $realtime_count = 0;
+    $total_pin_saves = 0;
+    $pin_sessions = 0;
+    $exit_depths = [];
+    $viewport_widths = [];
+    $completions = [];
+
+    // ─── PROCESS EACH SESSION ───
+    foreach ($sessions as $s) {
+        $ts = $s['unix'] ?? strtotime($s['ts'] ?? '');
+        if (!$ts) continue;
+
+        $date = date('Y-m-d', $ts);
+        $hour = (int)date('G', $ts);
+        $dow = (int)date('w', $ts);
+
+        $daily_sessions[$date] = ($daily_sessions[$date] ?? 0) + 1;
+        $hourly_sessions[$hour]++;
+        $dow_sessions[$dow]++;
+
+        $device = strtolower($s['device'] ?? 'desktop');
+        if (isset($devices[$device])) $devices[$device]++;
+
+        $ref = $s['referrer'] ?? '';
+        $ref_display = $ref ?: '(direct)';
+        $referrers[$ref_display] = ($referrers[$ref_display] ?? 0) + 1;
+        $ref_lower = strtolower($ref);
+        if (strpos($ref_lower, 'pinterest') !== false) $referrer_types['pinterest']++;
+        elseif (empty($ref)) $referrer_types['direct']++;
+        elseif (preg_match('/google|bing|yahoo|duckduckgo|ecosia|yandex/', $ref_lower)) $referrer_types['search']++;
+        elseif (preg_match('/facebook|twitter|instagram|tiktok|reddit|linkedin/', $ref_lower)) $referrer_types['social']++;
+        else $referrer_types['other']++;
+
+        $page_url = $s['url'] ?? '';
+        if ($page_url) $page_views[$page_url] = ($page_views[$page_url] ?? 0) + 1;
+
+        $depth = floatval($s['max_depth_pct'] ?? 0);
+        $scroll_depths[] = $depth;
+        $bucket = min(9, (int)floor($depth / 10));
+        $depth_buckets[$bucket]++;
+
+        $quality_scores[] = floatval($s['quality_score'] ?? 0);
+        $active_times[] = floatval(($s['engagement']['active_time_ms'] ?? 0)) / 1000;
+        $time_on_page[] = floatval(($s['time_on_page_ms'] ?? 0)) / 1000;
+        $completions[] = floatval($s['content_completion_pct'] ?? 0);
+
+        $pattern = strtolower($s['scroll_pattern'] ?? 'scanner');
+        if (isset($patterns[$pattern])) $patterns[$pattern]++;
+
+        if (!empty($s['returning'])) $returning_visitors++;
+        else $new_visitors++;
+
+        if ($ts >= $realtime_cutoff) $realtime_count++;
+
+        $pin_s = $s['pin_saves']['saves'] ?? 0;
+        if ($pin_s > 0) { $total_pin_saves += intval($pin_s); $pin_sessions++; }
+
+        $exit_depths[] = floatval($s['exit_intent']['depth_at_exit'] ?? $depth);
+
+        $vw = intval($s['vw'] ?? 0);
+        if ($vw > 0) {
+            if ($vw < 480) $vw_label = '<480';
+            elseif ($vw < 768) $vw_label = '480-767';
+            elseif ($vw < 1024) $vw_label = '768-1023';
+            elseif ($vw < 1440) $vw_label = '1024-1439';
+            else $vw_label = '1440+';
+            $viewport_widths[$vw_label] = ($viewport_widths[$vw_label] ?? 0) + 1;
+        }
+    }
+
+    // ─── COMPUTE SUMMARY METRICS ───
+    $avg = function($a) { return count($a) ? array_sum($a) / count($a) : 0; };
+    $med = function($a) { if (!count($a)) return 0; sort($a); $m = (int)floor(count($a)/2); return count($a) % 2 ? round($a[$m],1) : round(($a[$m-1]+$a[$m])/2,1); };
+
+    $avg_depth = $total > 0 ? round($avg($scroll_depths), 1) : 0;
+    $median_depth = $med($scroll_depths);
+    $avg_quality = $total > 0 ? round($avg($quality_scores), 1) : 0;
+    $avg_active = $total > 0 ? round($avg($active_times), 1) : 0;
+    $avg_time = $total > 0 ? round($avg($time_on_page), 1) : 0;
+    $bounce_rate = $total > 0 ? round($patterns['bouncer'] / $total * 100, 1) : 0;
+    $returning_pct = $total > 0 ? round($returning_visitors / $total * 100, 1) : 0;
+    $pin_rate = $total > 0 ? round($pin_sessions / $total * 100, 1) : 0;
+
+    arsort($page_views);
+    arsort($referrers);
+    ksort($daily_sessions);
+    $chart_dates = array_keys($daily_sessions);
+    $chart_counts = array_values($daily_sessions);
+
+    // ─── RENDER PAGE ───
+    ?>
+    <div class="wrap" style="max-width:1400px">
+        <style>
+            .pla-grid{display:grid;gap:16px;margin-bottom:24px}
+            .pla-grid-4{grid-template-columns:repeat(4,1fr)}
+            .pla-grid-3{grid-template-columns:repeat(3,1fr)}
+            .pla-grid-2{grid-template-columns:repeat(2,1fr)}
+            @media(max-width:1200px){.pla-grid-4{grid-template-columns:repeat(2,1fr)}}
+            @media(max-width:768px){.pla-grid-4,.pla-grid-3,.pla-grid-2{grid-template-columns:1fr}}
+
+            .pla-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+            .pla-card h3{margin:0 0 14px;font-size:15px;font-weight:600;color:#111;display:flex;align-items:center;gap:8px}
+
+            .pla-stat{text-align:center;padding:16px}
+            .pla-stat-value{font-size:28px;font-weight:700;color:#111;line-height:1.2}
+            .pla-stat-label{font-size:12px;color:#888;margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+            .pla-stat-sub{font-size:11px;color:#aaa;margin-top:2px}
+
+            .pla-realtime{background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none}
+            .pla-realtime .pla-stat-value{color:#fff;font-size:42px}
+            .pla-realtime .pla-stat-label{color:rgba(255,255,255,.8)}
+            .pla-pulse{display:inline-block;width:10px;height:10px;background:#fff;border-radius:50%;animation:plaPulse 1.5s infinite}
+            @keyframes plaPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+
+            .pla-period{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+            .pla-period a,.pla-period button{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:500;text-decoration:none;border:1px solid #ddd;background:#fff;color:#555;cursor:pointer;transition:all .15s}
+            .pla-period a:hover,.pla-period button:hover{border-color:#999}
+            .pla-period a.active,.pla-period button.active{background:#111;color:#fff;border-color:#111}
+
+            .pla-table{width:100%;border-collapse:collapse;font-size:13px}
+            .pla-table th{text-align:left;padding:8px 10px;border-bottom:2px solid #e5e7eb;font-weight:600;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:#fff;z-index:1}
+            .pla-table td{padding:8px 10px;border-bottom:1px solid #f3f4f6;color:#333}
+            .pla-table tr:hover td{background:#f9fafb}
+
+            .pla-scroll{max-height:350px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px}
+            .pla-scroll .pla-table th{background:#f9fafb}
+
+            .pla-chart-wrap{position:relative;height:250px;width:100%}
+            .pla-chart-tall{height:300px}
+
+            .pla-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+        </style>
+
+        <h1 style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            &#x1F4CA; Full Analytics
+            <span style="font-size:13px;color:#888;font-weight:400">
+                <?php echo number_format($total); ?> sessions
+                <?php if ($period !== 'custom') : ?>
+                    &middot; <?php echo $period === 'today' ? 'Today' : 'Last ' . esc_html($period); ?>
+                <?php else : ?>
+                    &middot; <?php echo esc_html($custom_from); ?> to <?php echo esc_html($custom_to); ?>
+                <?php endif; ?>
+            </span>
+        </h1>
+
+        <!-- PERIOD SELECTOR -->
+        <div class="pla-period">
+            <?php
+            $base_url = admin_url('admin.php?page=pl-analytics-full');
+            $periods = ['today' => 'Today', '7d' => '7 Days', '14d' => '14 Days', '30d' => '30 Days', '90d' => '90 Days'];
+            foreach ($periods as $key => $label) :
+            ?>
+            <a href="<?php echo esc_url($base_url . '&period=' . $key); ?>"
+                class="<?php echo $period === $key ? 'active' : ''; ?>">
+                <?php echo esc_html($label); ?>
+            </a>
+            <?php endforeach; ?>
+
+            <span style="color:#ccc;margin:0 4px">|</span>
+
+            <form method="get" style="display:flex;gap:6px;align-items:center">
+                <input type="hidden" name="page" value="pl-analytics-full" />
+                <input type="hidden" name="period" value="custom" />
+                <input type="date" name="from" value="<?php echo esc_attr($custom_from ?: date('Y-m-d', $start)); ?>"
+                        style="padding:6px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px" />
+                <span style="color:#888">&rarr;</span>
+                <input type="date" name="to" value="<?php echo esc_attr($custom_to ?: date('Y-m-d')); ?>"
+                        style="padding:6px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px" />
+                <button type="submit" class="<?php echo $period === 'custom' ? 'active' : ''; ?>">Apply</button>
+            </form>
+        </div>
+
+        <!-- ROW 1: REAL-TIME + KEY METRICS -->
+        <div class="pla-grid pla-grid-4">
+            <div class="pla-card pla-realtime pla-stat">
+                <div><span class="pla-pulse"></span></div>
+                <div class="pla-stat-value"><?php echo $realtime_count; ?></div>
+                <div class="pla-stat-label">Active Now (5 min)</div>
+            </div>
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo number_format($total); ?></div>
+                <div class="pla-stat-label">Total Sessions</div>
+            </div>
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo $avg_depth; ?>%</div>
+                <div class="pla-stat-label">Avg Scroll Depth</div>
+                <div class="pla-stat-sub">Median: <?php echo $median_depth; ?>%</div>
+            </div>
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo $bounce_rate; ?>%</div>
+                <div class="pla-stat-label">Bounce Rate</div>
+                <div class="pla-stat-sub"><?php echo $patterns['bouncer']; ?> bouncers</div>
+            </div>
+        </div>
+
+        <!-- ROW 2: MORE KEY METRICS -->
+        <div class="pla-grid pla-grid-4">
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo $returning_pct; ?>%</div>
+                <div class="pla-stat-label">Returning Visitors</div>
+                <div class="pla-stat-sub"><?php echo $returning_visitors; ?> / <?php echo $total; ?></div>
+            </div>
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo $avg_active; ?>s</div>
+                <div class="pla-stat-label">Avg Active Time</div>
+                <div class="pla-stat-sub"><?php echo round($avg_time); ?>s total avg</div>
+            </div>
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo $avg_quality; ?></div>
+                <div class="pla-stat-label">Avg Quality Score</div>
+                <div class="pla-stat-sub">out of 100</div>
+            </div>
+            <div class="pla-card pla-stat">
+                <div class="pla-stat-value"><?php echo $total_pin_saves; ?></div>
+                <div class="pla-stat-label">&#x1F4CC; Pinterest Saves</div>
+                <div class="pla-stat-sub"><?php echo $pin_rate; ?>% save rate</div>
+            </div>
+        </div>
+
+        <!-- ROW 3: SESSIONS OVER TIME + HOURLY -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F4C8; Sessions Over Time</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaSessionsChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F550; Sessions by Hour</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaHourlyChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 4: DEVICE + PATTERN + VISITOR PIE CHARTS -->
+        <div class="pla-grid pla-grid-3">
+            <div class="pla-card">
+                <h3>&#x1F4F1; Devices</h3>
+                <div class="pla-chart-wrap"><canvas id="plaDeviceChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F441; Scroll Patterns</h3>
+                <div class="pla-chart-wrap"><canvas id="plaPatternChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F504; New vs Returning</h3>
+                <div class="pla-chart-wrap"><canvas id="plaVisitorChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 5: SCROLL DEPTH + QUALITY SCORE -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F4CF; Scroll Depth Distribution</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaDepthChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x2B50; Quality Score Distribution</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaQualityChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 6: TRAFFIC SOURCES + REFERRER TABLE -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F517; Traffic Sources</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaReferrerChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F4CA; Referrer Breakdown</h3>
+                <div class="pla-scroll">
+                    <table class="pla-table">
+                        <thead><tr><th>Source</th><th>Sessions</th><th>%</th></tr></thead>
+                        <tbody>
+                        <?php foreach (array_slice($referrers, 0, 20, true) as $ref => $cnt) :
+                            $pct = $total > 0 ? round($cnt / $total * 100, 1) : 0;
+                        ?>
+                        <tr>
+                            <td><?php echo esc_html(strlen($ref) > 50 ? substr($ref, 0, 50) . '...' : $ref); ?></td>
+                            <td><strong><?php echo number_format($cnt); ?></strong></td>
+                            <td><?php echo $pct; ?>%</td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ROW 7: TOP PAGES + VIEWPORT WIDTHS -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F4C4; Top Pages</h3>
+                <div class="pla-scroll">
+                    <table class="pla-table">
+                        <thead><tr><th>#</th><th>Page</th><th>Views</th><th>%</th></tr></thead>
+                        <tbody>
+                        <?php $rank = 1; foreach (array_slice($page_views, 0, 25, true) as $url => $cnt) :
+                            $pct = $total > 0 ? round($cnt / $total * 100, 1) : 0;
+                            $short = strlen($url) > 55 ? substr($url, 0, 55) . '...' : $url;
+                        ?>
+                        <tr>
+                            <td><?php echo $rank++; ?></td>
+                            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo esc_html($short); ?></td>
+                            <td><strong><?php echo number_format($cnt); ?></strong></td>
+                            <td><?php echo $pct; ?>%</td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F4BB; Viewport Widths</h3>
+                <div class="pla-chart-wrap"><canvas id="plaViewportChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 8: DAY OF WEEK + ACTIVE TIME -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F4C5; Sessions by Day of Week</h3>
+                <div class="pla-chart-wrap"><canvas id="plaDowChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x23F1; Active Time Distribution</h3>
+                <div class="pla-chart-wrap"><canvas id="plaActiveTimeChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 9: ENGAGEMENT DEPTH + EXIT DEPTH -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x1F525; Engagement by Depth Zone</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaZoneChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F6AA; Exit Depth Distribution</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaExitChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 10: CONTENT COMPLETION + PINTEREST -->
+        <div class="pla-grid pla-grid-2">
+            <div class="pla-card">
+                <h3>&#x2705; Content Completion Distribution</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaCompletionChart"></canvas></div>
+            </div>
+            <div class="pla-card">
+                <h3>&#x1F4CC; Pinterest Saves Over Time</h3>
+                <div class="pla-chart-wrap pla-chart-tall"><canvas id="plaPinChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- CHART.JS INITIALIZATION -->
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Chart === 'undefined') return;
+            var defaults = Chart.defaults;
+            defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+            defaults.font.size = 12;
+            defaults.plugins.legend.labels.usePointStyle = true;
+            defaults.plugins.legend.labels.padding = 16;
+            defaults.animation.duration = 600;
+
+            var accent = '#e84393';
+            var accent2 = '#6c5ce7';
+            var colors = ['#e84393','#6c5ce7','#0984e3','#00b894','#e17055','#fdcb6e','#d63031','#00cec9','#e056a0','#636e72'];
+            var barOpts = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+                scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#f3f4f6'}}}};
+            var hBarOpts = {indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+                scales:{x:{beginAtZero:true,grid:{color:'#f3f4f6'}},y:{grid:{display:false}}}};
+            var donutOpts = {responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'bottom'}}};
+            var zoneLabels = ['0-10%','10-20%','20-30%','30-40%','40-50%','50-60%','60-70%','70-80%','80-90%','90-100%'];
+
+            // 1. Sessions Over Time
+            new Chart(document.getElementById('plaSessionsChart'),{type:'line',
+                data:{labels:<?php echo json_encode($chart_dates); ?>,datasets:[{label:'Sessions',data:<?php echo json_encode($chart_counts); ?>,
+                    borderColor:accent,backgroundColor:accent+'20',fill:true,tension:.4,
+                    pointRadius:<?php echo count($chart_dates) > 30 ? 0 : 3; ?>,pointHoverRadius:5,borderWidth:2}]},
+                options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+                    scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#f3f4f6'}}}}
+            });
+
+            // 2. Hourly
+            new Chart(document.getElementById('plaHourlyChart'),{type:'bar',
+                data:{labels:<?php echo json_encode(array_map(function($h){return sprintf('%02d:00',$h);},range(0,23))); ?>,
+                    datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($hourly_sessions)); ?>,backgroundColor:accent+'80',borderRadius:4,borderSkipped:false}]},
+                options:Object.assign({},barOpts,{scales:{x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},y:{beginAtZero:true,grid:{color:'#f3f4f6'}}}})
+            });
+
+            // 3. Devices
+            new Chart(document.getElementById('plaDeviceChart'),{type:'doughnut',
+                data:{labels:<?php echo json_encode(array_keys($devices)); ?>,
+                    datasets:[{data:<?php echo json_encode(array_values($devices)); ?>,backgroundColor:[accent,accent2,'#0984e3'],borderWidth:0}]},
+                options:donutOpts});
+
+            // 4. Scroll Patterns
+            new Chart(document.getElementById('plaPatternChart'),{type:'doughnut',
+                data:{labels:<?php echo json_encode(array_keys($patterns)); ?>,
+                    datasets:[{data:<?php echo json_encode(array_values($patterns)); ?>,backgroundColor:['#00b894','#fdcb6e','#d63031'],borderWidth:0}]},
+                options:donutOpts});
+
+            // 5. New vs Returning
+            new Chart(document.getElementById('plaVisitorChart'),{type:'doughnut',
+                data:{labels:['New','Returning'],datasets:[{data:[<?php echo $new_visitors; ?>,<?php echo $returning_visitors; ?>],backgroundColor:[accent,accent2],borderWidth:0}]},
+                options:donutOpts});
+
+            // 6. Scroll Depth Distribution
+            new Chart(document.getElementById('plaDepthChart'),{type:'bar',
+                data:{labels:zoneLabels,datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($depth_buckets)); ?>,
+                    backgroundColor:colors.map(function(c){return c+'80';}),borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+
+            // 7. Quality Score Distribution
+            <?php
+            $qs_buckets = array_fill(0, 10, 0);
+            foreach ($quality_scores as $qs) { $b = min(9, (int)floor($qs / 10)); $qs_buckets[$b]++; }
+            ?>
+            new Chart(document.getElementById('plaQualityChart'),{type:'bar',
+                data:{labels:['0-10','10-20','20-30','30-40','40-50','50-60','60-70','70-80','80-90','90-100'],
+                    datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($qs_buckets)); ?>,backgroundColor:accent2+'80',borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+
+            // 8. Traffic Sources
+            new Chart(document.getElementById('plaReferrerChart'),{type:'bar',
+                data:{labels:<?php echo json_encode(array_keys($referrer_types)); ?>,
+                    datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($referrer_types)); ?>,
+                        backgroundColor:[accent,'#aaa','#0984e3',accent2,'#e17055'],borderRadius:4,borderSkipped:false}]},
+                options:hBarOpts});
+
+            // 9. Viewport Widths
+            <?php
+            $vw_order = ['<480' => 0, '480-767' => 0, '768-1023' => 0, '1024-1439' => 0, '1440+' => 0];
+            foreach ($viewport_widths as $k => $v) { if (isset($vw_order[$k])) $vw_order[$k] = $v; }
+            ?>
+            new Chart(document.getElementById('plaViewportChart'),{type:'doughnut',
+                data:{labels:<?php echo json_encode(array_keys($vw_order)); ?>,
+                    datasets:[{data:<?php echo json_encode(array_values($vw_order)); ?>,backgroundColor:colors.slice(0,5),borderWidth:0}]},
+                options:donutOpts});
+
+            // 10. Day of Week
+            new Chart(document.getElementById('plaDowChart'),{type:'bar',
+                data:{labels:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+                    datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($dow_sessions)); ?>,backgroundColor:accent2+'80',borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+
+            // 11. Active Time Distribution
+            <?php
+            $time_labels = ['0-15s','15-30s','30-60s','1-2m','2-5m','5-10m','10m+'];
+            $time_buckets = array_fill(0, 7, 0);
+            foreach ($active_times as $t) {
+                if ($t < 15) $time_buckets[0]++;
+                elseif ($t < 30) $time_buckets[1]++;
+                elseif ($t < 60) $time_buckets[2]++;
+                elseif ($t < 120) $time_buckets[3]++;
+                elseif ($t < 300) $time_buckets[4]++;
+                elseif ($t < 600) $time_buckets[5]++;
+                else $time_buckets[6]++;
+            }
+            ?>
+            new Chart(document.getElementById('plaActiveTimeChart'),{type:'bar',
+                data:{labels:<?php echo json_encode($time_labels); ?>,
+                    datasets:[{label:'Sessions',data:<?php echo json_encode($time_buckets); ?>,backgroundColor:'#00b89480',borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+
+            // 12. Engagement by Depth Zone
+            new Chart(document.getElementById('plaZoneChart'),{type:'bar',
+                data:{labels:zoneLabels,datasets:[{label:'Visitors Reaching Zone',data:<?php echo json_encode(array_values($depth_buckets)); ?>,
+                    backgroundColor:'rgba(232,67,147,0.6)',borderRadius:4,borderSkipped:false}]},
+                options:hBarOpts});
+
+            // 13. Exit Depth Distribution
+            <?php
+            $exit_buckets = array_fill(0, 10, 0);
+            foreach ($exit_depths as $ed) { $b = min(9, (int)floor($ed / 10)); $exit_buckets[$b]++; }
+            ?>
+            new Chart(document.getElementById('plaExitChart'),{type:'bar',
+                data:{labels:zoneLabels,datasets:[{label:'Exits',data:<?php echo json_encode(array_values($exit_buckets)); ?>,
+                    backgroundColor:'#d6303180',borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+
+            // 14. Content Completion Distribution
+            <?php
+            $cc_buckets = array_fill(0, 10, 0);
+            foreach ($completions as $cc) { $b = min(9, (int)floor($cc / 10)); $cc_buckets[$b]++; }
+            ?>
+            new Chart(document.getElementById('plaCompletionChart'),{type:'bar',
+                data:{labels:zoneLabels,datasets:[{label:'Sessions',data:<?php echo json_encode(array_values($cc_buckets)); ?>,
+                    backgroundColor:'#0984e380',borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+
+            // 15. Pinterest Saves Over Time
+            <?php
+            $daily_pins = [];
+            foreach ($sessions as $s) {
+                $ps = $s['pin_saves']['saves'] ?? 0;
+                if ($ps > 0) {
+                    $d = date('Y-m-d', $s['unix'] ?? strtotime($s['ts'] ?? ''));
+                    $daily_pins[$d] = ($daily_pins[$d] ?? 0) + intval($ps);
+                }
+            }
+            // Fill missing dates with 0
+            foreach ($chart_dates as $d) { if (!isset($daily_pins[$d])) $daily_pins[$d] = 0; }
+            ksort($daily_pins);
+            ?>
+            new Chart(document.getElementById('plaPinChart'),{type:'bar',
+                data:{labels:<?php echo json_encode(array_keys($daily_pins)); ?>,
+                    datasets:[{label:'Saves',data:<?php echo json_encode(array_values($daily_pins)); ?>,
+                        backgroundColor:accent+'80',borderRadius:4,borderSkipped:false}]},
+                options:barOpts});
+        });
+        </script>
     </div>
     <?php
 }
