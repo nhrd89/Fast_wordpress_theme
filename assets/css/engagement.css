@@ -224,8 +224,7 @@
 
 /* --- Responsive (<=768px) --- */
 @media(max-width:768px){
-.eb-hero-grid{grid-template-columns:1fr 1fr;grid-template-rows:170px 115px;height:auto}
-.eb-hero-cell-main{grid-row:1;grid-column:1/3}
+.eb-hero-grid{height:220px}
 .eb-pills{display:none}
 .eb-live{display:none}
 .eb-counter-live{display:inline-flex}
