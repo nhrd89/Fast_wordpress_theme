@@ -107,7 +107,7 @@ a:hover{text-decoration:underline}
 .eb-counter{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#fff;border:1px solid #eee;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:600;color:#666;z-index:998;box-shadow:0 2px 8px #0001;opacity:0;transition:opacity .3s}
 .eb-counter.show{opacity:1}
 .eb-counter .num{color:#e84393;font-weight:800}
-.eb-counter-live{display:none;align-items:center;gap:3px;color:#999;font-weight:500}
+.eb-counter-live{display:none;align-items:center;gap:3px;color:#737373;font-weight:500}
 /* Engagement CLS prevention — reserve space for content-flow elements */
 /* Hero mosaic — COMPLETE layout in critical CSS (no shift when engagement.css loads) */
 .eb-hero-mosaic{margin:0 0 1.5rem}

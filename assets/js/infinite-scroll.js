@@ -77,23 +77,26 @@
 		var lastArticle = articles[articles.length - 1];
 		if (!lastArticle) return;
 
-		// Create a marker at 70% height of the last article.
+		// READ geometry FIRST — before any DOM writes to avoid forced reflow.
+		var initialHeight = lastArticle.scrollHeight;
+
+		// WRITE — create marker and set position (batched writes, no interleaved reads).
 		var marker = document.createElement('div');
 		marker.className = 'infinite-trigger';
-		marker.style.cssText = 'height:1px;position:absolute;left:0;width:1px;pointer-events:none;';
+		marker.style.cssText = 'height:1px;position:absolute;left:0;width:1px;pointer-events:none;top:' + (initialHeight * 0.7) + 'px';
 		lastArticle.style.position = 'relative';
-
-		function positionMarker() {
-			marker.style.top = (lastArticle.scrollHeight * 0.7) + 'px';
-		}
-		positionMarker();
 		lastArticle.appendChild(marker);
 
 		// Reposition after images load (article height changes).
+		// position:relative is already set above, so reading scrollHeight
+		// here won't force a reflow — it uses the existing valid layout.
+		function repositionMarker() {
+			marker.style.top = (lastArticle.scrollHeight * 0.7) + 'px';
+		}
 		var images = lastArticle.querySelectorAll('img');
 		for (var i = 0; i < images.length; i++) {
 			if (!images[i].complete) {
-				images[i].addEventListener('load', positionMarker);
+				images[i].addEventListener('load', repositionMarker);
 			}
 		}
 

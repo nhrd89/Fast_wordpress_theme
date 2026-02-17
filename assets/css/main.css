@@ -1109,7 +1109,7 @@
 .pl-achievement.show { transform: translateX(0); opacity: 1; }
 .pl-achievement-icon { font-size: 24px; }
 .pl-achievement-title { font-size: 13px; font-weight: 700; color: #e91e63; }
-.pl-achievement-desc { font-size: 11px; color: #999; }
+.pl-achievement-desc { font-size: 11px; color: #737373; }
 
 /* =============================================
    IMAGE SHIMMER
@@ -1272,7 +1272,7 @@
 
 /* Tabs */
 .pl-tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid #eee;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.pl-tab{padding:10px 18px;border:none;background:transparent;font-size:13px;font-weight:400;color:#999;cursor:pointer;white-space:nowrap;position:relative;transition:color .2s}
+.pl-tab{padding:10px 18px;border:none;background:transparent;font-size:13px;font-weight:400;color:#737373;cursor:pointer;white-space:nowrap;position:relative;transition:color .2s}
 .pl-tab:hover{color:#111}
 .pl-tab.active{font-weight:600;color:#111}
 .pl-tab.active::after{content:'';position:absolute;bottom:-1px;left:20%;right:20%;height:2px;background:#e84393;border-radius:2px}
@@ -1325,7 +1325,7 @@
 .pl-explore-card:hover{transform:scale(1.02);box-shadow:0 8px 24px rgba(0,0,0,.06)}
 .pl-explore-icon{font-size:28px;display:block;margin-bottom:8px}
 .pl-explore-name{font-size:14px;font-weight:600;color:#222;display:block;margin-bottom:3px}
-.pl-explore-count{font-size:11px;color:#999}
+.pl-explore-count{font-size:11px;color:#737373}
 
 /* Newsletter */
 .pl-newsletter{margin-top:48px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#1a1a2e 100%);padding:48px 24px;position:relative;overflow:hidden}
