@@ -1114,3 +1114,17 @@ function init(){
 function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init)}else{init()}
 })();
+
+// Header stats reveal on scroll
+(function() {
+	var headerStats = document.querySelector('.pl-header-stats');
+	if (!headerStats) return;
+	var revealed = false;
+	window.addEventListener('scroll', function() {
+		if (revealed) return;
+		if (window.scrollY > 50) {
+			headerStats.classList.add('visible');
+			revealed = true;
+		}
+	}, { passive: true });
+})();

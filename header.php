@@ -45,6 +45,16 @@ pinlightning_preload_lcp_image();
 			</a>
 		</div>
 
+		<div class="pl-header-stats">
+			<span class="eb-collect-counter">
+				<span class="eb-collect-num">0</span> / <span class="eb-collect-total">0</span> ideas seen
+			</span>
+			<span class="eb-live">
+				<span class="eb-live-dot"></span>
+				<span class="eb-counter-live">0</span> online
+			</span>
+		</div>
+
 		<input type="checkbox" id="menu-toggle" class="menu-toggle-checkbox" aria-hidden="true">
 		<label for="menu-toggle" class="menu-toggle" aria-label="<?php esc_attr_e( 'Menu', 'pinlightning' ); ?>">
 			<span class="hamburger"></span>

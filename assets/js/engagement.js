@@ -80,6 +80,10 @@ function updateLiveCount() {
 	var base = 30 + Math.floor(Math.random() * 40);
 	if ($liveCount) $liveCount.textContent = base;
 	if ($counterLiveNum) $counterLiveNum.textContent = base;
+	// Sync header stats (mobile)
+	document.querySelectorAll('.pl-header-stats .eb-counter-live').forEach(function(el) {
+		el.textContent = base;
+	});
 }
 
 // === Progress Bar ===
@@ -87,6 +91,10 @@ function updateProgress() {
 	var pct = Math.round((seenItems.size / TOTAL) * 100);
 	if ($progressFill) $progressFill.style.width = pct + '%';
 	if ($countNum) $countNum.textContent = seenItems.size;
+	// Sync header stats (mobile)
+	document.querySelectorAll('.pl-header-stats .eb-collect-num').forEach(function(el) {
+		el.textContent = seenItems.size;
+	});
 
 	// Show counter after first item seen
 	if (seenItems.size > 0 && $counter) {
@@ -552,6 +560,11 @@ function initSkeletons() {
 
 // === Init ===
 function init() {
+	// Populate header stats total (mobile)
+	document.querySelectorAll('.pl-header-stats .eb-collect-total').forEach(function(el) {
+		el.textContent = TOTAL;
+	});
+
 	updateLiveCount();
 	setInterval(updateLiveCount, 30000);
 

@@ -29,9 +29,11 @@ while ( have_posts() ) :
 		<span class="eb-counter-live" id="ebCounterLive"> &middot; <span class="eb-live-dot"></span> <span id="ebCounterLiveNum">47</span> reading</span>
 	</div>
 
+	<div class="eb-desktop-only">
 	<div class="eb-live" id="ebLive">
 		<span class="eb-live-dot"></span>
 		<span id="ebLiveCount">47</span> people reading now
+	</div>
 	</div>
 
 	<div class="eb-pills" id="ebPills">
@@ -57,8 +59,10 @@ while ( have_posts() ) :
 		</div>
 	</div>
 
+	<div class="eb-desktop-only">
 	<div class="eb-collect-counter" id="ebCollectCounter">
 		<?php echo "\xF0\x9F\x92\x8E"; ?> <span id="ebCollectNum">0</span>/5
+	</div>
 	</div>
 
 	<?php
