@@ -360,6 +360,36 @@ function pl_eb_render_break( $break, $config, $post_id, $total_items ) {
 
 
 /**
+ * Resize a mosaic image URL via the CDN resizer.
+ *
+ * @param string $url   Original image URL.
+ * @param int    $width Target width.
+ * @return string Resized URL.
+ */
+function pl_mosaic_resize_url( $url, $width ) {
+	if ( strpos( $url, 'myquickurl.com' ) === false ) {
+		return $url;
+	}
+
+	// Already a resizer URL — replace &w= parameter.
+	if ( strpos( $url, 'img.php?' ) !== false ) {
+		if ( preg_match( '/[&?]w=\d+/', $url ) ) {
+			return preg_replace( '/([&?])w=\d+/', '${1}w=' . $width, $url );
+		}
+		return $url . '&w=' . $width . '&q=75';
+	}
+
+	// Full CDN URL — extract path and build resizer URL.
+	if ( preg_match( '/myquickurl\.com\/(.+?)(?:\?|$)/', $url, $m ) ) {
+		$path = rawurlencode( $m[1] );
+		$path = str_replace( '%2F', '/', $path );
+		return 'https://myquickurl.com/img.php?src=' . $path . '&w=' . $width . '&q=75';
+	}
+
+	return $url;
+}
+
+/**
  * Hero Mosaic — curiosity-gap grid replacing featured image + TOC.
  *
  * Extracts images/titles from post content, shows a 4-cell mosaic
@@ -467,30 +497,30 @@ function pl_render_hero_mosaic( $content, $total_items, $post_id ) {
 	// Grid.
 	$html .= '<div class="eb-hero-grid">';
 
-	// Cell 1 (main, spans 2 rows).
+	// Cell 1 (main, spans 2 rows — ~50% of 720px container).
 	$v     = $visible[0];
 	$html .= '<a class="eb-hero-cell eb-hero-cell-main" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( $items[ $v ]['img'] ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 480 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy" width="480" height="854">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
-	// Cell 2.
+	// Cell 2 (~25% of container).
 	$v     = $visible[1];
 	$html .= '<a class="eb-hero-cell" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( $items[ $v ]['img'] ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 240 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy" width="240" height="427">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
-	// Cell 3.
+	// Cell 3 (~25% of container).
 	$v     = $visible[2];
 	$html .= '<a class="eb-hero-cell" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( $items[ $v ]['img'] ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 240 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy" width="240" height="427">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
-	// Cell 4: "+N more" overlay.
+	// Cell 4: "+N more" overlay (~25% of container).
 	$html .= '<a class="eb-hero-cell" href="#item-1">'
-		. '<img src="' . esc_url( $items[ $more_key ]['img'] ) . '" alt="" loading="lazy">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $more_key ]['img'], 240 ) ) . '" alt="" loading="lazy" width="240" height="427">'
 		. '<div class="eb-hero-more"><span class="eb-hero-more-num">+' . $remaining . '</span>'
 		. '<span class="eb-hero-more-text">more looks</span></div></a>';
 

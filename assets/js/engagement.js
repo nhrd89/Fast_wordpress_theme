@@ -443,13 +443,9 @@ function handlePinAll() {
 	});
 }
 
-// === Intersection Observer — Scroll Reveal + Item Tracking ===
+// === Intersection Observer — Item Tracking (no visual animations to avoid CLS) ===
 function initObserver() {
 	if (!('IntersectionObserver' in window)) {
-		// Fallback: show all items immediately
-		document.querySelectorAll('.eb-item').forEach(function(el) {
-			el.classList.add('eb-visible');
-		});
 		return;
 	}
 
@@ -458,11 +454,6 @@ function initObserver() {
 			if (entry.isIntersecting) {
 				var el = entry.target;
 				var idx = parseInt(el.getAttribute('data-item'), 10);
-
-				// Scroll reveal animation
-				if (!el.classList.contains('eb-visible')) {
-					el.classList.add('eb-visible');
-				}
 
 				// Track seen items
 				if (!seenItems.has(idx)) {
@@ -480,20 +471,6 @@ function initObserver() {
 
 	document.querySelectorAll('.eb-item').forEach(function(el) {
 		io.observe(el);
-	});
-
-	// Curiosity teasers observer
-	var curiosityIO = new IntersectionObserver(function(entries) {
-		entries.forEach(function(entry) {
-			if (entry.isIntersecting) {
-				entry.target.classList.add('eb-visible');
-				curiosityIO.unobserve(entry.target);
-			}
-		});
-	}, { threshold: 0.5 });
-
-	document.querySelectorAll('.eb-curiosity').forEach(function(el) {
-		curiosityIO.observe(el);
 	});
 }
 
