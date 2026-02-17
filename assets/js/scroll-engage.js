@@ -978,11 +978,11 @@ function init(){
   // Prevent chat scroll from bubbling to page
   document.getElementById('plChatBody').addEventListener('scroll', function(e) {
     e.stopPropagation();
-  });
+  }, {passive: true});
   // Prevent touch events on chat from scrolling the page
   document.getElementById('plChatWrap').addEventListener('touchmove', function(e) {
     e.stopPropagation();
-  });
+  }, {passive: true});
 
   // === IMAGE TAP → OPEN CHAT WITH IMAGE CONTEXT ===
   var postImages = document.querySelectorAll('.entry-content img, .post-content img, article img, .wp-block-image img');

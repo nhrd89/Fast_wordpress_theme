@@ -27,8 +27,8 @@
 .eb-item{opacity:1}
 
 /* --- Image Hover Lift --- */
-.eb-img-wrap img{transition:transform .4s ease,box-shadow .4s ease;will-change:transform}
-.eb-img-wrap:hover img{transform:scale(1.02) translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.12)}
+.eb-img-wrap img{transition:transform .4s ease}
+.eb-img-wrap:hover img{transform:scale(1.02) translateY(-2px)}
 
 /* --- Ken Burns (always active — images are lazy-loaded so only render when visible) --- */
 @keyframes ebKenBurns{0%{transform:scale(1)}100%{transform:scale(1.06)}}
@@ -36,12 +36,12 @@
 .eb-img-wrap:hover img{animation-play-state:paused}
 
 /* --- Shimmer Sweep --- */
-@keyframes ebShimmer{0%{transform:translateX(-200%)}100%{transform:translateX(400%)}}
 .eb-img-wrap{position:relative;overflow:hidden}
-.eb-img-wrap::after{content:'';position:absolute;top:0;left:0;width:50%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);transform:translateX(-200%);animation:ebShimmer 2s .5s ease-out forwards;pointer-events:none;will-change:transform}
+.eb-img-wrap::after{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.15) 45%,rgba(255,255,255,.25) 50%,rgba(255,255,255,.15) 55%,transparent 60%);transform:translateX(-100%);animation:ebShimmer 6s ease-in-out infinite;pointer-events:none;z-index:1}
+@keyframes ebShimmer{0%,80%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 
 /* --- Trending Badge --- */
-.eb-trending-badge{position:absolute;top:10px;left:10px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;z-index:5;animation:ebTrendPulse 2s infinite;pointer-events:none;will-change:transform,opacity}
+.eb-trending-badge{position:absolute;top:10px;left:10px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;z-index:5;animation:ebTrendPulse 2s infinite;pointer-events:none}
 @keyframes ebTrendPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.05);opacity:.8}}
 
 /* --- Save Count Badge --- */

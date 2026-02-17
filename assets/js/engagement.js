@@ -520,8 +520,8 @@ function initSkeletons() {
 	var skelCSS = document.createElement('style');
 	skelCSS.textContent = [
 		'.eb-skeleton{background:#f0f0f0;border-radius:8px;overflow:hidden;position:relative}',
-		'.eb-skeleton::after{content:"";position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent);animation:ebSkelShimmer 1.5s infinite}',
-		'@keyframes ebSkelShimmer{0%{left:-100%}100%{left:200%}}'
+		'.eb-skeleton::after{content:"";position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent);transform:translateX(-100%);animation:ebSkelShimmer 1.5s infinite}',
+		'@keyframes ebSkelShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}'
 	].join('');
 	document.head.appendChild(skelCSS);
 
