@@ -910,8 +910,6 @@ require_once PINLIGHTNING_DIR . '/inc/contact-messages.php';
 require_once PINLIGHTNING_DIR . '/inc/engagement-config.php';
 require_once PINLIGHTNING_DIR . '/inc/engagement-breaks.php';
 require_once PINLIGHTNING_DIR . '/inc/engagement-customizer.php';
-require_once PINLIGHTNING_DIR . '/inc/engagement-email.php';
-require_once PINLIGHTNING_DIR . '/inc/engagement-admin.php';
 
 // Auto-assign contact template to the contact page (run once).
 add_action( 'init', function() {
@@ -1004,8 +1002,7 @@ function pl_enqueue_engagement() {
 		),
 		'nextPost'      => $next_data,
 		'aiTip'         => $ai_tip ?: '',
-		'emailEndpoint' => admin_url( 'admin-ajax.php' ),
-		'emailNonce'    => wp_create_nonce( 'eb_email_nonce' ),
+		'emailEndpoint' => esc_url_raw( rest_url( 'pl/v1/subscribe' ) ),
 		'postTitle'     => get_the_title(),
 		'features'      => array(
 			'progressBar'  => (bool) get_theme_mod( 'eb_progress_bar', true ),

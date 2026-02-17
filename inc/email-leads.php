@@ -561,6 +561,8 @@ function pl_email_leads_page() {
 				<option value="chat" <?php selected( $filter_source, 'chat' ); ?>>AI Chat</option>
 				<option value="popup" <?php selected( $filter_source, 'popup' ); ?>>Popup</option>
 				<option value="exit_intent" <?php selected( $filter_source, 'exit_intent' ); ?>>Exit Intent</option>
+				<option value="post_inline" <?php selected( $filter_source, 'post_inline' ); ?>>Post Inline</option>
+				<option value="post_exit_intent" <?php selected( $filter_source, 'post_exit_intent' ); ?>>Post Exit Intent</option>
 			</select>
 			<input type="text" name="tag_filter" value="<?php echo esc_attr( $filter_tag ); ?>" placeholder="Filter by tag..." />
 			<input type="text" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Search email, country..." />

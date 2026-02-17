@@ -382,21 +382,24 @@ function handleEmail(btn) {
 	var email = input.value.trim();
 	emailCaptured = true;
 
-	// Send to WordPress AJAX
+	// Send to unified email leads REST API
 	if (C.emailEndpoint) {
-		var formData = new FormData();
-		formData.append('action', 'eb_email_capture');
-		formData.append('nonce', C.emailNonce || '');
-		formData.append('email', email);
-		formData.append('post_id', C.postId || 0);
-		formData.append('post_title', C.postTitle || '');
-		formData.append('source', wrap.dataset.eb || (wrap.classList.contains('eb-exit') ? 'exit_intent' : 'inline'));
-		formData.append('favorites', JSON.stringify(Array.from(favItems || [])));
-		formData.append('category', C.category || '');
-
+		var source = wrap.classList.contains('eb-exit') ? 'post_exit_intent' : 'post_inline';
 		fetch(C.emailEndpoint, {
 			method: 'POST',
-			body: formData,
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				email: email,
+				source: source,
+				source_detail: C.category || '',
+				page_url: window.location.href,
+				page_title: C.postTitle || document.title,
+				post_id: C.postId || 0,
+				device: window.innerWidth < 768 ? 'mobile' : (window.innerWidth < 1024 ? 'tablet' : 'desktop'),
+				viewport_width: window.innerWidth,
+				language: navigator.language || '',
+				referrer: document.referrer || ''
+			}),
 			credentials: 'same-origin'
 		}).catch(function() {});
 	}
