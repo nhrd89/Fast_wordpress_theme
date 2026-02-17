@@ -147,15 +147,15 @@
 .eb-char-bubble.show{opacity:1;transform:translateY(0) scale(1)}
 
 /* --- Milestone Popup --- */
-.eb-milestone{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);background:#fff;border-radius:20px;padding:30px 40px;text-align:center;z-index:1005;box-shadow:0 20px 60px rgba(0,0,0,.15);opacity:0;transition:all .5s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
-.eb-milestone.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.eb-milestone{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);background:#fff;border-radius:20px;padding:30px 40px;text-align:center;z-index:1005;box-shadow:0 20px 60px rgba(0,0,0,.15);opacity:0;transition:all .5s cubic-bezier(.34,1.56,.64,1);visibility:hidden;pointer-events:none}
+.eb-milestone.show{opacity:1;transform:translate(-50%,-50%) scale(1);visibility:visible;pointer-events:auto}
 .eb-milestone-emoji{font-size:48px;margin-bottom:10px}
 .eb-milestone-text{font-size:20px;font-weight:700;color:#2d3436;margin-bottom:6px}
 .eb-milestone-sub{font-size:13px;color:#636e72}
 
 /* --- Achievement Badge --- */
-.eb-achievement{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(100px);background:linear-gradient(135deg,#fdf2f8,#faf5ff);border:2px solid #e84393;border-radius:16px;padding:14px 24px;display:flex;align-items:center;gap:12px;z-index:1004;box-shadow:0 10px 30px rgba(232,67,147,.2);opacity:0;transition:all .6s cubic-bezier(.34,1.56,.64,1)}
-.eb-achievement.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.eb-achievement{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:linear-gradient(135deg,#fdf2f8,#faf5ff);border:2px solid #e84393;border-radius:16px;padding:14px 24px;display:flex;align-items:center;gap:12px;z-index:1004;box-shadow:0 10px 30px rgba(232,67,147,.2);opacity:0;transition:all .6s cubic-bezier(.34,1.56,.64,1);visibility:hidden;pointer-events:none}
+.eb-achievement.show{opacity:1;transform:translateX(-50%) translateY(0);visibility:visible;pointer-events:auto}
 .eb-achievement-icon{font-size:28px}
 .eb-achievement-title{font-size:16px;font-weight:700;color:#e84393}
 .eb-achievement-sub{font-size:12px;color:#636e72}

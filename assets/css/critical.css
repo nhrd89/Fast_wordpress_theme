@@ -117,13 +117,19 @@ a:hover{text-decoration:underline}
 .eb-hero-cell img{width:100%;height:100%;object-fit:cover}
 .eb-hero-social{display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding:9px 14px;border-radius:12px;min-height:38px}
 .eb-item{opacity:1}
-.eb-break{margin:2rem 0;padding:1.5rem;border-radius:16px;min-height:100px}
+.eb-break{margin:2rem 0;padding:1.5rem;border-radius:16px;overflow:hidden}
+.eb-poll{min-height:280px}
+.eb-quiz{min-height:240px}
+.eb-fact{min-height:80px}
+.eb-email{min-height:260px}
+.eb-teaser{min-height:100px}
+.eb-stylist{min-height:90px}
 .eb-curiosity{margin:1.5rem 0;padding:12px 16px;border-radius:12px;min-height:44px}
 .eb-img-wrap{position:relative}
 .eb-trending-badge,.eb-save-count,.eb-fav-heart,.eb-collectible{position:absolute}
 .eb-reveal-overlay{position:absolute;inset:0}
-.eb-achievement{position:fixed;bottom:-100px;left:50%;transform:translateX(-50%);z-index:999}
-.eb-milestone{position:fixed;top:-200px;left:50%;transform:translateX(-50%);z-index:999}
+.eb-achievement{position:fixed;bottom:-200px;left:50%;transform:translateX(-50%);z-index:999;visibility:hidden;pointer-events:none}
+.eb-milestone{position:fixed;top:-200px;left:50%;transform:translateX(-50%);z-index:999;visibility:hidden;pointer-events:none}
 .eb-exit{position:fixed;bottom:-200px;left:0;right:0;z-index:999}
 .eb-next-bar{position:fixed;bottom:-80px;left:0;right:0;z-index:998}
 @media(max-width:768px){
