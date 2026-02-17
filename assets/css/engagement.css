@@ -43,7 +43,8 @@
 @keyframes ebShimmer{0%,80%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 
 /* --- Trending Badge --- */
-.eb-trending-badge{position:absolute;top:10px;left:10px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;z-index:5;animation:ebTrendPulse 2s infinite;pointer-events:none}
+.eb-trending-badge{position:absolute;top:10px;left:10px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;z-index:5;animation:ebTrendPulse 2s infinite paused;pointer-events:none}
+.eb-item.in-view .eb-trending-badge{animation-play-state:running}
 @keyframes ebTrendPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.05);opacity:.8}}
 
 /* --- Save Count Badge --- */
@@ -150,21 +151,21 @@
 
 /* --- Milestone Popup --- */
 .eb-milestone{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);background:#fff;border-radius:20px;padding:30px 40px;text-align:center;z-index:1005;box-shadow:0 20px 60px rgba(0,0,0,.15);opacity:0;transition:all .5s cubic-bezier(.34,1.56,.64,1);visibility:hidden;pointer-events:none}
-.eb-milestone.show{opacity:1;transform:translate(-50%,-50%) scale(1);visibility:visible;pointer-events:auto}
+.eb-milestone.show{display:block;opacity:1;transform:translate(-50%,-50%) scale(1);visibility:visible;pointer-events:auto}
 .eb-milestone-emoji{font-size:48px;margin-bottom:10px}
 .eb-milestone-text{font-size:20px;font-weight:700;color:#2d3436;margin-bottom:6px}
 .eb-milestone-sub{font-size:13px;color:#636e72}
 
 /* --- Achievement Badge --- */
-.eb-achievement{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:linear-gradient(135deg,#fdf2f8,#faf5ff);border:2px solid #e84393;border-radius:16px;padding:14px 24px;display:flex;align-items:center;gap:12px;z-index:1004;box-shadow:0 10px 30px rgba(232,67,147,.2);opacity:0;transition:all .6s cubic-bezier(.34,1.56,.64,1);visibility:hidden;pointer-events:none}
-.eb-achievement.show{opacity:1;transform:translateX(-50%) translateY(0);visibility:visible;pointer-events:auto}
+.eb-achievement{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:linear-gradient(135deg,#fdf2f8,#faf5ff);border:2px solid #e84393;border-radius:16px;padding:14px 24px;align-items:center;gap:12px;z-index:1004;box-shadow:0 10px 30px rgba(232,67,147,.2);opacity:0;transition:all .6s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
+.eb-achievement.show{display:flex;opacity:1;transform:translateX(-50%) translateY(0);visibility:visible;pointer-events:auto}
 .eb-achievement-icon{font-size:28px}
 .eb-achievement-title{font-size:16px;font-weight:700;color:#e84393}
 .eb-achievement-sub{font-size:12px;color:#636e72}
 
 /* --- Next Article Bar --- */
-.eb-next-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #eee;padding:10px 20px;display:flex;align-items:center;gap:12px;z-index:1003;transform:translateY(100%);transition:transform .4s ease;box-shadow:0 -4px 12px rgba(0,0,0,.06)}
-.eb-next-bar.show{transform:translateY(0);visibility:visible;pointer-events:auto}
+.eb-next-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #eee;padding:10px 20px;align-items:center;gap:12px;z-index:1003;transform:translateY(100%);transition:transform .4s ease;box-shadow:0 -4px 12px rgba(0,0,0,.06)}
+.eb-next-bar.show{display:flex;transform:translateY(0);visibility:visible;pointer-events:auto}
 .eb-next-bar-img{width:50px;height:50px;border-radius:10px;object-fit:cover;flex-shrink:0}
 .eb-next-bar-title{flex:1;font-size:13px;font-weight:600;color:#2d3436;line-height:1.3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eb-next-bar-btn{background:linear-gradient(135deg,#e84393,#6c5ce7);color:#fff;border:none;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:transform .2s}
@@ -186,8 +187,8 @@
 .eb-ai-tip-text{font-size:14px;line-height:1.6;color:#2d3436;margin:0}
 
 /* --- Exit Intent --- */
-.eb-exit{position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#fdf2f8,#faf5ff);padding:16px 20px;z-index:1006;transform:translateY(-100%);transition:transform .4s ease;box-shadow:0 4px 20px rgba(0,0,0,.1);display:flex;align-items:center;gap:12px}
-.eb-exit.show{transform:translateY(0);visibility:visible;pointer-events:auto}
+.eb-exit{position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#fdf2f8,#faf5ff);padding:16px 20px;z-index:1006;transform:translateY(-100%);transition:transform .4s ease;box-shadow:0 4px 20px rgba(0,0,0,.1);align-items:center;gap:12px}
+.eb-exit.show{display:flex;transform:translateY(0);visibility:visible;pointer-events:auto}
 .eb-exit-text{flex:1;font-size:14px;color:#2d3436}
 .eb-exit-btn{background:linear-gradient(135deg,#e84393,#6c5ce7);color:#fff;border:none;padding:8px 18px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
 .eb-exit-close{background:none;border:none;font-size:24px;color:#737373;cursor:pointer;padding:0 4px;line-height:1}
@@ -200,7 +201,7 @@
 
 /* --- Speed Warning --- */
 .eb-speed-warn{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);background:#fff;border:2px solid #ffeaa7;border-radius:16px;padding:16px 24px;font-size:15px;font-weight:600;color:#856404;z-index:1005;box-shadow:0 10px 30px rgba(0,0,0,.1);opacity:0;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none;text-align:center}
-.eb-speed-warn.show{opacity:1;transform:translate(-50%,-50%) scale(1);visibility:visible;pointer-events:auto}
+.eb-speed-warn.show{display:block;opacity:1;transform:translate(-50%,-50%) scale(1);visibility:visible;pointer-events:auto}
 
 /* --- Hero Mosaic (layout in critical.css — only decorative properties here) --- */
 .eb-hero-hook-text{color:#d81b60}
