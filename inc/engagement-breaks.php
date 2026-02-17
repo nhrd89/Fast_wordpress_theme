@@ -500,27 +500,27 @@ function pl_render_hero_mosaic( $content, $total_items, $post_id ) {
 	// Cell 1 (main, spans 2 rows — ~50% of 720px container).
 	$v     = $visible[0];
 	$html .= '<a class="eb-hero-cell eb-hero-cell-main" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 480 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy" width="480" height="854">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 360 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="eager" width="360" height="640">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
 	// Cell 2 (~25% of container).
 	$v     = $visible[1];
 	$html .= '<a class="eb-hero-cell" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 240 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy" width="240" height="427">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 240 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="eager" width="240" height="427">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
 	// Cell 3 (~25% of container).
 	$v     = $visible[2];
 	$html .= '<a class="eb-hero-cell" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 240 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy" width="240" height="427">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 240 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="eager" width="240" height="427">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
 	// Cell 4: "+N more" overlay (~25% of container).
 	$html .= '<a class="eb-hero-cell" href="#item-1">'
-		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $more_key ]['img'], 240 ) ) . '" alt="" loading="lazy" width="240" height="427">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $more_key ]['img'], 240 ) ) . '" alt="" loading="eager" width="240" height="427">'
 		. '<div class="eb-hero-more"><span class="eb-hero-more-num">+' . $remaining . '</span>'
 		. '<span class="eb-hero-more-text">more looks</span></div></a>';
 

@@ -30,14 +30,16 @@
 .eb-img-wrap img{transition:transform .4s ease}
 .eb-img-wrap:hover img{transform:scale(1.02) translateY(-2px)}
 
-/* --- Ken Burns (always active — images are lazy-loaded so only render when visible) --- */
+/* --- Ken Burns (paused by default, played when .eb-item is in viewport) --- */
 @keyframes ebKenBurns{0%{transform:scale(1)}100%{transform:scale(1.06)}}
-.eb-img-wrap img{animation:ebKenBurns 20s ease-in-out infinite alternate}
+.eb-img-wrap img{animation:ebKenBurns 20s ease-in-out infinite alternate paused}
+.eb-item.in-view .eb-img-wrap img{animation-play-state:running}
 .eb-img-wrap:hover img{animation-play-state:paused}
 
 /* --- Shimmer Sweep --- */
 .eb-img-wrap{position:relative;overflow:hidden}
-.eb-img-wrap::after{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.15) 45%,rgba(255,255,255,.25) 50%,rgba(255,255,255,.15) 55%,transparent 60%);transform:translateX(-100%);animation:ebShimmer 6s ease-in-out infinite;pointer-events:none;z-index:1}
+.eb-img-wrap::after{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.15) 45%,rgba(255,255,255,.25) 50%,rgba(255,255,255,.15) 55%,transparent 60%);transform:translateX(-100%);animation:ebShimmer 6s ease-in-out infinite paused;pointer-events:none;z-index:1}
+.eb-item.in-view .eb-img-wrap::after{animation-play-state:running}
 @keyframes ebShimmer{0%,80%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 
 /* --- Trending Badge --- */

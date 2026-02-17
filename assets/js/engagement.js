@@ -451,8 +451,9 @@ function initObserver() {
 
 	var io = new IntersectionObserver(function(entries) {
 		entries.forEach(function(entry) {
+			var el = entry.target;
 			if (entry.isIntersecting) {
-				var el = entry.target;
+				el.classList.add('in-view');
 				var idx = parseInt(el.getAttribute('data-item'), 10);
 
 				// Track seen items
@@ -465,6 +466,8 @@ function initObserver() {
 					checkAiTip();
 					ebTrack('item_seen', { item: idx, total_seen: seenItems.size });
 				}
+			} else {
+				el.classList.remove('in-view');
 			}
 		});
 	}, { threshold: 0.3 });
