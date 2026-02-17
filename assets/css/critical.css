@@ -141,6 +141,16 @@ a:hover{text-decoration:underline}
 .eb-trending-badge,.eb-save-count,.eb-fav-heart,.eb-collectible{position:absolute}
 .eb-reveal-overlay{position:absolute;inset:0}
 .eb-achievement,.eb-milestone,.eb-exit,.eb-next-bar,.eb-speed-warn{position:fixed;visibility:hidden;pointer-events:none;z-index:999}
+/* Pills — fixed jump nav (desktop visible, mobile hidden) */
+.eb-pills{position:fixed;top:58px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:997;padding:3px}
+.eb-pill{border:none;background:none;padding:4px 10px;font-size:11px;font-weight:600;border-radius:16px}
+/* Live, streak, collect counter — fixed + hidden until JS activates */
+.eb-live,.eb-streak,.eb-collect-counter{position:fixed;opacity:0;pointer-events:none}
+.eb-live{top:96px;right:20px;z-index:997;display:flex;align-items:center;gap:6px;padding:6px 14px;font-size:12px}
+.eb-live-dot{width:6px;height:6px;border-radius:50%}
+.eb-streak{top:96px;left:20px;z-index:997;padding:6px 14px;font-size:12px;font-weight:600}
+.eb-collect-counter{bottom:20px;left:20px;z-index:998;padding:6px 14px;font-size:13px;font-weight:600}
 @media(max-width:768px){
 .eb-hero-grid{height:220px}
+.eb-pills,.eb-streak{display:none}
 }
