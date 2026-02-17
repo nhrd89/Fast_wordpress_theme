@@ -52,8 +52,10 @@
 /* --- Save Count Badge --- */
 .eb-save-count{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,.95);font-size:11px;font-weight:600;color:#666;padding:3px 10px;border-radius:14px;z-index:5;pointer-events:none}
 
-/* --- Favorite Heart (top-right) --- */
+/* --- Favorite Heart (top-right) — CSS-driven states --- */
 .eb-fav-heart{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.95);border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;z-index:6;display:flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+.eb-fav-heart::before{content:'\2661'} /* ♡ unfaved */
+.eb-fav-heart.faved::before{content:'\2665'} /* ♥ faved */
 .eb-fav-heart:hover{transform:scale(1.15);background:#fff}
 .eb-fav-heart.faved{color:#e84393;animation:ebHeartPop .4s ease}
 @keyframes ebHeartPop{0%{transform:scale(1)}50%{transform:scale(1.3)}100%{transform:scale(1)}}

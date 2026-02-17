@@ -14,7 +14,6 @@ var C = window.ebConfig || {};
 var TOTAL = C.totalItems || 15;
 var itemTitles = C.itemTitles || [];
 var itemPins = C.itemPins || [];
-var charMsgs = C.charMsgs || [];
 var CATEGORY = C.category || 'hairstyle';
 var POST_ID = C.postId || 0;
 var NEXT_POST = C.nextPost || { title: '', url: '', img: '' };
@@ -116,12 +115,7 @@ function updatePills(activeIdx) {
 // === Milestone System ===
 function checkMilestones() {
 	var pct = Math.round((seenItems.size / TOTAL) * 100);
-	var milestones = [
-		{ at: 25, emoji: "\xF0\x9F\x94\xA5", text: "You're on fire!", sub: "25% explored" },
-		{ at: 50, emoji: "\xF0\x9F\x8E\x89", text: "Halfway there!", sub: "50% complete" },
-		{ at: 75, emoji: "\u2B50", text: "Almost done!", sub: "75% explored" },
-		{ at: 100, emoji: "\xF0\x9F\x8F\x86", text: "You made it!", sub: "All " + TOTAL + " looks seen!" }
-	];
+	var milestones = C.milestones || [];
 
 	milestones.forEach(function(m) {
 		if (pct >= m.at && !milestonesFired[m.at]) {
@@ -148,32 +142,6 @@ function showMilestone(emoji, text, sub) {
 	$milestoneSub.textContent = sub;
 	$milestone.classList.add('show');
 	setTimeout(function() { $milestone.classList.remove('show'); }, 3000);
-}
-
-// === Character Speech Bubble ===
-function showCharBubble(msg) {
-	// Try the existing scroll-engage speech bubble first
-	var bubble = document.querySelector('.pl-e-sp') || document.getElementById('ebCharBubble');
-	if (!bubble) {
-		// Create one attached to the existing character
-		var charWrap = document.querySelector('.pl-v-wrap');
-		if (!charWrap) return;
-		bubble = document.createElement('div');
-		bubble.className = 'eb-char-bubble';
-		bubble.id = 'ebCharBubble';
-		document.body.appendChild(bubble);
-	}
-	bubble.textContent = msg;
-	bubble.classList.add('show');
-	setTimeout(function() { bubble.classList.remove('show'); }, 4000);
-}
-
-function checkCharMessage(itemIdx) {
-	charMsgs.forEach(function(cm) {
-		if (cm.at === itemIdx) {
-			setTimeout(function() { showCharBubble(cm.msg); }, 500);
-		}
-	});
 }
 
 // === AI Tip Unlock ===
@@ -276,7 +244,7 @@ function checkStreak() {
 		localStorage.setItem(key, JSON.stringify({ lastDate: today, count: streakCount }));
 
 		if (streakCount > 1 && $streak) {
-			$streak.innerHTML = "\xF0\x9F\x94\xA5 " + streakCount + '-day reading streak!';
+			$streak.innerHTML = '\u{1F525} ' + streakCount + '-day reading streak!';
 			$streak.classList.add('show');
 		}
 	} catch (e) { /* localStorage unavailable */ }
@@ -356,11 +324,9 @@ function handleFav(btn) {
 	if (favItems.has(idx)) {
 		favItems.delete(idx);
 		btn.classList.remove('faved');
-		btn.textContent = "\xE2\x99\xA1";
 	} else {
 		favItems.add(idx);
 		btn.classList.add('faved');
-		btn.textContent = "\xE2\x99\xA5";
 	}
 	updateFavSummary();
 	ebTrack('fav_toggle', { idx: idx, total_favs: favItems.size });
@@ -431,12 +397,12 @@ function handleEmail(btn) {
 	// Show success
 	var inner = wrap.querySelector('.eb-email-inner');
 	if (inner) {
-		inner.innerHTML = '<div class="eb-email-success">\xF0\x9F\x8E\x89 Check your inbox! Your bonus looks are on the way.</div>';
+		inner.innerHTML = '<div class="eb-email-success">\u{1F389} Check your inbox! Your bonus looks are on the way.</div>';
 	}
 	if (wrap.classList.contains('eb-exit')) {
 		wrap.classList.add('captured');
 		var exitText2 = wrap.querySelector('.eb-exit-text');
-		if (exitText2) exitText2.innerHTML = '\xF0\x9F\x8E\x89 You\'re subscribed! Check your inbox.';
+		if (exitText2) exitText2.innerHTML = '\u{1F389} You\'re subscribed! Check your inbox.';
 	}
 
 	ebTrack('email_capture', { source: wrap.dataset.eb || 'inline', fav_count: favItems.size });
@@ -494,7 +460,6 @@ function initObserver() {
 					updateProgress();
 					updatePills(idx);
 					checkMilestones();
-					checkCharMessage(idx);
 					checkNextBar();
 					checkAiTip();
 					ebTrack('item_seen', { item: idx, total_seen: seenItems.size });

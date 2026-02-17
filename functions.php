@@ -994,18 +994,32 @@ function pl_enqueue_engagement() {
 		'itemTitles'    => $titles,
 		'itemPins'      => $pins,
 		'trending'      => array(),
-		'charMsgs'      => $config['char_messages'] ?? array(),
+		'milestones'    => array(
+			array( 'at' => 25,  'emoji' => '🎉', 'text' => 'You\'re on fire!',  'sub' => '25% explored' ),
+			array( 'at' => 50,  'emoji' => '🔥', 'text' => 'Halfway there!',    'sub' => '50% explored' ),
+			array( 'at' => 75,  'emoji' => '💫', 'text' => 'Almost done!',       'sub' => '75% explored' ),
+			array( 'at' => 100, 'emoji' => '👑', 'text' => 'You saw them all!',  'sub' => 'Style Expert unlocked!' ),
+		),
 		'nextPost'      => $next_data,
 		'aiTip'         => $ai_tip ?: '',
 		'emailEndpoint' => '',
 		'features'      => array(
 			'progressBar'  => (bool) get_theme_mod( 'eb_progress_bar', true ),
 			'skeletons'    => (bool) get_theme_mod( 'eb_skeletons', true ),
-			'charMessages' => (bool) get_theme_mod( 'eb_char_messages', true ),
 		),
 	) );
 }
 add_action( 'wp_enqueue_scripts', 'pl_enqueue_engagement' );
+
+/**
+ * Ensure engagement script has charset="utf-8" on the script tag.
+ */
+add_filter( 'script_loader_tag', function( $tag, $handle ) {
+	if ( $handle === 'pl-engagement' ) {
+		return str_replace( ' src', ' charset="utf-8" src', $tag );
+	}
+	return $tag;
+}, 10, 2 );
 
 /**
  * Add deferred engagement CSS via preload (same pattern as existing theme).
