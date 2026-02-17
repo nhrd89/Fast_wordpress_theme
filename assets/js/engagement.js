@@ -451,20 +451,18 @@ function handlePinAll() {
 	});
 }
 
-// === Intersection Observer — Item Tracking (no visual animations to avoid CLS) ===
+// === Intersection Observer — Item Tracking + Animation Gating ===
 function initObserver() {
 	if (!('IntersectionObserver' in window)) {
 		return;
 	}
 
-	var io = new IntersectionObserver(function(entries) {
+	// Observer 1: counting/tracking — triggers early, one-shot per item
+	var seenIO = new IntersectionObserver(function(entries) {
 		entries.forEach(function(entry) {
-			var el = entry.target;
 			if (entry.isIntersecting) {
-				el.classList.add('in-view');
+				var el = entry.target;
 				var idx = parseInt(el.getAttribute('data-item'), 10);
-
-				// Track seen items
 				if (!seenItems.has(idx)) {
 					seenItems.add(idx);
 					updateProgress();
@@ -474,14 +472,25 @@ function initObserver() {
 					checkAiTip();
 					ebTrack('item_seen', { item: idx, total_seen: seenItems.size });
 				}
+				seenIO.unobserve(el);
+			}
+		});
+	}, { rootMargin: '0px 0px 100px 0px', threshold: 0.15 });
+
+	// Observer 2: animation gating — toggles .in-view for shimmer/Ken Burns
+	var animIO = new IntersectionObserver(function(entries) {
+		entries.forEach(function(entry) {
+			if (entry.isIntersecting) {
+				entry.target.classList.add('in-view');
 			} else {
-				el.classList.remove('in-view');
+				entry.target.classList.remove('in-view');
 			}
 		});
 	}, { rootMargin: '0px', threshold: 0.8 });
 
 	document.querySelectorAll('.eb-item').forEach(function(el) {
-		io.observe(el);
+		seenIO.observe(el);
+		animIO.observe(el);
 	});
 }
 
