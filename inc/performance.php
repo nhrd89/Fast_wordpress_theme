@@ -306,9 +306,6 @@ function pinlightning_early_preconnect() {
  * Add resource hints: dns-prefetch and preconnect.
  */
 function pinlightning_resource_hints() {
-	// DNS prefetch for external domains.
-	echo '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
-
 	// Preconnect to own domain.
 	$site_domain = wp_parse_url( home_url(), PHP_URL_HOST );
 	echo '<link rel="preconnect" href="' . esc_url( '//' . $site_domain ) . '" crossorigin>' . "\n";

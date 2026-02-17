@@ -88,10 +88,16 @@
 		lastArticle.appendChild(marker);
 
 		// Reposition after images load (article height changes).
-		// position:relative is already set above, so reading scrollHeight
-		// here won't force a reflow — it uses the existing valid layout.
+		// Batched inside requestAnimationFrame to avoid forced reflow:
+		// reading scrollHeight after DOM writes triggers synchronous layout.
+		var repositionPending = false;
 		function repositionMarker() {
-			marker.style.top = (lastArticle.scrollHeight * 0.7) + 'px';
+			if (repositionPending) return;
+			repositionPending = true;
+			requestAnimationFrame(function() {
+				repositionPending = false;
+				marker.style.top = (lastArticle.scrollHeight * 0.7) + 'px';
+			});
 		}
 		var images = lastArticle.querySelectorAll('img');
 		for (var i = 0; i < images.length; i++) {

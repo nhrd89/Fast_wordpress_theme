@@ -52,8 +52,8 @@ a:hover{text-decoration:underline}
 .cat-label{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .single-title{font-size:2rem;font-weight:700;line-height:1.25;margin-bottom:.75rem}
 .single-meta{font-size:.8125rem}
-.single-content{font-size:1.0625rem;line-height:1.75}
-.single-content p{margin-bottom:1.5rem}
+.single-content{font-size:1.0625rem;line-height:1.75;color:var(--pl-text)}
+.single-content p{margin-bottom:1.5rem;font-size:inherit;line-height:inherit}
 .single-content h2{font-size:1.5rem;margin:2.5rem 0 1rem}
 .single-content h3{font-size:1.25rem;margin:2rem 0 .75rem}
 .single-content h4{font-size:1.0625rem;margin:1.5rem 0 .5rem}
@@ -129,6 +129,9 @@ a:hover{text-decoration:underline}
 .eb-hero-social-count{font-size:.73rem;font-weight:600}
 .eb-hero-social-total{font-size:.7rem;font-weight:500}
 .eb-item{margin:0;padding:0;opacity:1}
+/* Viewport-gate: pause animations until in-view */
+.eb-img-wrap img{animation-play-state:paused}
+.eb-img-wrap::after{animation-play-state:paused}
 .eb-break{margin:30px 0;padding:24px;border-radius:16px;overflow:hidden;border:1px solid transparent;box-sizing:border-box}
 .eb-poll{min-height:280px}
 .eb-quiz{min-height:240px}
