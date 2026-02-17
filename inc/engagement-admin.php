@@ -10,20 +10,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-function pl_email_leads_admin_menu() {
+function pl_eb_email_leads_admin_menu() {
 	add_menu_page(
 		'Email Leads',
 		'Email Leads',
 		'manage_options',
 		'eb-email-leads',
-		'pl_email_leads_page',
+		'pl_eb_email_leads_page',
 		'dashicons-email-alt',
 		30
 	);
 }
-add_action( 'admin_menu', 'pl_email_leads_admin_menu' );
+add_action( 'admin_menu', 'pl_eb_email_leads_admin_menu' );
 
-function pl_email_leads_page() {
+function pl_eb_email_leads_page() {
 	global $wpdb;
 	$table = $wpdb->prefix . 'eb_email_leads';
 
