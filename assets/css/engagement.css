@@ -10,9 +10,6 @@
 .eb-pill:hover{color:#e84393;background:#fdf2f8}
 .eb-pill.active{background:#e84393;color:#fff}
 
-/* --- Live Activity (desktop only) --- */
-.eb-live{background:#fff;border:1px solid #eee;border-radius:20px;color:#666;box-shadow:0 2px 8px rgba(0,0,0,.04);transition:opacity .3s}
-.eb-live.show{opacity:1}
 .eb-live-dot{background:#00b894;animation:ebLivePulse 2s infinite;will-change:opacity}
 @keyframes ebLivePulse{0%,100%{opacity:1}50%{opacity:.3}}
 

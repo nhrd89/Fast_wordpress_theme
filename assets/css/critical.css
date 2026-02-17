@@ -129,7 +129,6 @@ a:hover{text-decoration:underline}
 .eb-hero-social-count{font-size:.73rem;font-weight:600}
 .eb-hero-social-total{font-size:.7rem;font-weight:500}
 .eb-item{margin:0;padding:0;opacity:1}
-.eb-item:nth-child(n+3){content-visibility:auto;contain-intrinsic-size:auto 450px}
 /* Viewport-gate: no animation until in-view */
 .eb-img-wrap img{animation:none}
 .eb-img-wrap::after{animation:none}
@@ -148,8 +147,7 @@ a:hover{text-decoration:underline}
 /* Live, streak, collect counter — fixed + hidden until JS activates */
 /* Header stats — hidden by default, shown on scroll (mobile only) */
 .pl-header-stats{display:none}
-.eb-live,.eb-streak,.eb-collect-counter{position:fixed;opacity:0;pointer-events:none}
-.eb-live{top:96px;right:20px;z-index:997;display:flex;align-items:center;gap:6px;padding:6px 14px;font-size:12px}
+.eb-streak,.eb-collect-counter{position:fixed;opacity:0;pointer-events:none}
 .eb-live-dot{width:6px;height:6px;border-radius:50%}
 .eb-streak{top:96px;left:20px;z-index:997;padding:6px 14px;font-size:12px;font-weight:600}
 .eb-collect-counter{bottom:20px;left:20px;z-index:998;padding:6px 14px;font-size:13px;font-weight:600}
@@ -160,5 +158,5 @@ a:hover{text-decoration:underline}
 .pl-header-stats.visible{opacity:1;transform:translateY(0);pointer-events:auto}
 .pl-header-stats .eb-collect-counter,.pl-header-stats .eb-live{position:static;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#737373;background:none;box-shadow:none;padding:0;opacity:1;pointer-events:auto}
 .pl-header-stats .eb-live-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block}
-.eb-desktop-only .eb-collect-counter,.eb-desktop-only .eb-live{display:none}
+.eb-desktop-only .eb-collect-counter{display:none}
 }

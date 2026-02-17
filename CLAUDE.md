@@ -136,8 +136,7 @@ All CSS is **inlined in `<head>`** — no external stylesheet requests.
 .pl-header-stats .eb-live { position: static; opacity: 1 }
 
 /* Hide desktop-only counters on mobile */
-.eb-desktop-only .eb-collect-counter,
-.eb-desktop-only .eb-live { display: none }
+.eb-desktop-only .eb-collect-counter { display: none }
 ```
 
 ---
@@ -290,7 +289,7 @@ Engagement UI appears only on posts with `<h2>` tags containing `#N` patterns (d
 |---------|-----------|----------|
 | Progress bar | `ebProgressFill` | Width tracks % of items seen |
 | Item counter | `ebCounter` | "N / M ideas seen", shows after first item |
-| Live count | `ebLive` / `ebCounterLive` | Simulated reader count (30-70 range) |
+| Live count | `ebCounterLive` | Simulated reader count (30-70 range), inside `.eb-counter` bar |
 | Jump pills | `ebPills` | Fixed pill nav, click to jump to item |
 | Streak | `ebStreak` | Consecutive item viewing counter |
 | Speed warning | `ebSpeedWarn` | Shows when scroll speed > 2000px/s |
@@ -322,7 +321,7 @@ Each config defines: `breaks` (position + type), `poll` (question + options), `q
 
 | Feature | Desktop | Mobile (≤768px) |
 |---------|---------|-----------------|
-| Live counter | Fixed position (top-right) | In `.pl-header-stats` (header bar) |
+| Live counter | Inside `.eb-counter` bar | In `.pl-header-stats` (header bar) |
 | Collect counter | Fixed position (bottom-left) | In `.pl-header-stats` |
 | Jump pills | Fixed position (top center) | Hidden (`display: none`) |
 | Streak | Fixed position (top-left) | Hidden (`display: none`) |
@@ -333,8 +332,9 @@ Each config defines: `breaks` (position + type), `poll` (question + options), `q
 
 ### Mobile counter architecture
 - Header has `.pl-header-stats` between logo and hamburger
-- Contains duplicate `.eb-collect-counter` and `.eb-live` spans
-- Desktop originals wrapped in `.eb-desktop-only` div (hidden on mobile)
+- Contains `.eb-collect-counter` and `.eb-live` spans for mobile display
+- Desktop `.eb-collect-counter` wrapped in `.eb-desktop-only` div (hidden on mobile)
+- Floating `.eb-live` was removed (redundant with `.eb-counter-live` inside counter bar)
 - `engagement.js` syncs both via `querySelectorAll` on update
 
 ---
@@ -361,7 +361,7 @@ Each config defines: `breaks` (position + type), `poll` (question + options), `q
 - CDN preconnect to `myquickurl.com` at byte 0 of `<head>`
 - LCP preload with `fetchpriority="high"` + srcset at byte 0 of `<head>`
 - Scroll-deferred loading: `scroll-engage.js`, `comment-reply.min.js`, tooltipster CSS
-- `content-visibility: auto` on below-fold engagement items
+- `content-visibility: auto` on engagement breaks (NOT on `.eb-item` — it broke IntersectionObserver on mobile)
 - Engagement CSS loaded via preload/onload trick (non-blocking)
 
 ### Critical performance bugs to avoid
@@ -417,6 +417,8 @@ Each config defines: `breaks` (position + type), `poll` (question + options), `q
 8. **`assets/css/dist/` is gitignored** — Production falls back to source files. The build step in CI creates dist/ before deploy.
 9. **HTML minification blocks streaming** — Gzip handles compression. Don't re-add ob_start buffering for minification.
 10. **Tooltipster nuclear dequeue** — Smart Notification plugin re-enqueues after priority 100. We dequeue at `wp_print_styles` priority 9999 and load on first scroll instead.
+11. **content-visibility:auto on .eb-item** — DO NOT add. It prevents IntersectionObserver from firing on mobile, breaking the seen-items counter. Only use content-visibility on `.eb-break` and `.eb-curiosity` elements.
+12. **Floating .eb-live removed** — The live reader count is shown inside the `.eb-counter` bar (`.eb-counter-live`). The separate floating `.eb-live` element was removed as redundant. Don't re-add it.
 
 ---
 
