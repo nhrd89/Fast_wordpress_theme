@@ -130,10 +130,10 @@ a:hover{text-decoration:underline}
 .eb-hero-social-total{font-size:.7rem;font-weight:500}
 .eb-item{margin:0;padding:0;opacity:1}
 .eb-item:nth-child(n+3){content-visibility:auto;contain-intrinsic-size:auto 450px}
-/* Viewport-gate: pause animations until in-view */
-.eb-img-wrap img{animation-play-state:paused}
-.eb-img-wrap::after{animation-play-state:paused}
-.eb-trending-badge{animation-play-state:paused}
+/* Viewport-gate: no animation until in-view */
+.eb-img-wrap img{animation:none}
+.eb-img-wrap::after{animation:none}
+.eb-trending-badge{animation:none}
 .eb-break{margin:30px 0;padding:24px;border-radius:16px;overflow:hidden;border:1px solid transparent;box-sizing:border-box;content-visibility:auto;contain-intrinsic-size:auto 280px}
 .eb-fact{border:2px solid transparent;box-sizing:border-box}
 .eb-stylist{border:2px solid transparent;box-sizing:border-box}
