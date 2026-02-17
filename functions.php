@@ -1000,7 +1000,6 @@ function pl_enqueue_engagement() {
 		'emailEndpoint' => '',
 		'features'      => array(
 			'progressBar'  => (bool) get_theme_mod( 'eb_progress_bar', true ),
-			'darkMode'     => (bool) get_theme_mod( 'eb_dark_mode', true ),
 			'skeletons'    => (bool) get_theme_mod( 'eb_skeletons', true ),
 			'charMessages' => (bool) get_theme_mod( 'eb_char_messages', true ),
 		),

@@ -534,7 +534,7 @@ function onScroll() {
 	});
 }
 
-// === Skeleton + Dark Mode Scroll Gate ===
+// === Skeleton Scroll Gate ===
 function initScrollGate() {
 	// Wait 200ms to skip any synthetic scroll events
 	setTimeout(function() {
@@ -548,12 +548,10 @@ function initScrollGate() {
 
 			if ('requestIdleCallback' in window) {
 				requestIdleCallback(function() {
-					initDarkMode();
 					initSkeletons();
 				});
 			} else {
 				setTimeout(function() {
-					initDarkMode();
 					initSkeletons();
 				}, 50);
 			}
@@ -562,42 +560,6 @@ function initScrollGate() {
 		window.addEventListener('pointerdown', onFirstRealScroll, { once: true, passive: true, capture: true });
 		window.addEventListener('touchstart', onFirstRealScroll, { once: true, passive: true, capture: true });
 	}, 200);
-}
-
-function initDarkMode() {
-	if (FEATURES.darkMode === false) return;
-	if (!window.matchMedia || !window.matchMedia('(prefers-color-scheme: dark)').matches) return;
-
-	var darkCSS = document.createElement('style');
-	darkCSS.textContent = [
-		'body{background:#1a1a2e;color:#e0e0e0}',
-		'.site-header{background:#1a1a2e;border-color:#2d2d44}',
-		'.eb-break{background:#2d2d44;border-color:#3d3d5c}',
-		'.eb-poll{background:linear-gradient(135deg,#2d2d44,#1a1a2e)}',
-		'.eb-quiz{background:linear-gradient(135deg,#1a1a2e,#2d2d44)}',
-		'.eb-poll-opt,.eb-quiz-opt{background:#1a1a2e;border-color:#3d3d5c;color:#e0e0e0}',
-		'.eb-counter,.eb-live,.eb-pills,.eb-collect-counter,.eb-streak{background:#2d2d44;border-color:#3d3d5c;color:#e0e0e0}',
-		'.eb-counter .num{color:#e84393}',
-		'.eb-milestone{background:#2d2d44;color:#e0e0e0}',
-		'.eb-next-bar{background:#2d2d44;border-color:#3d3d5c}',
-		'.eb-fav-summary{background:#2d2d44;border-color:#3d3d5c}',
-		'.eb-ai-tip{background:linear-gradient(135deg,#1a1a2e,#2d2d44);border-color:#3d3d5c}',
-		'.eb-exit{background:linear-gradient(135deg,#2d2d44,#1a1a2e)}',
-		'.eb-email{background:linear-gradient(135deg,#2d2d44,#3d3d5c);border-color:#f9a8d4}',
-		'.eb-email-input{background:#1a1a2e;color:#e0e0e0;border-color:#f9a8d4}',
-		'.eb-fact{background:#2d2d44;border-color:#ffeaa7}',
-		'.eb-stylist{background:#2d2d44;border-color:#e0d4f5}',
-		'.eb-toc{background:#2d2d44}',
-		'.eb-curiosity{background:linear-gradient(135deg,#2d2d44,#3d3d5c)}',
-		'.eb-speed-warn{background:#2d2d44;border-color:#ffeaa7;color:#ffeaa7}',
-		'.eb-achievement{background:linear-gradient(135deg,#2d2d44,#1a1a2e);border-color:#e84393}',
-		'.single-content,.single-article{color:#e0e0e0}',
-		'.eb-break-title,.eb-email-title,.eb-teaser-title,.eb-fav-summary h3,.eb-milestone-text{color:#e0e0e0}',
-		'.eb-fav-heart{background:rgba(45,45,68,.95)}',
-		'.eb-save-count{background:rgba(45,45,68,.95);color:#e0e0e0}',
-		'.eb-reveal-overlay{background:rgba(26,26,46,.6)}'
-	].join('');
-	document.head.appendChild(darkCSS);
 }
 
 function initSkeletons() {
@@ -643,7 +605,7 @@ function init() {
 
 	window.addEventListener('scroll', onScroll, { passive: true });
 
-	// Scroll gate for dark mode + skeletons
+	// Scroll gate for skeletons
 	initScrollGate();
 }
 

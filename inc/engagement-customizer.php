@@ -38,7 +38,6 @@ function pl_engagement_customizer( $wp_customize ) {
 		'eb_ai_tip'         => 'AI Tip Unlock',
 		'eb_exit_intent'    => 'Exit Intent Popup',
 		'eb_next_bar'       => 'Next Article Bar',
-		'eb_dark_mode'      => 'Dark Mode Support',
 		'eb_skeletons'      => 'Skeleton Loading Screens',
 		'eb_char_messages'  => 'Character Speech Bubbles',
 		'eb_reading_streak' => 'Reading Streak',
