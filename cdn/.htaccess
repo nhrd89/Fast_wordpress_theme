@@ -1,0 +1,49 @@
+# PinLightning CDN — Image Resizer Rules
+# Deploy to: myquickurl.com/public_html/.htaccess (or merge into existing)
+
+# ── CORS Headers ────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    # Allow any origin to load images (cheerfultalks.com etc.)
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, HEAD"
+    Header set Timing-Allow-Origin "*"
+</IfModule>
+
+# ── Cache headers for img-cache directory ───────────────────────
+<IfModule mod_headers.c>
+    <FilesMatch "\.(jpg|jpeg|png|webp|gif)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+        Header set Vary "Accept"
+    </FilesMatch>
+</IfModule>
+
+# ── Rewrite Rules ───────────────────────────────────────────────
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Direct-serve from cache: if a cached file exists, serve it
+    # without hitting PHP at all.
+    #
+    # Pattern: /img/{src_path}?w=720 → check img-cache/{src_dir}/{w}x0/{filename}
+    # This is a best-effort shortcut for the most common case (width-only resize).
+    #
+    # The cache path format is: img-cache/{domain}/{folder}/{w}x0/{filename}.webp
+    # Since the width comes from query string, we check if a cache file exists.
+    RewriteCond %{QUERY_STRING} ^w=(\d+)$
+    RewriteCond %{DOCUMENT_ROOT}/img-cache/%{REQUEST_URI} -f
+    RewriteRule ^img/(.+)$ /img-cache/$1 [L,E=CACHE_HIT:1]
+
+    # WebP variant: if browser accepts webp, try the .webp cached version.
+    RewriteCond %{HTTP:Accept} image/webp
+    RewriteCond %{QUERY_STRING} ^w=(\d+)$
+    RewriteCond %{DOCUMENT_ROOT}/img-cache/%1x0/%{REQUEST_URI}.webp -f
+    RewriteRule ^img/(.+)\.(jpe?g|png)$ /img-cache/$1.webp [L,E=CACHE_HIT:1]
+
+    # Clean URL rewrite: /img/{path}?w=720&q=80 → img.php?src={path}&w=720&q=80
+    RewriteRule ^img/(.+)$ /img.php?src=$1 [QSA,L]
+</IfModule>
+
+# ── Block direct directory listing of cache ─────────────────────
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>

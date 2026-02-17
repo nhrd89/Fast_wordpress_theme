@@ -1,0 +1,114 @@
+# ==============================
+# IMAGE RESIZER REWRITE RULES
+# ==============================
+# PinLightning CDN — On-demand image resizer for myquickurl.com
+# These rules must come BEFORE any other rewrite rules.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Clean URL: /img/cheerfultalks.com/image.webp?w=720 → img.php
+  RewriteRule ^img/(.+)$ img.php?src=$1 [QSA,L]
+
+  # Direct-serve from cache (bypass PHP entirely)
+  # Check if WebP cache file exists when browser accepts WebP
+  RewriteCond %{HTTP_ACCEPT} image/webp
+  RewriteCond %{DOCUMENT_ROOT}/img-cache/webp/%{QUERY_STRING}/$1 -f
+  RewriteRule ^img/(.+)$ /img-cache/webp/%{QUERY_STRING}/$1 [L]
+</IfModule>
+
+# CORS for cross-origin image loading
+<IfModule mod_headers.c>
+  <FilesMatch "\.(jpg|jpeg|png|gif|webp)$">
+    Header set Access-Control-Allow-Origin "*"
+  </FilesMatch>
+</IfModule>
+
+# ==============================
+# PINLIGHTNING CDN SPEED (myquickurl)
+# ==============================
+
+# ── Immutable cache headers for resized images ──
+<IfModule mod_headers.c>
+  <FilesMatch "\.(jpg|jpeg|png|gif|webp)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+    Header set Vary "Accept"
+  </FilesMatch>
+</IfModule>
+
+# ── Block directory listing ──
+<IfModule mod_autoindex.c>
+  Options -Indexes
+</IfModule>
+
+# ── Protect purge.php and sensitive files ──
+<FilesMatch "^(purge\.php)$">
+  # purge.php has its own token auth but add extra layer
+  <IfModule mod_env.c>
+    SetEnv PURGE_SCRIPT 1
+  </IfModule>
+</FilesMatch>
+
+# ── Block access to img-cache .htaccess or hidden files ──
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# ==============================
+# EXISTING HOSTINGER / LITESPEED RULES
+# ==============================
+# The rules below are the standard Hostinger .htaccess.
+# If your existing .htaccess has different rules, replace
+# everything below this line with your actual existing rules.
+# DO NOT remove anything above this line.
+
+# ── PHP Settings ──
+<IfModule mod_php.c>
+  php_value upload_max_filesize 256M
+  php_value post_max_size 256M
+  php_value max_execution_time 300
+  php_value max_input_time 300
+</IfModule>
+
+# ── LiteSpeed Cache ──
+# Uncomment if LiteSpeed Cache plugin is active
+# <IfModule LiteSpeed>
+#   CacheLookup on
+# </IfModule>
+
+# ── Gzip / Brotli Compression ──
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+  AddOutputFilterByType DEFLATE application/javascript application/json
+  AddOutputFilterByType DEFLATE application/xml application/xhtml+xml
+  AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+# ── Security Headers ──
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ── Prevent hotlinking (optional — uncomment if needed) ──
+# <IfModule mod_rewrite.c>
+#   RewriteEngine On
+#   RewriteCond %{HTTP_REFERER} !^$
+#   RewriteCond %{HTTP_REFERER} !^https?://(www\.)?myquickurl\.com [NC]
+#   RewriteCond %{HTTP_REFERER} !^https?://(www\.)?cheerfultalks\.com [NC]
+#   RewriteRule \.(jpg|jpeg|png|gif|webp)$ - [F,L]
+# </IfModule>
+
+# ── Default index ──
+DirectoryIndex index.php index.html
+
+# ── Error documents ──
+ErrorDocument 404 /404.html
+ErrorDocument 403 /403.html

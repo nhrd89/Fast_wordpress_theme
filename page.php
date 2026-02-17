@@ -2,25 +2,48 @@
 /**
  * The template for displaying pages.
  *
+ * Uses the single-post article layout without related posts.
+ *
  * @package PinLightning
  * @since 1.0.0
  */
 
 get_header();
+
+while ( have_posts() ) :
+	the_post();
 ?>
 
-<main id="primary" class="site-main">
-	<?php
-	while ( have_posts() ) :
-		the_post();
-		get_template_part( 'template-parts/content', 'page' );
+	<?php if ( has_post_thumbnail() ) : ?>
+		<div class="post-hero">
+			<?php the_post_thumbnail( 'post-hero', array( 'class' => 'post-hero-img' ) ); ?>
+		</div>
+	<?php endif; ?>
 
-		if ( comments_open() || get_comments_number() ) :
-			comments_template();
-		endif;
-	endwhile;
+	<article id="post-<?php the_ID(); ?>" <?php post_class( 'single-article' ); ?>>
+		<header class="single-header">
+			<h1 class="single-title"><?php the_title(); ?></h1>
+		</header>
+
+		<div class="single-content">
+			<?php
+			the_content();
+
+			wp_link_pages( array(
+				'before' => '<div class="page-links">' . esc_html__( 'Pages:', 'pinlightning' ),
+				'after'  => '</div>',
+			) );
+			?>
+		</div>
+	</article>
+
+	<?php
+	if ( comments_open() || get_comments_number() ) :
+		comments_template();
+	endif;
 	?>
-</main>
+
+<?php endwhile; ?>
 
 <?php
 get_footer();

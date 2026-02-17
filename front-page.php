@@ -1,0 +1,479 @@
+<?php
+/**
+ * Homepage Template
+ *
+ * Modern lifestyle homepage with bento hero, category filtering, and newsletter.
+ * All sections controllable via Appearance > Customize > Homepage.
+ *
+ * @package PinLightning
+ * @since 1.0.0
+ */
+
+get_header();
+
+// --- Load all Customizer settings ---
+$pl_hero_show          = get_theme_mod( 'pl_hero_show', true );
+$pl_hero_count         = get_theme_mod( 'pl_hero_count', 5 );
+$pl_hero_badge         = get_theme_mod( 'pl_hero_badge', "Editor's Pick" );
+$pl_hero_category      = get_theme_mod( 'pl_hero_category', 0 );
+$pl_liv_show           = get_theme_mod( 'pl_liv_show', true );
+$pl_liv_name           = get_theme_mod( 'pl_liv_name', 'Liv' );
+$pl_liv_message        = str_replace( '{name}', '<strong>' . esc_html( $pl_liv_name ) . '</strong>',
+	get_theme_mod( 'pl_liv_message', "Hey! I'm {name} \xe2\x80\x94 your style & lifestyle companion. Tap any image while reading to chat with me about it!" )
+);
+$pl_liv_avatar         = get_theme_mod( 'pl_liv_avatar', "\xF0\x9F\x92\x83" );
+$pl_liv_cta            = get_theme_mod( 'pl_liv_cta', "Try it \xe2\x86\x92" );
+$pl_cats_show          = get_theme_mod( 'pl_cats_show', true );
+$pl_cats_max           = get_theme_mod( 'pl_cats_max', 8 );
+$pl_cats_counts        = get_theme_mod( 'pl_cats_counts', true );
+$pl_grid_tabs          = get_theme_mod( 'pl_grid_tabs', true );
+$pl_grid_count         = get_theme_mod( 'pl_grid_count', 9 );
+$pl_grid_columns       = get_theme_mod( 'pl_grid_columns', 3 );
+$pl_grid_readtime      = get_theme_mod( 'pl_grid_readtime', true );
+$pl_grid_cat_badge     = get_theme_mod( 'pl_grid_cat_badge', true );
+$pl_grid_img_height    = get_theme_mod( 'pl_grid_img_height', '170' );
+$pl_grid_loadmore      = get_theme_mod( 'pl_grid_loadmore', true );
+$pl_grid_loadmore_text = get_theme_mod( 'pl_grid_loadmore_text', 'Load More Inspiration' );
+$pl_pin_show           = get_theme_mod( 'pl_pin_button_show', true );
+$pl_explore_show       = get_theme_mod( 'pl_explore_show', true );
+$pl_explore_heading    = get_theme_mod( 'pl_explore_heading', 'Explore by Category' );
+$pl_newsletter_show    = get_theme_mod( 'pl_newsletter_show', true );
+$pl_newsletter_heading = get_theme_mod( 'pl_newsletter_heading', 'Get Inspired Weekly' );
+$pl_newsletter_desc    = get_theme_mod( 'pl_newsletter_desc', "Curated style tips, home inspo, and beauty trends \xe2\x80\x94 delivered every Friday. No spam, just inspiration." );
+$pl_newsletter_placeholder = get_theme_mod( 'pl_newsletter_placeholder', 'Your email address' );
+$pl_newsletter_btn     = get_theme_mod( 'pl_newsletter_btn', 'Subscribe' );
+$pl_newsletter_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inbox for a welcome surprise." );
+$pl_newsletter_note    = get_theme_mod( 'pl_newsletter_note', 'Join 2,400+ style enthusiasts. Unsubscribe anytime.' );
+$pl_newsletter_bg      = get_theme_mod( 'pl_newsletter_bg', '#1a1a2e' );
+$pl_accent             = get_theme_mod( 'pl_accent_color', '#e84393' );
+$pl_accent2            = get_theme_mod( 'pl_accent_color_2', '#6c5ce7' );
+
+// Get categories with post counts (exclude uncategorized).
+$categories = get_categories( array(
+	'orderby'    => 'count',
+	'order'      => 'DESC',
+	'hide_empty' => true,
+	'exclude'    => array( get_cat_ID( 'uncategorized' ) ),
+	'number'     => $pl_cats_max,
+) );
+
+// Featured posts for hero — one per category, engagement-weighted.
+$hero_posts = array();
+$hero_ids   = array();
+if ( $pl_hero_show ) {
+	if ( $pl_hero_category > 0 ) {
+		// Specific category selected in Customizer — use original behavior.
+		$hero_query = new WP_Query( array(
+			'posts_per_page' => $pl_hero_count,
+			'post_status'    => 'publish',
+			'cat'            => $pl_hero_category,
+			'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+			'orderby'        => 'date',
+			'order'          => 'DESC',
+		) );
+		$hero_posts = $hero_query->posts;
+		wp_reset_postdata();
+	} else {
+		// Smart selection: one post per top category, engagement-weighted.
+		$hero_categories = get_categories( array(
+			'orderby'    => 'count',
+			'order'      => 'DESC',
+			'hide_empty' => true,
+			'exclude'    => array( get_cat_ID( 'uncategorized' ) ),
+			'number'     => $pl_hero_count,
+		) );
+
+		$scores = get_transient( 'pl_post_engagement_scores' );
+
+		foreach ( $hero_categories as $cat ) {
+			$candidates = get_posts( array(
+				'category__in'   => array( $cat->term_id ),
+				'posts_per_page' => 10,
+				'post_status'    => 'publish',
+				'post__not_in'   => wp_list_pluck( $hero_posts, 'ID' ),
+				'meta_query'     => array( array( 'key' => '_thumbnail_id', 'compare' => 'EXISTS' ) ),
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'fields'         => 'ids',
+			) );
+
+			if ( empty( $candidates ) ) continue;
+
+			if ( ! empty( $scores ) ) {
+				$scored = array();
+				foreach ( $candidates as $pid ) {
+					$scored[ $pid ] = $scores[ $pid ] ?? 0.01;
+				}
+				arsort( $scored );
+				$top  = array_slice( array_keys( $scored ), 0, 3 );
+				$pick = $top[ array_rand( $top ) ];
+			} else {
+				$top  = array_slice( $candidates, 0, 3 );
+				$pick = $top[ array_rand( $top ) ];
+			}
+
+			$post_obj = get_post( $pick );
+			if ( $post_obj && has_post_thumbnail( $pick ) ) {
+				$hero_posts[] = $post_obj;
+			}
+
+			if ( count( $hero_posts ) >= $pl_hero_count ) break;
+		}
+
+		// Sort by engagement score so the best post gets the main slot.
+		if ( ! empty( $scores ) && count( $hero_posts ) > 1 ) {
+			usort( $hero_posts, function( $a, $b ) use ( $scores ) {
+				return ( $scores[ $b->ID ] ?? 0 ) <=> ( $scores[ $a->ID ] ?? 0 );
+			} );
+		} else {
+			$first = array_shift( $hero_posts );
+			shuffle( $hero_posts );
+			array_unshift( $hero_posts, $first );
+		}
+	}
+	$hero_ids = wp_list_pluck( $hero_posts, 'ID' );
+}
+
+// Grid posts — smart selection: one per category, engagement-weighted.
+$grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
+?>
+
+<div class="pl-home">
+
+	<h1 class="screen-reader-text"><?php bloginfo( 'name' ); ?></h1>
+
+	<?php if ( $pl_hero_show && ! empty( $hero_posts ) ) : ?>
+	<!-- ========== HERO BENTO GRID ========== -->
+	<section class="pl-hero">
+		<div class="pl-container">
+			<div class="pl-bento">
+				<?php if ( ! empty( $hero_posts[0] ) && has_post_thumbnail( $hero_posts[0]->ID ) ) :
+					$main      = $hero_posts[0];
+					$main_cats = get_the_category( $main->ID );
+					$main_cat  = ! empty( $main_cats ) ? $main_cats[0] : null;
+				?>
+				<a href="<?php echo esc_url( get_permalink( $main->ID ) ); ?>" class="pl-bento-main">
+					<?php if ( has_post_thumbnail( $main->ID ) ) :
+						echo get_the_post_thumbnail( $main->ID, 'large', array(
+							'class'         => 'pl-bento-img',
+							'loading'       => 'eager',
+							'fetchpriority' => 'high',
+							'decoding'      => 'async',
+						) );
+					else :
+						$main_color = $main_cat ? pl_get_cat_color( $main_cat->slug ) : '#888';
+					?>
+						<div class="pl-bento-img-placeholder" style="background:linear-gradient(135deg,<?php echo esc_attr( $main_color ); ?>44,<?php echo esc_attr( $main_color ); ?>88)"></div>
+					<?php endif; ?>
+					<div class="pl-bento-overlay">
+						<?php if ( $pl_hero_badge ) : ?>
+						<span class="pl-bento-badge"><?php echo esc_html( $pl_hero_badge ); ?></span>
+						<?php endif; ?>
+						<h2 class="pl-bento-title"><?php echo esc_html( $main->post_title ); ?></h2>
+						<span class="pl-bento-meta">
+							<?php if ( $main_cat ) : echo esc_html( $main_cat->name ) . ' &middot; '; endif; ?>
+							<?php echo esc_html( max( 1, ceil( str_word_count( wp_strip_all_tags( $main->post_content ) ) / 200 ) ) ); ?> min read
+						</span>
+					</div>
+				</a>
+				<?php endif; ?>
+
+				<?php for ( $i = 1; $i < $pl_hero_count; $i++ ) :
+					if ( empty( $hero_posts[ $i ] ) || ! has_post_thumbnail( $hero_posts[ $i ]->ID ) ) continue;
+					$p       = $hero_posts[ $i ];
+					$p_cats  = get_the_category( $p->ID );
+					$p_cat   = ! empty( $p_cats ) ? $p_cats[0] : null;
+					$p_color = $p_cat ? pl_get_cat_color( $p_cat->slug ) : '#888';
+				?>
+				<a href="<?php echo esc_url( get_permalink( $p->ID ) ); ?>" class="pl-bento-sm">
+					<?php if ( has_post_thumbnail( $p->ID ) ) :
+						echo get_the_post_thumbnail( $p->ID, 'medium_large', array(
+							'class'    => 'pl-bento-img',
+							'loading'  => $i <= 2 ? 'eager' : 'lazy',
+							'decoding' => 'async',
+						) );
+					else : ?>
+						<div class="pl-bento-img-placeholder" style="background:linear-gradient(135deg,<?php echo esc_attr( $p_color ); ?>44,<?php echo esc_attr( $p_color ); ?>88)"></div>
+					<?php endif; ?>
+					<div class="pl-bento-overlay pl-bento-overlay-sm">
+						<span class="pl-bento-cat" style="background:<?php echo esc_attr( $p_color ); ?>cc">
+							<?php echo esc_html( $p_cat ? $p_cat->name : '' ); ?>
+						</span>
+						<h3 class="pl-bento-title-sm"><?php echo esc_html( $p->post_title ); ?></h3>
+					</div>
+				</a>
+				<?php endfor; ?>
+			</div>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<?php if ( $pl_liv_show ) : ?>
+	<!-- ========== LIV WELCOME STRIP ========== -->
+	<section class="pl-container">
+		<div class="pl-liv-strip" style="border-color:<?php echo esc_attr( $pl_accent ); ?>22">
+			<div class="pl-liv-avatar" style="background:linear-gradient(135deg,<?php echo esc_attr( $pl_accent ); ?>,<?php echo esc_attr( $pl_accent2 ); ?>)"><?php echo esc_html( $pl_liv_avatar ); ?></div>
+			<p class="pl-liv-text">
+				<?php echo wp_kses( $pl_liv_message, array( 'strong' => array() ) ); ?>
+			</p>
+			<?php if ( $pl_liv_cta ) : ?>
+			<span class="pl-liv-cta"><?php echo esc_html( $pl_liv_cta ); ?></span>
+			<?php endif; ?>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<?php if ( $pl_cats_show ) : ?>
+	<!-- ========== CATEGORY PILLS ========== -->
+	<section class="pl-container">
+		<div class="pl-cat-pills" id="plCatPills">
+			<?php foreach ( $categories as $cat ) :
+				$icon  = pl_get_cat_icon( $cat->slug );
+				$color = pl_get_cat_color( $cat->slug );
+			?>
+			<a href="<?php echo esc_url( get_category_link( $cat->term_id ) ); ?>"
+			   class="pl-cat-pill"
+			   data-cat="<?php echo esc_attr( $cat->slug ); ?>"
+			   style="--pill-color:<?php echo esc_attr( $color ); ?>">
+				<span class="pl-pill-icon" aria-hidden="true"><?php echo $icon; ?></span>
+				<span class="pl-pill-name"><?php echo esc_html( $cat->name ); ?></span>
+				<?php if ( $pl_cats_counts ) : ?>
+				<span class="pl-pill-count"><?php echo esc_html( $cat->count ); ?></span>
+				<?php endif; ?>
+			</a>
+			<?php endforeach; ?>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<?php if ( $pl_grid_tabs ) : ?>
+	<!-- ========== TAB FILTERS ========== -->
+	<section class="pl-container">
+		<div class="pl-tabs" id="plTabs">
+			<button class="pl-tab active" data-cat="all">All</button>
+			<?php foreach ( array_slice( $categories, 0, 6 ) as $cat ) : ?>
+			<button class="pl-tab" data-cat="<?php echo esc_attr( $cat->slug ); ?>">
+				<?php echo esc_html( $cat->name ); ?>
+			</button>
+			<?php endforeach; ?>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<!-- ========== POST GRID ========== -->
+	<section class="pl-container">
+		<div class="pl-post-grid" id="plPostGrid" style="--pl-cols:<?php echo esc_attr( $pl_grid_columns ); ?>">
+			<?php foreach ( $grid_posts as $g_post ) :
+				setup_postdata( $g_post );
+				$g_cats    = get_the_category( $g_post->ID );
+				$g_cat     = ! empty( $g_cats ) ? $g_cats[0] : null;
+				$g_color   = $g_cat ? pl_get_cat_color( $g_cat->slug ) : '#888';
+				$g_icon    = $g_cat ? pl_get_cat_icon( $g_cat->slug ) : "\xF0\x9F\x93\x8C";
+				$read_time = max( 1, ceil( str_word_count( wp_strip_all_tags( $g_post->post_content ) ) / 200 ) );
+			?>
+			<article class="pl-card<?php if ( $pl_pin_show && has_post_thumbnail( $g_post->ID ) ) echo ' pl-pin-wrap'; ?>" data-cat="<?php echo esc_attr( $g_cat ? $g_cat->slug : '' ); ?>">
+				<a href="<?php echo esc_url( get_permalink( $g_post->ID ) ); ?>" class="pl-card-link">
+					<div class="pl-card-media" style="--pl-img-h:<?php echo esc_attr( $pl_grid_img_height ); ?>px">
+						<?php if ( has_post_thumbnail( $g_post->ID ) ) :
+							echo get_the_post_thumbnail( $g_post->ID, 'medium_large', array(
+								'class'    => 'pl-card-img',
+								'loading'  => 'lazy',
+								'decoding' => 'async',
+							) );
+						else : ?>
+							<div class="pl-card-img-placeholder" style="background:linear-gradient(135deg,<?php echo esc_attr( $g_color ); ?>22,<?php echo esc_attr( $g_color ); ?>44)"></div>
+						<?php endif; ?>
+						<?php if ( $pl_grid_cat_badge ) : ?>
+						<span class="pl-card-cat" style="color:<?php echo esc_attr( $g_color ); ?>">
+							<?php echo esc_html( $g_cat ? $g_cat->name : '' ); ?>
+						</span>
+						<?php endif; ?>
+					</div>
+					<div class="pl-card-body">
+						<h3 class="pl-card-title"><?php echo esc_html( $g_post->post_title ); ?></h3>
+						<?php if ( $pl_grid_readtime ) : ?>
+						<div class="pl-card-footer">
+							<span class="pl-card-meta">
+								<span class="pl-card-meta-icon" style="background:<?php echo esc_attr( $g_color ); ?>22" aria-hidden="true"><?php echo $g_icon; ?></span>
+								<?php echo esc_html( $read_time ); ?> min read
+							</span>
+						</div>
+						<?php endif; ?>
+					</div>
+				</a>
+				<?php if ( $pl_pin_show && has_post_thumbnail( $g_post->ID ) ) :
+					$pin_img = get_the_post_thumbnail_url( $g_post->ID, 'medium_large' );
+					$pin_href = 'https://www.pinterest.com/pin/create/button/?url=' . rawurlencode( get_permalink( $g_post->ID ) ) . '&media=' . rawurlencode( $pin_img ) . '&description=' . rawurlencode( $g_post->post_title );
+				?>
+				<a href="<?php echo esc_url( $pin_href ); ?>" class="pl-pin-btn" target="_blank" rel="noopener nofollow" data-img="<?php echo esc_attr( $pin_img ); ?>" aria-label="<?php esc_attr_e( 'Save to Pinterest', 'pinlightning' ); ?>" role="button" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg> Save</a>
+				<?php endif; ?>
+			</article>
+			<?php endforeach; wp_reset_postdata(); ?>
+		</div>
+
+		<?php if ( $pl_grid_loadmore ) : ?>
+		<!-- Load More -->
+		<div class="pl-loadmore-wrap">
+			<button class="pl-loadmore" id="plLoadMore" aria-label="<?php esc_attr_e( 'Load more posts', 'pinlightning' ); ?>"
+			        data-exclude="<?php echo esc_attr( implode( ',', array_merge( $hero_ids, wp_list_pluck( $grid_posts, 'ID' ) ) ) ); ?>">
+				<?php echo esc_html( $pl_grid_loadmore_text ); ?>
+			</button>
+		</div>
+		<?php endif; ?>
+	</section>
+
+	<?php if ( $pl_explore_show ) : ?>
+	<!-- ========== EXPLORE BY CATEGORY ========== -->
+	<section class="pl-container">
+		<div class="pl-explore">
+			<h2 class="pl-explore-heading"><?php echo esc_html( $pl_explore_heading ); ?></h2>
+			<div class="pl-explore-grid">
+				<?php foreach ( $categories as $cat ) :
+					$icon  = pl_get_cat_icon( $cat->slug );
+					$color = pl_get_cat_color( $cat->slug );
+				?>
+				<a href="<?php echo esc_url( get_category_link( $cat->term_id ) ); ?>" class="pl-explore-card"
+				   style="--card-color:<?php echo esc_attr( $color ); ?>">
+					<span class="pl-explore-icon"><?php echo $icon; ?></span>
+					<span class="pl-explore-name"><?php echo esc_html( $cat->name ); ?></span>
+					<span class="pl-explore-count"><?php echo esc_html( $cat->count ); ?> posts</span>
+				</a>
+				<?php endforeach; ?>
+			</div>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<?php if ( $pl_newsletter_show ) : ?>
+	<!-- ========== NEWSLETTER ========== -->
+	<section class="pl-newsletter" style="background:linear-gradient(135deg,<?php echo esc_attr( $pl_newsletter_bg ); ?> 0%,<?php echo esc_attr( $pl_newsletter_bg ); ?>ee 50%,<?php echo esc_attr( $pl_newsletter_bg ); ?> 100%)">
+		<div class="pl-newsletter-inner">
+			<div class="pl-newsletter-icon" aria-hidden="true">&#x2709;&#xFE0F;</div>
+			<h2 class="pl-newsletter-title"><?php echo esc_html( $pl_newsletter_heading ); ?></h2>
+			<p class="pl-newsletter-desc"><?php echo esc_html( $pl_newsletter_desc ); ?></p>
+			<form class="pl-newsletter-form" id="plNewsletterForm" aria-label="<?php esc_attr_e( 'Subscribe to newsletter', 'pinlightning' ); ?>">
+				<input type="email" class="pl-newsletter-input" placeholder="<?php echo esc_attr( $pl_newsletter_placeholder ); ?>" aria-label="<?php esc_attr_e( 'Email address', 'pinlightning' ); ?>" required />
+				<button type="submit" class="pl-newsletter-btn" style="background:linear-gradient(135deg,<?php echo esc_attr( $pl_accent ); ?>,<?php echo esc_attr( $pl_accent2 ); ?>)"><?php echo esc_html( $pl_newsletter_btn ); ?></button>
+			</form>
+			<p class="pl-newsletter-note"><?php echo esc_html( $pl_newsletter_note ); ?></p>
+		</div>
+	</section>
+	<?php endif; ?>
+
+</div><!-- .pl-home -->
+
+<script>
+(function(){
+	var tabs=document.querySelectorAll('.pl-tab');
+	var cards=document.querySelectorAll('.pl-card');
+	tabs.forEach(function(tab){
+		tab.addEventListener('click',function(){
+			tabs.forEach(function(t){t.classList.remove('active')});
+			this.classList.add('active');
+			var cat=this.dataset.cat;
+			cards.forEach(function(card){
+				card.style.display=(cat==='all'||card.dataset.cat===cat)?'':'none';
+			});
+		});
+	});
+	var btn=document.getElementById('plLoadMore');
+	if(btn){
+		var loadText=<?php echo wp_json_encode( $pl_grid_loadmore_text ); ?>;
+		btn.addEventListener('click',function(){
+			var exclude=this.dataset.exclude;
+			this.textContent='Loading...';
+			this.disabled=true;
+			var xhr=new XMLHttpRequest();
+			xhr.open('GET',<?php echo wp_json_encode( esc_url_raw( rest_url( 'pl/v1/home-posts' ) ) ); ?>+'?exclude='+exclude);
+			xhr.onload=function(){
+				if(xhr.status===200){
+					var data=JSON.parse(xhr.responseText);
+					if(data.html){
+						document.getElementById('plPostGrid').insertAdjacentHTML('beforeend',data.html);
+						cards=document.querySelectorAll('.pl-card');
+						if(data.exclude){btn.dataset.exclude=data.exclude}
+						btn.textContent=loadText;
+						btn.disabled=false;
+						if(!data.has_more){btn.parentElement.style.display='none'}
+					}
+				}
+			};
+			xhr.send();
+		});
+	}
+	var form=document.getElementById('plNewsletterForm');
+	if(form){
+		form.addEventListener('submit',function(e){
+			e.preventDefault();
+			var input=this.querySelector('input[type="email"]');
+			var email=input.value.trim();
+			if(!email)return;
+
+			var btn=this.querySelector('button');
+			var origText=btn.textContent;
+			btn.textContent='Subscribing...';
+			btn.disabled=true;
+
+			var vid='';try{vid=localStorage.getItem('plt_vid')||'';}catch(ex){}
+			var visitCount=0;try{visitCount=parseInt(localStorage.getItem('plt_v')||'0');}catch(ex){}
+			var tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone;}catch(ex){}
+
+			var ua=navigator.userAgent;
+			var browser='Unknown';
+			if(ua.indexOf('Chrome')>-1&&ua.indexOf('Edg')===-1)browser='Chrome';
+			else if(ua.indexOf('Safari')>-1&&ua.indexOf('Chrome')===-1)browser='Safari';
+			else if(ua.indexOf('Firefox')>-1)browser='Firefox';
+			else if(ua.indexOf('Edg')>-1)browser='Edge';
+
+			var pinSaves=0;
+			if(window.__plPinData)pinSaves=window.__plPinData.saves||0;
+
+			var interests=[];
+			try{interests=JSON.parse(localStorage.getItem('pl_visited_cats')||'[]').slice(0,10);}catch(ex){}
+
+			var payload={
+				email:email,
+				source:'newsletter',
+				source_detail:'footer',
+				page_url:location.href,
+				page_title:document.title,
+				visitor_id:vid,
+				device:window.innerWidth<768?'mobile':(window.innerWidth<1024?'tablet':'desktop'),
+				browser:browser,
+				viewport_width:window.innerWidth,
+				user_agent:ua,
+				timezone:tz,
+				language:navigator.language||'',
+				returning:visitCount>1?1:0,
+				total_sessions:visitCount,
+				pin_saves:pinSaves,
+				referrer:document.referrer||'',
+				interests:interests
+			};
+
+			fetch(<?php echo wp_json_encode( esc_url_raw( rest_url( 'pl/v1/subscribe' ) ) ); ?>,{
+				method:'POST',
+				headers:{'Content-Type':'application/json'},
+				body:JSON.stringify(payload)
+			})
+			.then(function(r){return r.json();})
+			.then(function(data){
+				if(data.success){
+					form.innerHTML='<div style="background:rgba(0,184,148,.15);border:1px solid rgba(0,184,148,.3);border-radius:14px;padding:14px 24px;font-size:14px;color:#00b894;font-weight:500">'+<?php echo wp_json_encode( $pl_newsletter_success ); ?>+'</div>';
+				}else{
+					btn.textContent=data.error||'Error \u2014 try again';
+					btn.disabled=false;
+					setTimeout(function(){btn.textContent=origText;},3000);
+				}
+			})
+			.catch(function(){
+				btn.textContent='Error \u2014 try again';
+				btn.disabled=false;
+				setTimeout(function(){btn.textContent=origText;},3000);
+			});
+		});
+	}
+})();
+</script>
+
+<?php get_footer(); ?>

@@ -1,0 +1,28 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+
+# Build output (committed so they deploy via git push)
+# assets/css/dist/
+# assets/js/dist/
+
+# Local image resizer cache
+img-cache/
+
+# Screenshots from wp-check.sh
+screenshot*.png
