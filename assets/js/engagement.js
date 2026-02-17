@@ -135,11 +135,13 @@ function checkMilestones() {
 
 	// Achievement at 100%
 	if (pct >= 100 && $achievement) {
-		setTimeout(function() {
-			$achievement.classList.add('show');
-			ebTrack('achievement_earned', { type: 'style_expert' });
-			setTimeout(function() { $achievement.classList.remove('show'); }, 5000);
-		}, 2000);
+		// Disabled: achievement popup interrupts scrolling experience
+		// setTimeout(function() {
+		// 	$achievement.classList.add('show');
+		// 	ebTrack('achievement_earned', { type: 'style_expert' });
+		// 	setTimeout(function() { $achievement.classList.remove('show'); }, 5000);
+		// }, 2000);
+		ebTrack('achievement_earned', { type: 'style_expert' });
 	}
 }
 
@@ -148,8 +150,9 @@ function showMilestone(emoji, text, sub) {
 	$milestoneEmoji.textContent = emoji;
 	$milestoneText.textContent = text;
 	$milestoneSub.textContent = sub;
-	$milestone.classList.add('show');
-	setTimeout(function() { $milestone.classList.remove('show'); }, 3000);
+	// Disabled: milestone popup interrupts scrolling experience
+	// $milestone.classList.add('show');
+	// setTimeout(function() { $milestone.classList.remove('show'); }, 3000);
 }
 
 // === AI Tip Unlock ===
@@ -186,9 +189,10 @@ function checkScrollSpeed() {
 	if (dt > 0 && dt < 200) {
 		var speed = dy / dt * 1000; // px/s
 		if (speed > 2000 && $speedWarn && seenItems.size > 2 && seenItems.size < TOTAL - 2) {
-			$speedWarn.classList.add('show');
+			// Disabled: speed warning popup interrupts scrolling experience
+			// $speedWarn.classList.add('show');
 			ebTrack('speed_warning', { speed: Math.round(speed) });
-			setTimeout(function() { $speedWarn.classList.remove('show'); }, 2500);
+			// setTimeout(function() { $speedWarn.classList.remove('show'); }, 2500);
 		}
 	}
 	lastScrollY = window.scrollY;
