@@ -170,7 +170,7 @@ function pl_eb_wrap_item( $html, $index, $options ) {
 	}
 
 	if ( get_theme_mod( 'eb_favorites', true ) ) {
-		$overlays .= '<button class="eb-fav-heart" data-eb-action="fav" data-idx="' . ( $index - 1 ) . '" aria-label="Save to favorites">' . "\xE2\x99\xA1" . '</button>';
+		$overlays .= '<button class="eb-fav-heart" data-eb-action="fav" data-idx="' . ( $index - 1 ) . '" aria-label="Save to favorites"></button>';
 	}
 
 	if ( $collectible && get_theme_mod( 'eb_collectibles', true ) ) {
