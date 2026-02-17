@@ -125,15 +125,22 @@ function pl_engagement_filter( $content ) {
 
 	$content = implode( "\n", $output_parts );
 
-	// Hero mosaic (replaces old TOC teaser).
+	// Hero mosaic — insert after first paragraph, or before first H2 as fallback.
 	$mosaic_html = pl_render_hero_mosaic( $raw_content, $total_items, $post_id );
 	if ( $mosaic_html ) {
-		$content = preg_replace(
-			'/(?=<div class="eb-item"[^>]*data-item="1")/i',
-			$mosaic_html,
-			$content,
-			1
-		);
+		$first_p_end = strpos( $content, '</p>' );
+		if ( $first_p_end !== false ) {
+			$insert_pos = $first_p_end + 4; // after </p>
+			$content    = substr( $content, 0, $insert_pos ) . $mosaic_html . substr( $content, $insert_pos );
+		} else {
+			// Fallback: prepend before first H2 item.
+			$content = preg_replace(
+				'/(?=<div class="eb-item"[^>]*data-item="1")/i',
+				$mosaic_html,
+				$content,
+				1
+			);
+		}
 	}
 
 	// Append: AI tip placeholder + favorites summary.
