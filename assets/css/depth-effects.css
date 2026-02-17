@@ -1,0 +1,233 @@
+/*
+ * PinLightning Depth Effects — depth-effects.css
+ * Dopamine color palette + 8 depth layers
+ */
+:root {
+  --dp-coral: rgba(247,168,184,0.35);
+  --dp-peach: rgba(252,218,192,0.4);
+  --dp-flamingo: rgba(242,120,159,0.18);
+  --dp-golden: rgba(245,216,154,0.3);
+  --dp-lavender: rgba(216,204,240,0.22);
+  --dp-mint: rgba(196,232,212,0.2);
+  --dp-sky: rgba(192,221,240,0.18);
+  --dp-accent: #F2789F;
+}
+.category-landscaping-ideas {
+  --dp-coral: rgba(196,232,212,0.38);
+  --dp-flamingo: rgba(141,168,122,0.2);
+}
+.category-architecture, .category-wallpaper {
+  --dp-coral: rgba(212,165,116,0.32);
+  --dp-flamingo: rgba(180,140,100,0.18);
+}
+.category-home-decor, .category-room-decor {
+  --dp-lavender: rgba(216,204,240,0.3);
+  --dp-coral: rgba(232,180,210,0.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dp-cloud, .dp-grain, .dp-vignette { display: none !important; }
+  .dp-reveal { opacity: 1 !important; transform: none !important; filter: none !important; }
+  .entry-content img, .wp-post-image { animation: none !important; }
+}
+/* GRADIENT CLOUDS */
+.dp-cloud {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform;
+}
+.dp-cloud-1 {
+  width: 500px; height: 420px;
+  background: radial-gradient(ellipse, var(--dp-coral) 0%, transparent 65%);
+  filter: blur(50px);
+  top: -5%; left: -8%;
+  animation: dpDrift1 28s ease-in-out infinite alternate;
+}
+.dp-cloud-2 {
+  width: 440px; height: 380px;
+  background: radial-gradient(ellipse, var(--dp-peach) 0%, transparent 65%);
+  filter: blur(45px);
+  top: 25%; right: -5%;
+  animation: dpDrift2 32s ease-in-out infinite alternate;
+}
+.dp-cloud-3 {
+  width: 380px; height: 320px;
+  background: radial-gradient(ellipse, var(--dp-flamingo) 0%, transparent 65%);
+  filter: blur(40px);
+  top: 55%; left: 8%;
+  animation: dpDrift3 25s ease-in-out infinite alternate;
+}
+.dp-cloud-4 {
+  width: 350px; height: 300px;
+  background: radial-gradient(ellipse, var(--dp-golden) 0%, transparent 65%);
+  filter: blur(48px);
+  top: 75%; right: 12%;
+  animation: dpDrift4 30s ease-in-out infinite alternate;
+}
+.dp-cloud-5 {
+  width: 550px; height: 450px;
+  background: radial-gradient(ellipse, var(--dp-lavender) 0%, transparent 65%);
+  filter: blur(90px);
+  top: 10%; left: 35%;
+  animation: dpDrift5 38s ease-in-out infinite alternate;
+}
+.dp-cloud-6 {
+  width: 480px; height: 400px;
+  background: radial-gradient(ellipse, var(--dp-mint) 0%, transparent 65%);
+  filter: blur(85px);
+  top: 42%; right: 25%;
+  animation: dpDrift6 34s ease-in-out infinite alternate;
+}
+.dp-cloud-7 {
+  width: 520px; height: 420px;
+  background: radial-gradient(ellipse, var(--dp-sky) 0%, transparent 65%);
+  filter: blur(95px);
+  bottom: 8%; left: 15%;
+  animation: dpDrift1 36s ease-in-out infinite alternate-reverse;
+}
+@keyframes dpDrift1 {
+  0%   { transform: translate(0,0) scale(1); }
+  33%  { transform: translate(60px,30px) scale(1.08); }
+  66%  { transform: translate(20px,-20px) scale(0.95); }
+  100% { transform: translate(80px,10px) scale(1.04); }
+}
+@keyframes dpDrift2 {
+  0%   { transform: translate(0,0) scale(1); }
+  33%  { transform: translate(-50px,20px) scale(1.1); }
+  66%  { transform: translate(-20px,-30px) scale(1.02); }
+  100% { transform: translate(-70px,-10px) scale(1.06); }
+}
+@keyframes dpDrift3 {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(40px,-25px) scale(1.12); }
+  100% { transform: translate(-30px,15px) scale(0.96); }
+}
+@keyframes dpDrift4 {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(-45px,20px) scale(1.08); }
+  100% { transform: translate(25px,-15px) scale(1); }
+}
+@keyframes dpDrift5 {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(35px,-20px) scale(1.04); }
+  100% { transform: translate(-25px,30px) scale(0.98); }
+}
+@keyframes dpDrift6 {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(-30px,-15px) scale(1.05); }
+  100% { transform: translate(40px,20px) scale(1.02); }
+}
+/* FILM GRAIN + VIGNETTE */
+.dp-grain {
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 9998;
+  opacity: 0.03; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+.dp-vignette {
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 9997;
+  background: radial-gradient(ellipse 78% 68% at 50% 45%, transparent 0%, rgba(80,60,40,0.07) 100%);
+}
+/* SCROLL REVEAL */
+.dp-reveal {
+  transform: translateY(50px) scale(0.97);
+  opacity: 0;
+  filter: blur(5px);
+  transition: transform 0.9s cubic-bezier(0.16,1,0.3,1), opacity 0.9s cubic-bezier(0.16,1,0.3,1), filter 0.9s cubic-bezier(0.16,1,0.3,1), box-shadow 0.4s ease;
+}
+.dp-visible {
+  transform: translateY(0) scale(1) !important;
+  opacity: 1 !important;
+  filter: blur(0) !important;
+}
+.dp-reveal:nth-child(even) { transition-delay: 0.12s; }
+/* ELEVATION SHADOWS + HOVER LIFT */
+.entry-content img {
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03), 0 12px 36px rgba(0,0,0,0.025);
+  transition: transform 0.5s cubic-bezier(0.23,1,0.32,1), box-shadow 0.4s ease;
+}
+.entry-content img.dp-visible:hover {
+  transform: translateY(-6px) scale(1.008);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.03), 0 12px 28px rgba(0,0,0,0.05), 0 28px 64px rgba(0,0,0,0.04);
+}
+article.dp-reveal {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03), 0 8px 28px rgba(0,0,0,0.02);
+  transition: transform 0.8s cubic-bezier(0.16,1,0.3,1), opacity 0.8s cubic-bezier(0.16,1,0.3,1), filter 0.8s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease;
+  border-radius: 12px;
+}
+article.dp-reveal.dp-visible:hover {
+  transform: translateY(-8px) !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.03), 0 12px 28px rgba(0,0,0,0.05), 0 32px 72px rgba(0,0,0,0.04);
+}
+/* KEN BURNS MOTION */
+.entry-content h2 + p > img,
+.entry-content h2:nth-of-type(odd) + p > img {
+  animation: dpKen1 16s ease-in-out infinite;
+}
+.entry-content h2:nth-of-type(even) + p > img {
+  animation: dpKen2 18s ease-in-out infinite;
+}
+.entry-content h2:nth-of-type(3n) + p > img {
+  animation: dpKen3 14s ease-in-out infinite;
+}
+@keyframes dpKen1 {
+  0%, 100% { object-position: 45% 40%; transform: scale(1.02); }
+  50%      { object-position: 55% 60%; transform: scale(1.06); }
+}
+@keyframes dpKen2 {
+  0%, 100% { object-position: 60% 35%; transform: scale(1.03); }
+  50%      { object-position: 40% 65%; transform: scale(1.07); }
+}
+@keyframes dpKen3 {
+  0%       { object-position: 40% 30%; transform: scale(1.02); }
+  33%      { object-position: 60% 50%; transform: scale(1.05); }
+  66%      { object-position: 35% 70%; transform: scale(1.04); }
+  100%     { object-position: 40% 30%; transform: scale(1.02); }
+}
+/* SHIMMER WRAP */
+.dp-img-wrap {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 14px;
+  perspective: 600px;
+}
+.dp-img-wrap::after {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  z-index: 1; pointer-events: none;
+  background: linear-gradient(115deg, transparent 0%, transparent 40%, rgba(255,255,255,0.1) 45%, rgba(255,255,255,0.18) 50%, rgba(255,255,255,0.1) 55%, transparent 60%, transparent 100%);
+  background-size: 250% 100%;
+  animation: dpShimmer 8s ease-in-out infinite;
+}
+@keyframes dpShimmer {
+  0%, 100% { background-position: 200% 0; }
+  50%      { background-position: -50% 0; }
+}
+/* 3D HOVER TILT */
+.dp-img-wrap:hover img {
+  transform: perspective(600px) rotateX(1.5deg) rotateY(-2deg) scale(1.015);
+}
+.dp-img-wrap:nth-child(even):hover img {
+  transform: perspective(600px) rotateX(-1deg) rotateY(1.5deg) scale(1.015);
+}
+/* HERO IMAGE */
+.wp-post-image {
+  animation: dpKen1 24s ease-in-out infinite;
+  border-radius: 14px;
+}
+/* PIN BUTTON ELEVATION */
+.entry-content a[href*="pinterest.com/pin/create"] {
+  box-shadow: 0 2px 6px rgba(242,120,159,0.2), 0 6px 16px rgba(242,120,159,0.12);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  border-radius: 20px;
+}
+.entry-content a[href*="pinterest.com/pin/create"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(242,120,159,0.28), 0 10px 24px rgba(242,120,159,0.18);
+}
