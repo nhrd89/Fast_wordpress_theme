@@ -507,7 +507,7 @@ function pl_render_hero_mosaic( $content, $total_items, $post_id ) {
 	// Cell 1 (main, spans 2 rows — ~50% of 720px container).
 	$v     = $visible[0];
 	$html .= '<a class="eb-hero-cell eb-hero-cell-main" href="#item-' . $v . '">'
-		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 360 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="eager" width="360" height="640">'
+		. '<img src="' . esc_url( pl_mosaic_resize_url( $items[ $v ]['img'], 360 ) ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="eager" fetchpriority="high" width="360" height="640">'
 		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
 		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
 
