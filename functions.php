@@ -891,20 +891,6 @@ function pl_rest_category_posts( $request ) {
 	) );
 }
 
-/**
- * Set long-lived cache headers for static asset requests routed through WordPress.
- *
- * Covers img-resize.php and any PHP-served images. Does NOT apply to static
- * uploads served directly by Apache — those need root .htaccess or Hostinger
- * panel configuration.
- */
-function pinlightning_cache_headers() {
-	if ( preg_match( '/\.(webp|jpg|jpeg|png|gif|avif|svg|css|js)$/i', $_SERVER['REQUEST_URI'] ) ) {
-		header( 'Cache-Control: public, max-age=31536000, immutable' );
-	}
-}
-add_action( 'init', 'pinlightning_cache_headers' );
-
 // Load helper files.
 require_once PINLIGHTNING_DIR . '/inc/template-tags.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer.php';
