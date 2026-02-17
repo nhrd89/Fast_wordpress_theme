@@ -905,7 +905,6 @@ require_once PINLIGHTNING_DIR . '/inc/visitor-tracker.php';
 require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';
 require_once PINLIGHTNING_DIR . '/inc/email-leads.php';
 require_once PINLIGHTNING_DIR . '/inc/contact-messages.php';
-require_once get_template_directory() . '/inc/depth-effects.php';
 
 // Auto-assign contact template to the contact page (run once).
 add_action( 'init', function() {
