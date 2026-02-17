@@ -906,6 +906,11 @@ require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';
 require_once PINLIGHTNING_DIR . '/inc/email-leads.php';
 require_once PINLIGHTNING_DIR . '/inc/contact-messages.php';
 
+// Engagement architecture.
+require_once PINLIGHTNING_DIR . '/inc/engagement-config.php';
+require_once PINLIGHTNING_DIR . '/inc/engagement-breaks.php';
+require_once PINLIGHTNING_DIR . '/inc/engagement-customizer.php';
+
 // Auto-assign contact template to the contact page (run once).
 add_action( 'init', function() {
 	if ( get_option( 'pl_contact_template_set' ) ) return;
@@ -918,3 +923,149 @@ add_action( 'init', function() {
 		update_option( 'pl_contact_template_set', true );
 	}
 } );
+
+// ============================================
+// Engagement Architecture — Asset Registration
+// ============================================
+
+/**
+ * Enqueue engagement JS and pass config (only on single listicle posts).
+ */
+function pl_enqueue_engagement() {
+	if ( ! is_single() ) {
+		return;
+	}
+
+	global $post;
+	if ( ! $post || ! preg_match( '/<h2[^>]*>.*?#\d+/i', $post->post_content ) ) {
+		return;
+	}
+
+	$js_file = PINLIGHTNING_DIR . '/assets/js/engagement.js';
+	if ( ! file_exists( $js_file ) ) {
+		return;
+	}
+
+	// Deferred JS (defer is auto-added by pinlightning_defer_scripts filter).
+	wp_enqueue_script(
+		'pl-engagement',
+		PINLIGHTNING_URI . '/assets/js/engagement.js',
+		array(),
+		(string) filemtime( $js_file ),
+		true
+	);
+
+	// Pass config to JS.
+	$post_id    = get_the_ID();
+	$categories = get_the_category();
+	$cat_slug   = ! empty( $categories ) ? $categories[0]->slug : 'hairstyle';
+	$config     = pl_get_engagement_config( $cat_slug );
+
+	// Count items.
+	preg_match_all( '/<h2[^>]*>.*?#(\d+)/i', $post->post_content, $matches );
+	$total = count( $matches[0] );
+
+	// Extract item titles.
+	preg_match_all( '/<h2[^>]*>.*?#\d+\s*([^<]+)/i', $post->post_content, $title_matches );
+	$titles = array_map( 'trim', $title_matches[1] ?? array() );
+
+	// Extract pin images.
+	preg_match_all( '/src=["\']([^"\']+)["\']/', $post->post_content, $src_matches );
+	$pins = $src_matches[1] ?? array();
+
+	// Next post.
+	$next_post = get_adjacent_post( true, '', false );
+	$next_data = null;
+	if ( $next_post ) {
+		$next_data = array(
+			'title' => $next_post->post_title,
+			'url'   => get_permalink( $next_post ),
+			'img'   => get_the_post_thumbnail_url( $next_post, 'thumbnail' ) ?: '',
+		);
+	}
+
+	// AI tip text.
+	$ai_tip = get_post_meta( $post_id, '_eb_ai_tip', true );
+
+	wp_localize_script( 'pl-engagement', 'ebConfig', array(
+		'postId'        => $post_id,
+		'totalItems'    => $total,
+		'category'      => $cat_slug,
+		'itemTitles'    => $titles,
+		'itemPins'      => $pins,
+		'trending'      => array(),
+		'charMsgs'      => $config['char_messages'] ?? array(),
+		'nextPost'      => $next_data,
+		'aiTip'         => $ai_tip ?: '',
+		'emailEndpoint' => '',
+		'features'      => array(
+			'progressBar'  => (bool) get_theme_mod( 'eb_progress_bar', true ),
+			'darkMode'     => (bool) get_theme_mod( 'eb_dark_mode', true ),
+			'skeletons'    => (bool) get_theme_mod( 'eb_skeletons', true ),
+			'charMessages' => (bool) get_theme_mod( 'eb_char_messages', true ),
+		),
+	) );
+}
+add_action( 'wp_enqueue_scripts', 'pl_enqueue_engagement' );
+
+/**
+ * Add deferred engagement CSS via preload (same pattern as existing theme).
+ */
+function pl_engagement_deferred_css() {
+	if ( ! is_single() ) {
+		return;
+	}
+
+	global $post;
+	if ( ! $post || ! preg_match( '/<h2[^>]*>.*?#\d+/i', $post->post_content ) ) {
+		return;
+	}
+
+	$css_file = PINLIGHTNING_DIR . '/assets/css/engagement.css';
+	if ( ! file_exists( $css_file ) ) {
+		return;
+	}
+
+	$css_url = PINLIGHTNING_URI . '/assets/css/engagement.css?v=' . filemtime( $css_file );
+	echo '<link rel="preload" href="' . esc_url( $css_url ) . '" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">' . "\n";
+	echo '<noscript><link rel="stylesheet" href="' . esc_url( $css_url ) . '"></noscript>' . "\n";
+}
+add_action( 'wp_head', 'pl_engagement_deferred_css', 99 );
+
+/**
+ * Helper: Check if current post is a listicle.
+ */
+function pl_is_listicle_post() {
+	global $post;
+	if ( ! $post ) {
+		return false;
+	}
+	return (bool) preg_match( '/<h2[^>]*>.*?#\d+/i', $post->post_content );
+}
+
+/**
+ * Helper: Count listicle items.
+ */
+function pl_count_listicle_items() {
+	global $post;
+	if ( ! $post ) {
+		return 0;
+	}
+	preg_match_all( '/<h2[^>]*>.*?#\d+/i', $post->post_content, $matches );
+	return count( $matches[0] );
+}
+
+/**
+ * Helper: Get next post data for next-article bar.
+ */
+function pl_get_next_post_data() {
+	$next = get_adjacent_post( true, '', false );
+	if ( ! $next ) {
+		return null;
+	}
+	return array(
+		'title' => $next->post_title,
+		'url'   => get_permalink( $next ),
+		'img'   => get_the_post_thumbnail_url( $next, 'thumbnail' ) ?: '',
+	);
+}

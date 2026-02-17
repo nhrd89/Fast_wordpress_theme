@@ -20,6 +20,67 @@ while ( have_posts() ) :
 
 ?>
 
+	<?php if ( pl_is_listicle_post() ) : ?>
+	<!-- Engagement: Fixed UI -->
+	<div class="eb-progress"><div class="eb-progress-fill" id="ebProgressFill"></div></div>
+
+	<div class="eb-counter" id="ebCounter">
+		<span class="num" id="ebCountNum">0</span> / <?php echo (int) pl_count_listicle_items(); ?> ideas seen
+		<span class="eb-counter-live" id="ebCounterLive"> &middot; <span class="eb-live-dot"></span> <span id="ebCounterLiveNum">47</span> reading</span>
+	</div>
+
+	<div class="eb-live" id="ebLive">
+		<span class="eb-live-dot"></span>
+		<span id="ebLiveCount">47</span> people reading now
+	</div>
+
+	<div class="eb-pills" id="ebPills">
+		<?php for ( $i = 1; $i <= pl_count_listicle_items(); $i++ ) : ?>
+			<button class="eb-pill" data-eb-action="jump" data-jump="<?php echo $i; ?>" data-item="<?php echo $i; ?>"><?php echo $i; ?></button>
+		<?php endfor; ?>
+	</div>
+
+	<div class="eb-streak" id="ebStreak"></div>
+	<div class="eb-speed-warn" id="ebSpeedWarn">Slow down! You're about to miss the best one</div>
+
+	<div class="eb-milestone" id="ebMilestone">
+		<div class="eb-milestone-emoji" id="ebMilestoneEmoji"></div>
+		<div class="eb-milestone-text" id="ebMilestoneText"></div>
+		<div class="eb-milestone-sub" id="ebMilestoneSub"></div>
+	</div>
+
+	<div class="eb-achievement" id="ebAchievement">
+		<span class="eb-achievement-icon"><?php echo "\u2728"; ?></span>
+		<div>
+			<div class="eb-achievement-title">Style Expert</div>
+			<div class="eb-achievement-sub">You've seen all <?php echo (int) pl_count_listicle_items(); ?> looks!</div>
+		</div>
+	</div>
+
+	<div class="eb-collect-counter" id="ebCollectCounter">
+		<?php echo "\xF0\x9F\x92\x8E"; ?> <span id="ebCollectNum">0</span>/5
+	</div>
+
+	<?php
+		$eb_next = pl_get_next_post_data();
+		if ( $eb_next ) :
+	?>
+	<div class="eb-next-bar" id="ebNextBar">
+		<?php if ( $eb_next['img'] ) : ?>
+			<img class="eb-next-bar-img" src="<?php echo esc_url( $eb_next['img'] ); ?>" alt="" width="50" height="50" loading="lazy">
+		<?php endif; ?>
+		<span class="eb-next-bar-title"><?php echo esc_html( $eb_next['title'] ); ?></span>
+		<button class="eb-next-bar-btn" data-eb-action="next" data-url="<?php echo esc_url( $eb_next['url'] ); ?>">Read Next <?php echo "\xE2\x86\x92"; ?></button>
+	</div>
+	<?php endif; ?>
+
+	<div class="eb-exit" id="ebExit">
+		<div class="eb-exit-text">Wait — you saved <strong id="ebExitFavCount">0</strong> looks! Want us to <strong>email you the full collection</strong>?</div>
+		<button class="eb-exit-btn" data-eb-action="email">Yes Please!</button>
+		<button class="eb-exit-close" data-eb-action="exit-close">&times;</button>
+	</div>
+	<?php endif; ?>
+
 	<?php if ( has_post_thumbnail() ) : ?>
 		<div class="post-hero">
 			<?php the_post_thumbnail( 'large', array( 'class' => 'post-hero-img' ) ); ?>
