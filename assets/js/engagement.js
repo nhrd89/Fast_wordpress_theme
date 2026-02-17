@@ -470,7 +470,7 @@ function initObserver() {
 				el.classList.remove('in-view');
 			}
 		});
-	}, { threshold: 0, rootMargin: '0px 0px 200px 0px' });
+	}, { rootMargin: '0px', threshold: 0.8 });
 
 	document.querySelectorAll('.eb-item').forEach(function(el) {
 		io.observe(el);
