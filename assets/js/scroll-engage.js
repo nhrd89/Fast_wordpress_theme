@@ -580,51 +580,9 @@ function canShowSpeech() {
 
 // Depth-aware message selection — messages escalate in emotional intimacy
 // as user scrolls deeper (Escalating Self-Disclosure Model, Schramm 2024)
-function showSpeech(ctx) {
-  if (!speechEl || C.dancer === false) return;
-  if (!canShowSpeech()) return;
-  var now = Date.now();
-  if (now - lastSpeechTime < 3500) return;
-  lastSpeechTime = now;
-
-  var pool;
-
-  // WELCOME — visit-count aware (PSR maintenance)
-  if (ctx === "welcome") {
-    if (visitCount > 3) {
-      pool = MSG.returningDeep;
-    } else if (visitCount > 1) {
-      pool = MSG.returning;
-    } else {
-      pool = MSG["welcome" + getTC()];
-    }
-  }
-  // DEPTH-AWARE categories — same trigger, different emotional depth
-  else if (ctx === "curiosity") {
-    pool = scrollPct < 0.3 ? MSG.curiosityEarly :
-           scrollPct < 0.6 ? MSG.curiosityMid : MSG.curiosityDeep;
-  }
-  else if (ctx === "validation") {
-    pool = scrollPct < 0.3 ? MSG.validationEarly :
-           scrollPct < 0.6 ? MSG.validationMid : MSG.validationDeep;
-  }
-  else if (ctx === "reciprocity") {
-    pool = scrollPct < 0.6 ? MSG.reciprocity : MSG.vulnerabilityDeep;
-  }
-  // MICRO-INTERACTION direct pairing — use animation-specific pool
-  else if (MSG[ctx]) {
-    pool = MSG[ctx];
-  }
-  // Fallback — depth-aware validation
-  else {
-    pool = scrollPct < 0.3 ? MSG.validationEarly :
-           scrollPct < 0.6 ? MSG.validationMid : MSG.validationDeep;
-  }
-
-  speechEl.textContent = pool[rnd(0, pool.length - 1)];
-  speechEl.classList.add("show");
-  clearTimeout(speechTimeout);
-  speechTimeout = setTimeout(function() { speechEl.classList.remove("show") }, 3500);
+function showSpeech() {
+  // Speech bubbles disabled — CSS hides .pl-e-sp, this is a no-op.
+  return;
 }
 function getTC(){var h=new Date().getHours();return h<12?"Morning":h<17?"Afternoon":h<21?"Evening":"Night"}
 

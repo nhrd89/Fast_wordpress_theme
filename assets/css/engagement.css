@@ -2,6 +2,7 @@
  * Loaded via preload+onload swap — zero render blocking.
  * Progress bar + item counter are in critical.css (above fold).
  */
+.pl-e-sp{display:none!important}
 
 /* --- Jump Pills (desktop nav) --- */
 .eb-pills{position:fixed;top:58px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:997;background:#fff;border:1px solid #eee;border-radius:20px;padding:3px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
