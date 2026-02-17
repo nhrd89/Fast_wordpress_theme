@@ -12,6 +12,25 @@
   --dp-sky: rgba(192,221,240,0.18);
   --dp-accent: #F2789F;
 }
+/* Override body background so clouds show through gaps */
+body {
+  background: transparent !important;
+}
+/* White backgrounds on content sections */
+.site-header {
+  background: var(--pl-bg, #fff);
+  position: relative;
+  z-index: 10;
+}
+.post-hero,
+.single-layout,
+.comments-toggle,
+.related-posts,
+.sidebar {
+  background: var(--pl-bg, #fff);
+  position: relative;
+  z-index: 1;
+}
 .category-landscaping-ideas {
   --dp-coral: rgba(196,232,212,0.38);
   --dp-flamingo: rgba(141,168,122,0.2);
