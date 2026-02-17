@@ -30,14 +30,14 @@ function pl_get_engagement_config( $category_slug ) {
 			),
 			'poll_question' => 'Which style is calling your name?',
 			'poll_options' => array(
-				array( 'emoji' => "\u2728", 'label' => 'Sleek & Polished', 'pct' => 32 ),
+				array( 'emoji' => "✨", 'label' => 'Sleek & Polished', 'pct' => 32 ),
 				array( 'emoji' => "\xF0\x9F\x8C\x8A", 'label' => 'Soft & Wavy', 'pct' => 41 ),
 				array( 'emoji' => "\xF0\x9F\x94\xA5", 'label' => 'Bold & Edgy', 'pct' => 18 ),
 				array( 'emoji' => "\xF0\x9F\x91\x91", 'label' => 'Classic Elegance', 'pct' => 9 ),
 			),
 			'quiz_question' => 'What\'s Your Style Personality?',
 			'quiz_styles' => array(
-				array( 'slug' => 'boho', 'label' => 'Boho Chic', 'result' => "Boho Chic \u2728" ),
+				array( 'slug' => 'boho', 'label' => 'Boho Chic', 'result' => "Boho Chic ✨" ),
 				array( 'slug' => 'glam', 'label' => 'Classic Glam', 'result' => "Classic Glam \xF0\x9F\x91\x91" ),
 				array( 'slug' => 'edge', 'label' => 'Modern Edge', 'result' => "Modern Edge \xF0\x9F\x94\xA5" ),
 			),
@@ -59,7 +59,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'blur_item'          => 8,
 			'trending_count'     => 3,
 			'collectible_count'  => 5,
-			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\xA6\x8B", "\xF0\x9F\x92\xAB", "\xF0\x9F\x8C\xB8" ),
+			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\xA6\x8B", "\xF0\x9F\x92\xAB", "\xF0\x9F\x8C\xB8" ),
 			'toc_preview_count'  => 5,
 		),
 
@@ -77,14 +77,14 @@ function pl_get_engagement_config( $category_slug ) {
 			),
 			'poll_question' => 'Which style is calling your name?',
 			'poll_options' => array(
-				array( 'emoji' => "\u2728", 'label' => 'Sleek & Polished', 'pct' => 32 ),
+				array( 'emoji' => "✨", 'label' => 'Sleek & Polished', 'pct' => 32 ),
 				array( 'emoji' => "\xF0\x9F\x8C\x8A", 'label' => 'Soft & Wavy', 'pct' => 41 ),
 				array( 'emoji' => "\xF0\x9F\x94\xA5", 'label' => 'Bold & Edgy', 'pct' => 18 ),
 				array( 'emoji' => "\xF0\x9F\x91\x91", 'label' => 'Classic Elegance', 'pct' => 9 ),
 			),
 			'quiz_question' => 'What\'s Your Style Personality?',
 			'quiz_styles' => array(
-				array( 'slug' => 'boho', 'label' => 'Boho Chic', 'result' => "Boho Chic \u2728" ),
+				array( 'slug' => 'boho', 'label' => 'Boho Chic', 'result' => "Boho Chic ✨" ),
 				array( 'slug' => 'glam', 'label' => 'Classic Glam', 'result' => "Classic Glam \xF0\x9F\x91\x91" ),
 				array( 'slug' => 'edge', 'label' => 'Modern Edge', 'result' => "Modern Edge \xF0\x9F\x94\xA5" ),
 			),
@@ -106,7 +106,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'blur_item'          => 8,
 			'trending_count'     => 3,
 			'collectible_count'  => 5,
-			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\xA6\x8B", "\xF0\x9F\x92\xAB", "\xF0\x9F\x8C\xB8" ),
+			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\xA6\x8B", "\xF0\x9F\x92\xAB", "\xF0\x9F\x8C\xB8" ),
 			'toc_preview_count'  => 5,
 		),
 
@@ -124,7 +124,7 @@ function pl_get_engagement_config( $category_slug ) {
 				array( 'emoji' => "\xF0\x9F\x8C\xB8", 'label' => 'Minimalist', 'pct' => 28 ),
 				array( 'emoji' => "\xF0\x9F\x92\x85", 'label' => 'Full Glam', 'pct' => 35 ),
 				array( 'emoji' => "\xF0\x9F\x8E\xA8", 'label' => 'Abstract Art', 'pct' => 22 ),
-				array( 'emoji' => "\u2728", 'label' => 'Sparkle & Gems', 'pct' => 15 ),
+				array( 'emoji' => "✨", 'label' => 'Sparkle & Gems', 'pct' => 15 ),
 			),
 			'quiz_question' => 'What\'s Your Nail Personality?',
 			'quiz_styles' => array(
@@ -147,7 +147,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'blur_item'          => 8,
 			'trending_count'     => 3,
 			'collectible_count'  => 5,
-			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\x92\x85", "\xF0\x9F\x8E\xA8", "\xF0\x9F\x8C\xB8" ),
+			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\x92\x85", "\xF0\x9F\x8E\xA8", "\xF0\x9F\x8C\xB8" ),
 			'toc_preview_count'  => 5,
 		),
 
@@ -163,7 +163,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'poll_question' => 'What\'s your decor personality?',
 			'poll_options' => array(
 				array( 'emoji' => "\xF0\x9F\x8C\xBF", 'label' => 'Natural & Organic', 'pct' => 30 ),
-				array( 'emoji' => "\u2728", 'label' => 'Modern Minimal', 'pct' => 35 ),
+				array( 'emoji' => "✨", 'label' => 'Modern Minimal', 'pct' => 35 ),
 				array( 'emoji' => "\xF0\x9F\x8E\xA8", 'label' => 'Eclectic Mix', 'pct' => 20 ),
 				array( 'emoji' => "\xF0\x9F\x91\x91", 'label' => 'Classic Luxury', 'pct' => 15 ),
 			),
@@ -171,7 +171,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'quiz_styles' => array(
 				array( 'slug' => 'scandi', 'label' => 'Scandinavian', 'result' => "Scandinavian \xF0\x9F\x8C\xBF" ),
 				array( 'slug' => 'boho', 'label' => 'Bohemian', 'result' => "Bohemian \xF0\x9F\x8E\xA8" ),
-				array( 'slug' => 'glam', 'label' => 'Modern Glam', 'result' => "Modern Glam \u2728" ),
+				array( 'slug' => 'glam', 'label' => 'Modern Glam', 'result' => "Modern Glam ✨" ),
 			),
 			'char_messages' => array(
 				array( 'at' => 1,  'msg' => 'Love this space!' ),
@@ -188,7 +188,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'blur_item'          => 8,
 			'trending_count'     => 3,
 			'collectible_count'  => 5,
-			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\x8F\xA0", "\xF0\x9F\x8C\xBF", "\xF0\x9F\x8E\xA8" ),
+			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\x8F\xA0", "\xF0\x9F\x8C\xBF", "\xF0\x9F\x8E\xA8" ),
 			'toc_preview_count'  => 5,
 		),
 
@@ -228,7 +228,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'blur_item'          => 8,
 			'trending_count'     => 3,
 			'collectible_count'  => 5,
-			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\x8F\x9B\xEF\xB8\x8F", "\xF0\x9F\x8F\x97\xEF\xB8\x8F", "\xF0\x9F\x8C\xBF" ),
+			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\x8F\x9B\xEF\xB8\x8F", "\xF0\x9F\x8F\x97\xEF\xB8\x8F", "\xF0\x9F\x8C\xBF" ),
 			'toc_preview_count'  => 5,
 		),
 
@@ -243,7 +243,7 @@ function pl_get_engagement_config( $category_slug ) {
 			),
 			'poll_question' => 'Which style era is your vibe?',
 			'poll_options' => array(
-				array( 'emoji' => "\u2728", 'label' => 'Y2K Revival', 'pct' => 28 ),
+				array( 'emoji' => "✨", 'label' => 'Y2K Revival', 'pct' => 28 ),
 				array( 'emoji' => "\xF0\x9F\x91\x97", 'label' => 'Quiet Luxury', 'pct' => 35 ),
 				array( 'emoji' => "\xF0\x9F\x94\xA5", 'label' => 'Streetwear', 'pct' => 22 ),
 				array( 'emoji' => "\xF0\x9F\x8C\xB8", 'label' => 'Cottagecore', 'pct' => 15 ),
@@ -268,7 +268,7 @@ function pl_get_engagement_config( $category_slug ) {
 			'blur_item'          => 8,
 			'trending_count'     => 3,
 			'collectible_count'  => 5,
-			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\x91\x97", "\xF0\x9F\x91\x91", "\xF0\x9F\x8C\xB8" ),
+			'collectible_emojis' => array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\x91\x97", "\xF0\x9F\x91\x91", "\xF0\x9F\x8C\xB8" ),
 			'toc_preview_count'  => 5,
 		),
 	);

@@ -53,8 +53,9 @@ function pl_engagement_filter( $content ) {
 	}
 
 	// Generate seeded random indices for trending + collectibles.
-	$post_id   = get_the_ID();
-	$date_seed = gmdate( 'Ymd' );
+	$post_id      = get_the_ID();
+	$raw_content  = $content;
+	$date_seed    = gmdate( 'Ymd' );
 	$seed      = crc32( $post_id . $date_seed );
 	mt_srand( $seed );
 
@@ -69,7 +70,7 @@ function pl_engagement_filter( $content ) {
 	$remaining          = array_diff( range( 1, $total_items ), $trending_indices );
 	shuffle( $remaining );
 	$collectible_indices = array_slice( array_values( $remaining ), 0, $collectible_count );
-	$collectible_emojis  = $config['collectible_emojis'] ?? array( "\xF0\x9F\x92\x8E", "\u2728", "\xF0\x9F\xA6\x8B", "\xF0\x9F\x92\xAB", "\xF0\x9F\x8C\xB8" );
+	$collectible_emojis  = $config['collectible_emojis'] ?? array( "\xF0\x9F\x92\x8E", "✨", "\xF0\x9F\xA6\x8B", "\xF0\x9F\x92\xAB", "\xF0\x9F\x8C\xB8" );
 
 	// Blur gate item.
 	$blur_item = $config['blur_item'] ?? 0;
@@ -95,21 +96,10 @@ function pl_engagement_filter( $content ) {
 	$item_index   = 0;
 	$output_parts = array();
 
-	// TOC teaser images.
-	$toc_images = array();
-	$toc_count  = $config['toc_preview_count'] ?? 5;
-
 	foreach ( $parts as $part ) {
 		// Check if this part starts with an H2 (is a listicle item).
 		if ( preg_match( '/<h2[^>]*>.*?#(\d+)/i', $part ) ) {
 			$item_index++;
-
-			// Collect TOC images from early items.
-			if ( count( $toc_images ) < $toc_count ) {
-				if ( preg_match( '/src=["\']([^"\']+)["\']/', $part, $src_match ) ) {
-					$toc_images[] = $src_match[1];
-				}
-			}
 
 			// Wrap item with engagement overlays.
 			$part = pl_eb_wrap_item( $part, $item_index, array(
@@ -135,12 +125,12 @@ function pl_engagement_filter( $content ) {
 
 	$content = implode( "\n", $output_parts );
 
-	// Prepend: TOC teaser.
-	$toc_html = pl_eb_render_toc_teaser( $toc_images );
-	if ( $toc_html ) {
+	// Hero mosaic (replaces old TOC teaser).
+	$mosaic_html = pl_render_hero_mosaic( $raw_content, $total_items, $post_id );
+	if ( $mosaic_html ) {
 		$content = preg_replace(
 			'/(?=<div class="eb-item"[^>]*data-item="1")/i',
-			$toc_html,
+			$mosaic_html,
 			$content,
 			1
 		);
@@ -188,7 +178,7 @@ function pl_eb_wrap_item( $html, $index, $options ) {
 	}
 
 	if ( $blur && get_theme_mod( 'eb_blur_reveal', true ) ) {
-		$overlays .= '<div class="eb-reveal-overlay" data-eb-action="reveal"><span>' . "\u2728" . ' Tap to reveal this look</span></div>';
+		$overlays .= '<div class="eb-reveal-overlay" data-eb-action="reveal"><span>' . "✨" . ' Tap to reveal this look</span></div>';
 	}
 
 	// Inject overlays inside .pl-pin-wrap (before the <img>).
@@ -295,7 +285,7 @@ function pl_eb_render_break( $break, $config, $post_id, $total_items ) {
 			}
 			$quiz_question = $config['quiz_question'] ?? 'What\'s Your Style Personality?';
 			$output        = '<div class="eb-break eb-quiz" data-eb="quiz">'
-				. '<div class="eb-break-badge">' . "\u2728" . ' Style Quiz</div>'
+				. '<div class="eb-break-badge">' . "✨" . ' Style Quiz</div>'
 				. '<h3 class="eb-break-title">' . esc_html( $quiz_question ) . '</h3>'
 				. '<p class="eb-quiz-sub">Tap the look that speaks to you most:</p>'
 				. '<div class="eb-quiz-grid">' . $quiz_html . '</div>'
@@ -370,7 +360,156 @@ function pl_eb_render_break( $break, $config, $post_id, $total_items ) {
 
 
 /**
- * TOC Teaser.
+ * Hero Mosaic — curiosity-gap grid replacing featured image + TOC.
+ *
+ * Extracts images/titles from post content, shows a 4-cell mosaic
+ * with items #1, #5, #9 (or adapted) plus a "+N more" overlay.
+ */
+function pl_render_hero_mosaic( $content, $total_items, $post_id ) {
+	if ( $total_items < 4 ) {
+		return '';
+	}
+
+	// Split content at H2 boundaries to extract per-item data.
+	$parts = preg_split( '/(?=<h2[^>]*>.*?#\d+)/i', $content, -1, PREG_SPLIT_NO_EMPTY );
+
+	$items    = array();
+	$item_num = 0;
+
+	foreach ( $parts as $part ) {
+		if ( ! preg_match( '/<h2[^>]*>(.*?)<\/h2>/is', $part, $h2m ) ) {
+			continue;
+		}
+
+		$item_num++;
+		$h2_inner = $h2m[1];
+
+		// Extract title: strip tags and remove "#N" prefix.
+		$title = wp_strip_all_tags( $h2_inner );
+		$title = preg_replace( '/^\s*#\d+\s*[\.:\-\x{2013}\x{2014}]?\s*/u', '', $title );
+		$title = trim( $title );
+
+		// Extract image: prefer data-pin-media, fallback to img src.
+		$img = '';
+		if ( preg_match( '/data-pin-media=["\']([^"\']+)["\']/', $part, $pm ) ) {
+			$img = $pm[1];
+		} elseif ( preg_match( '/<img[^>]+src=["\']([^"\']+)["\']/', $part, $sm ) ) {
+			$img = $sm[1];
+		}
+
+		if ( $img && $title ) {
+			$items[ $item_num ] = array( 'img' => $img, 'title' => $title );
+		}
+	}
+
+	if ( count( $items ) < 4 ) {
+		return '';
+	}
+
+	// Pick visible cell positions: 1, 5, 9 or adapted for fewer items.
+	$keys = array_keys( $items );
+	if ( $total_items >= 9 ) {
+		$vis_pos = array( 1, 5, 9 );
+	} else {
+		$vis_pos = array_unique( array(
+			1,
+			(int) ceil( $total_items / 3 ),
+			(int) ceil( 2 * $total_items / 3 ),
+		) );
+	}
+
+	$visible = array();
+	foreach ( $vis_pos as $p ) {
+		if ( isset( $items[ $p ] ) ) {
+			$visible[] = $p;
+		}
+	}
+	if ( count( $visible ) < 3 ) {
+		$visible = array_slice( $keys, 0, 3 );
+	}
+
+	// "+N more" cell image: first item not in visible set.
+	$more_key = null;
+	foreach ( $keys as $k ) {
+		if ( ! in_array( $k, $visible, true ) ) {
+			$more_key = $k;
+			break;
+		}
+	}
+	if ( $more_key === null ) {
+		$more_key = end( $keys );
+	}
+
+	// Curiosity number: random item NOT in visible set, seeded consistently.
+	$seed = crc32( $post_id . gmdate( 'Ymd' ) );
+	mt_srand( $seed + 42 );
+	$non_visible   = array_values( array_diff( $keys, $visible ) );
+	$curiosity_num = ! empty( $non_visible )
+		? $non_visible[ mt_rand( 0, count( $non_visible ) - 1 ) ]
+		: mt_rand( 1, $total_items );
+
+	// Social proof count (seeded per post per day).
+	mt_srand( $seed + 99 );
+	$social_count = mt_rand( 2800, 8400 );
+	$formatted    = number_format( $social_count / 1000, 1 ) . 'K';
+
+	$remaining = $total_items - 3;
+
+	// Build HTML.
+	$html  = '<div class="eb-hero-mosaic">';
+
+	// Hook text.
+	$html .= '<div class="eb-hero-hook">';
+	$html .= '<span class="eb-hero-hook-text">' . "\xF0\x9F\x91\x80" . " You haven't seen #" . $curiosity_num . ' yet...</span>';
+	$html .= '<span class="eb-hero-hook-sub">Tap any look to jump</span>';
+	$html .= '</div>';
+
+	// Grid.
+	$html .= '<div class="eb-hero-grid">';
+
+	// Cell 1 (main, spans 2 rows).
+	$v     = $visible[0];
+	$html .= '<a class="eb-hero-cell eb-hero-cell-main" href="#item-' . $v . '">'
+		. '<img src="' . esc_url( $items[ $v ]['img'] ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy">'
+		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
+		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
+
+	// Cell 2.
+	$v     = $visible[1];
+	$html .= '<a class="eb-hero-cell" href="#item-' . $v . '">'
+		. '<img src="' . esc_url( $items[ $v ]['img'] ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy">'
+		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
+		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
+
+	// Cell 3.
+	$v     = $visible[2];
+	$html .= '<a class="eb-hero-cell" href="#item-' . $v . '">'
+		. '<img src="' . esc_url( $items[ $v ]['img'] ) . '" alt="' . esc_attr( $items[ $v ]['title'] ) . '" loading="lazy">'
+		. '<div class="eb-hero-cell-info"><span class="eb-hero-cell-num">#' . $v . '</span>'
+		. '<span class="eb-hero-cell-name">' . esc_html( $items[ $v ]['title'] ) . '</span></div></a>';
+
+	// Cell 4: "+N more" overlay.
+	$html .= '<a class="eb-hero-cell" href="#item-1">'
+		. '<img src="' . esc_url( $items[ $more_key ]['img'] ) . '" alt="" loading="lazy">'
+		. '<div class="eb-hero-more"><span class="eb-hero-more-num">+' . $remaining . '</span>'
+		. '<span class="eb-hero-more-text">more looks</span></div></a>';
+
+	$html .= '</div>'; // .eb-hero-grid
+
+	// Social proof bar.
+	$html .= '<div class="eb-hero-social">'
+		. '<span class="eb-hero-social-count">' . "\xF0\x9F\x93\x8C" . ' ' . $formatted . ' people saved this collection</span>'
+		. '<span class="eb-hero-social-total">' . $total_items . ' looks inside</span>'
+		. '</div>';
+
+	$html .= '</div>'; // .eb-hero-mosaic
+
+	return $html;
+}
+
+
+/**
+ * TOC Teaser (legacy, kept for non-mosaic fallback).
  */
 function pl_eb_render_toc_teaser( $images ) {
 	if ( empty( $images ) ) {

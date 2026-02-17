@@ -52,14 +52,17 @@
 /* --- Save Count Badge --- */
 .eb-save-count{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,.95);font-size:11px;font-weight:600;color:#666;padding:3px 10px;border-radius:14px;z-index:5;pointer-events:none}
 
-/* --- Favorite Heart --- */
+/* --- Favorite Heart (top-right) --- */
 .eb-fav-heart{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.95);border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;z-index:6;display:flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:0 2px 6px rgba(0,0,0,.1)}
 .eb-fav-heart:hover{transform:scale(1.15);background:#fff}
 .eb-fav-heart.faved{color:#e84393;animation:ebHeartPop .4s ease}
 @keyframes ebHeartPop{0%{transform:scale(1)}50%{transform:scale(1.3)}100%{transform:scale(1)}}
 
-/* --- Hidden Collectibles --- */
-.eb-collectible{position:absolute;bottom:10px;right:10px;font-size:20px;cursor:pointer;z-index:6;opacity:.6;transition:all .3s;filter:grayscale(1)}
+/* --- Move Pinterest button to bottom-right inside engagement items --- */
+.eb-img-wrap .pl-pin-btn{top:auto;bottom:10px}
+
+/* --- Hidden Collectibles (below heart, top-right area) --- */
+.eb-collectible{position:absolute;top:52px;right:10px;font-size:20px;cursor:pointer;z-index:6;opacity:.6;transition:all .3s;filter:grayscale(1)}
 .eb-collectible:hover{opacity:1;transform:scale(1.2);filter:grayscale(0)}
 .eb-collectible.collected{opacity:1;filter:grayscale(0);animation:ebCollectPop .5s ease}
 @keyframes ebCollectPop{0%{transform:scale(1)}40%{transform:scale(1.5) rotate(15deg)}100%{transform:scale(1)}}
@@ -201,8 +204,32 @@
 .eb-speed-warn{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);background:#fff;border:2px solid #ffeaa7;border-radius:16px;padding:16px 24px;font-size:15px;font-weight:600;color:#856404;z-index:1005;box-shadow:0 10px 30px rgba(0,0,0,.1);opacity:0;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none;text-align:center}
 .eb-speed-warn.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 
+/* --- Hero Mosaic --- */
+.eb-hero-mosaic{margin:0 0 1.5rem}
+.eb-hero-hook{display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem}
+.eb-hero-hook-text{font-size:.82rem;font-weight:700;color:#d81b60}
+.eb-hero-hook-sub{font-size:.72rem;color:#999;font-weight:500}
+.eb-hero-grid{display:grid;grid-template-columns:2fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:5px;height:310px;border-radius:14px;overflow:hidden}
+.eb-hero-cell{position:relative;overflow:hidden;display:block;text-decoration:none}
+.eb-hero-cell-main{grid-row:1/3}
+.eb-hero-cell img{width:100%;height:100%;object-fit:cover;transition:transform .4s cubic-bezier(.4,0,.2,1)}
+.eb-hero-cell:hover img{transform:scale(1.06)}
+.eb-hero-cell-info{position:absolute;bottom:0;left:0;right:0;padding:28px 10px 9px;background:linear-gradient(transparent,rgba(0,0,0,.6));color:#fff}
+.eb-hero-cell-num{display:block;font-size:10px;font-weight:700;opacity:.65}
+.eb-hero-cell-name{display:block;font-size:11px;font-weight:600;line-height:1.2}
+.eb-hero-cell-main .eb-hero-cell-name{font-size:14px}
+.eb-hero-more{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.52);backdrop-filter:blur(2px);color:#fff;transition:background .3s}
+.eb-hero-cell:hover .eb-hero-more{background:rgba(0,0,0,.65)}
+.eb-hero-more-num{font-size:1.8rem;font-weight:700;line-height:1}
+.eb-hero-more-text{font-size:.72rem;font-weight:600;margin-top:2px}
+.eb-hero-social{display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding:9px 14px;background:linear-gradient(135deg,#fdf2f8,#faf5ff);border:1px solid #fce7f3;border-radius:12px}
+.eb-hero-social-count{font-size:.73rem;font-weight:600;color:#d81b60}
+.eb-hero-social-total{font-size:.7rem;color:#999;font-weight:500}
+
 /* --- Responsive (<=768px) --- */
 @media(max-width:768px){
+.eb-hero-grid{grid-template-columns:1fr 1fr;grid-template-rows:170px 115px;height:auto}
+.eb-hero-cell-main{grid-row:1;grid-column:1/3}
 .eb-pills{display:none}
 .eb-live{display:none}
 .eb-counter-live{display:inline-flex}

@@ -50,7 +50,7 @@ while ( have_posts() ) :
 	</div>
 
 	<div class="eb-achievement" id="ebAchievement">
-		<span class="eb-achievement-icon"><?php echo "\u2728"; ?></span>
+		<span class="eb-achievement-icon"><?php echo "✨"; ?></span>
 		<div>
 			<div class="eb-achievement-title">Style Expert</div>
 			<div class="eb-achievement-sub">You've seen all <?php echo (int) pl_count_listicle_items(); ?> looks!</div>
@@ -81,7 +81,7 @@ while ( have_posts() ) :
 	</div>
 	<?php endif; ?>
 
-	<?php if ( has_post_thumbnail() ) : ?>
+	<?php if ( has_post_thumbnail() && ! pl_is_listicle_post() ) : ?>
 		<div class="post-hero">
 			<?php the_post_thumbnail( 'large', array( 'class' => 'post-hero-img' ) ); ?>
 		</div>
