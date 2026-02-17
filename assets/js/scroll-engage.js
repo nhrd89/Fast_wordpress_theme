@@ -159,7 +159,7 @@ function injectDOM(){
 // ============================
 var state="idle",lastY=0,speed=0,scrollPct=0,scrollTimer=null;
 var lastSpeechTime=0,speechTimeout=null;
-var milestoneHit={},ticking=false,peekabooTimer=null;
+var milestoneHit={},ticking=false,peekabooTimer=null,heartFrameCount=0;
 var visitCount=1;
 try{visitCount=parseInt(localStorage.getItem("pl_v")||"0")+1;localStorage.setItem("pl_v",visitCount)}catch(e){}
 
@@ -589,6 +589,7 @@ function getTC(){var h=new Date().getHours();return h<12?"Morning":h<17?"Afterno
 // Mood
 var MOOD=[[255,252,248],[255,240,245],[248,235,255],[235,248,255],[240,255,245],[255,245,230],[255,235,245],[240,235,255],[245,250,255],[255,245,248],[250,240,255]];
 function updateMood(pct){
+  return; // Disabled: writing document.body.style.backgroundColor every frame causes scroll lag
   if(C.bgMood===false)return;
   var idx=pct<=0.5?(pct/0.5)*7:7+((pct-0.5)/0.5)*3,i=Math.floor(idx),t=idx-i;t=t*t*(3-2*t);
   var c1=MOOD[Math.min(i,10)],c2=MOOD[Math.min(i+1,10)];
@@ -611,7 +612,7 @@ function onScroll(){
     if (document.activeElement && document.activeElement.classList.contains('pl-chat-input')) return;
     var sT=window.pageYOffset,dH=document.documentElement.scrollHeight-window.innerHeight;if(dH<=0)return;
     scrollPct=Math.min(Math.max(sT/dH,0),1);speed=Math.abs(sT-lastY);lastY=sT;
-    updateMood(scrollPct);updateHeart(scrollPct);
+    updateMood(scrollPct);heartFrameCount++;if(heartFrameCount%5===0)updateHeart(scrollPct);
 
     // Victory at 98%+
     if(scrollPct>=0.98&&!milestoneHit["100"]){milestoneHit["100"]=true;startVictory()}
