@@ -101,10 +101,13 @@ a:hover{text-decoration:underline}
 .pl-liv-text strong{color:#e84393}
 .pl-liv-cta{flex-shrink:0;background:#fff;border:1px solid #f0e0f0;border-radius:9px;padding:6px 13px;font-size:12px;font-weight:600;color:#e84393;white-space:nowrap;cursor:pointer}
 @media(max-width:768px){.pl-liv-cta{display:none}}
-/* Engagement: progress bar + item counter (above fold) */
-.eb-progress{position:fixed;top:50px;left:0;right:0;height:3px;z-index:999;background:#f0f0f0}
+/* Engagement: sticky bar below header (desktop) */
+.eb-sticky-bar{position:sticky;top:50px;z-index:997;background:#fff}
+.eb-progress{height:3px;background:#f0f0f0;position:relative}
 .eb-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#e84393,#6c5ce7);transition:width .3s ease-out;border-radius:0 2px 2px 0}
-.eb-counter{position:fixed;top:60px;right:max(1rem,calc((100vw - 1060px)/2));left:auto;transform:none;z-index:997;width:auto;background:#fff;padding:6px 14px;font-size:12px;font-weight:600;color:#666;border-radius:20px;border:1px solid #eee;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center;opacity:0;transition:opacity .3s}
+.eb-sticky-inner{display:flex;align-items:center;justify-content:center;padding:4px 16px;border-bottom:1px solid #f0f0f0;gap:16px}
+.eb-pills{display:flex;gap:4px;position:static;transform:none}
+.eb-counter{position:static;transform:none;font-size:12px;font-weight:600;color:#666;padding:0;border:none;box-shadow:none;border-radius:0;background:none;white-space:nowrap;opacity:0;transition:opacity .3s}
 .eb-counter.show{opacity:1}
 .eb-counter .num{color:#e84393;font-weight:800}
 .eb-counter-live{display:none;align-items:center;gap:3px;color:#737373;font-weight:500}
@@ -142,9 +145,7 @@ a:hover{text-decoration:underline}
 .eb-reveal-overlay{position:absolute;inset:0}
 .eb-achievement,.eb-milestone,.eb-exit,.eb-next-bar,.eb-speed-warn{display:none}
 @media(min-width:769px){.eb-img-wrap{max-height:500px;overflow:hidden;border-radius:12px}.eb-img-wrap img{width:100%;height:100%;max-height:500px;object-fit:cover;object-position:center}}
-/* Pills — fixed jump nav (desktop visible, mobile hidden) */
-.eb-pills{position:fixed;top:58px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:997;padding:3px}
-.eb-pill{border:none;background:none;padding:4px 10px;font-size:11px;font-weight:600;border-radius:16px}
+.eb-pill{border:none;background:none;padding:4px 10px;font-size:11px;font-weight:600;border-radius:16px;cursor:pointer}
 /* Live, streak, collect counter — fixed + hidden until JS activates */
 /* Header stats — hidden by default, shown on scroll (mobile only) */
 .pl-header-stats{display:none}
@@ -154,7 +155,7 @@ a:hover{text-decoration:underline}
 .eb-collect-counter{bottom:20px;left:20px;z-index:998;padding:6px 14px;font-size:13px;font-weight:600}
 @media(max-width:768px){
 .eb-hero-grid{height:220px}
-.eb-pills,.eb-streak,.eb-counter,.eb-progress{display:none}
+.eb-sticky-bar,.eb-streak{display:none}
 .pl-header-stats{display:flex;align-items:center;gap:10px;font-size:11px;opacity:0;transform:translateY(-5px);transition:opacity .3s ease,transform .3s ease;pointer-events:none;margin-left:auto;margin-right:12px}
 .pl-header-stats.visible{opacity:1;transform:translateY(0);pointer-events:auto}
 .pl-header-stats .eb-collect-counter,.pl-header-stats .eb-live{position:static;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#737373;background:none;box-shadow:none;padding:0;opacity:1;pointer-events:auto}

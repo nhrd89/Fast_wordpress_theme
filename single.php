@@ -21,18 +21,20 @@ while ( have_posts() ) :
 ?>
 
 	<?php if ( pl_is_listicle_post() ) : ?>
-	<!-- Engagement: Fixed UI -->
-	<div class="eb-progress"><div class="eb-progress-fill" id="ebProgressFill"></div></div>
-
-	<div class="eb-counter" id="ebCounter">
-		<span class="num" id="ebCountNum">0</span> / <?php echo (int) pl_count_listicle_items(); ?> ideas seen
-		<span class="eb-counter-live" id="ebCounterLive"> &middot; <span class="eb-live-dot"></span> <span id="ebCounterLiveNum">47</span> reading</span>
-	</div>
-
-	<div class="eb-pills" id="ebPills">
-		<?php for ( $i = 1; $i <= pl_count_listicle_items(); $i++ ) : ?>
-			<button class="eb-pill" data-eb-action="jump" data-jump="<?php echo $i; ?>" data-item="<?php echo $i; ?>"><?php echo $i; ?></button>
-		<?php endfor; ?>
+	<!-- Engagement: Sticky bar (desktop) -->
+	<div class="eb-sticky-bar">
+		<div class="eb-progress"><div class="eb-progress-fill" id="ebProgressFill"></div></div>
+		<div class="eb-sticky-inner">
+			<div class="eb-pills" id="ebPills">
+				<?php for ( $i = 1; $i <= pl_count_listicle_items(); $i++ ) : ?>
+					<button class="eb-pill" data-eb-action="jump" data-jump="<?php echo $i; ?>" data-item="<?php echo $i; ?>"><?php echo $i; ?></button>
+				<?php endfor; ?>
+			</div>
+			<div class="eb-counter" id="ebCounter">
+				<span class="num" id="ebCountNum">0</span> / <?php echo (int) pl_count_listicle_items(); ?> ideas seen
+				<span class="eb-counter-live" id="ebCounterLive"> &middot; <span class="eb-live-dot"></span> <span id="ebCounterLiveNum">47</span> reading</span>
+			</div>
+		</div>
 	</div>
 
 	<div class="eb-streak" id="ebStreak"></div>
