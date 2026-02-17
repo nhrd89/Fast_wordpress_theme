@@ -379,28 +379,35 @@ function handleEmail(btn) {
 
 	if (!input || !input.value || input.value.indexOf('@') === -1) return;
 
+	var email = input.value.trim();
 	emailCaptured = true;
 
-	if (EMAIL_ENDPOINT) {
-		fetch(EMAIL_ENDPOINT, {
+	// Send to WordPress AJAX
+	if (C.emailEndpoint) {
+		var formData = new FormData();
+		formData.append('action', 'eb_email_capture');
+		formData.append('nonce', C.emailNonce || '');
+		formData.append('email', email);
+		formData.append('post_id', C.postId || 0);
+		formData.append('post_title', C.postTitle || '');
+		formData.append('source', wrap.dataset.eb || (wrap.classList.contains('eb-exit') ? 'exit_intent' : 'inline'));
+		formData.append('favorites', JSON.stringify(Array.from(favItems || [])));
+		formData.append('category', C.category || '');
+
+		fetch(C.emailEndpoint, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				email: input.value.trim(),
-				post_id: POST_ID,
-				favorites: Array.from(favItems),
-				source: wrap.classList.contains('eb-exit') ? 'exit_intent' : 'inline'
-			})
+			body: formData,
+			credentials: 'same-origin'
 		}).catch(function() {});
 	}
 
-	// Show success
+	// Show success UI regardless (don't wait for response)
+	wrap.classList.add('captured');
 	var inner = wrap.querySelector('.eb-email-inner');
 	if (inner) {
 		inner.innerHTML = '<div class="eb-email-success">\u{1F389} Check your inbox! Your bonus looks are on the way.</div>';
 	}
 	if (wrap.classList.contains('eb-exit')) {
-		wrap.classList.add('captured');
 		var exitText2 = wrap.querySelector('.eb-exit-text');
 		if (exitText2) exitText2.innerHTML = '\u{1F389} You\'re subscribed! Check your inbox.';
 	}
