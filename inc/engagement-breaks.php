@@ -497,7 +497,7 @@ function pl_render_hero_mosaic( $content, $total_items, $post_id ) {
 
 	// Hook text.
 	$html .= '<div class="eb-hero-hook">';
-	$html .= '<span class="eb-hero-hook-text">' . "\xF0\x9F\x91\x80" . " You haven't seen #" . $curiosity_num . ' yet...</span>';
+	$html .= '<span class="eb-hero-hook-text">' . "\xE2\x9C\xA8" . ' Upcoming preview</span>';
 	$html .= '<span class="eb-hero-hook-sub">Tap any look to jump</span>';
 	$html .= '</div>';
 
