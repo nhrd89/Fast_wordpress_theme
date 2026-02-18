@@ -67,6 +67,13 @@ a:hover{text-decoration:underline}
 .single-content code{padding:.15rem .35rem;font-size:.875em}
 .single-content pre code{padding:0}
 .meta-sep{margin:0 .4rem}
+/* Single post premium card layout */
+body.single{background:#f5f5f5}
+body.single .single-article{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:2.5rem 3rem;margin-top:24px;margin-bottom:24px;max-width:780px}
+body.single .post-hero{max-width:780px;border-radius:16px;overflow:hidden;margin-top:24px}
+body.single .sidebar{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:24px}
+@media(max-width:768px){body.single .single-article{padding:20px 16px;margin:12px 8px;border-radius:12px}body.single .post-hero{border-radius:12px;margin:12px 8px 0}}
+@media(min-width:1200px){body.single .single-article{max-width:var(--pl-content);padding:2.5rem 2rem}body.single .post-hero{max-width:var(--pl-content)}}
 /* ====== HOMEPAGE ====== */
 .pl-home{padding:0}
 .pl-container{max-width:1200px;margin:0 auto;padding:0 24px}
