@@ -118,6 +118,7 @@
 	}
 
 	function loadMore() {
+		return; // Disabled: use "Read Next" bar for full-page navigation instead of inline loading
 		loading = true;
 		batchCount++;
 
