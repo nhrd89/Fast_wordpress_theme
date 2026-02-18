@@ -1,35 +1,502 @@
 <?php
 /**
  * PinLightning Smart Ad Engine
- * Content scanner + zone injection
+ *
+ * Phase 1: Admin settings page, ads.txt handler, frontend config provider.
+ * Replaces hardcoded constants with database-backed WordPress Settings API.
+ *
+ * Content scanner + zone injection preserved from original.
+ *
+ * @package PinLightning
+ * @since   1.0.0
  */
 
-// === Configuration ===
-define('PL_ADS_ENABLED', false);
-define('PL_ADS_DUMMY_MODE', true);      // true = colored placeholder boxes, false = real AdPlus GPT
-define('PL_ADS_DEBUG_OVERLAY', false);   // Visual debug overlay (off in production)
-define('PL_ADS_RECORD_DATA', true);      // Log viewability data to server
-define('PL_ADS_MIN_PARAGRAPHS', 3);     // Skip first N paragraphs before any ad
-define('PL_ADS_MIN_GAP', 3);            // Minimum paragraphs between ad zones
-define('PL_ADS_MAX_PER_POST', 6);       // Maximum auto-injected zones per post
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
-// === Ad size strategy based on actual revenue data ===
-// Best performers: 300x250 ($0.49 eCPM, highest volume), 970x250 ($0.80 eCPM)
-// Avoid: Side-Anchor (negative revenue), 728x90 (low volume/eCPM), small sizes
-// Mobile: 300x250 is king. Desktop: alternate 300x250 and 970x250
-function pinlightning_get_zone_size($zone_number) {
-    // Alternate between best-performing sizes
-    $mobile_sizes = array('300x250'); // 300x250 dominates mobile
-    $desktop_sizes = array('300x250', '970x250'); // Alternate on desktop
+/* ================================================================
+ * 1. DEFAULTS & SETTINGS
+ * ================================================================ */
 
-    return array(
-        'mobile' => $mobile_sizes[$zone_number % count($mobile_sizes)],
-        'desktop' => $desktop_sizes[$zone_number % count($desktop_sizes)]
-    );
+/**
+ * Default settings for the ad engine.
+ *
+ * @return array
+ */
+function pl_ad_defaults() {
+	return array(
+		// Global Controls.
+		'enabled'               => false,
+		'dummy_mode'            => true,
+		'debug_overlay'         => false,
+		'record_data'           => true,
+
+		// Engagement Gate.
+		'gate_scroll_pct'       => 15,
+		'gate_time_sec'         => 5,
+		'gate_dir_changes'      => 1,
+
+		// Density Controls.
+		'max_display_ads'       => 4,
+		'min_spacing_px'        => 800,
+		'min_paragraphs_before' => 3,
+		'min_gap_paragraphs'    => 3,
+
+		// Device Controls.
+		'mobile_enabled'        => true,
+		'desktop_enabled'       => true,
+
+		// Format Toggles.
+		'fmt_interstitial'      => true,
+		'fmt_anchor'            => true,
+		'fmt_300x250'           => true,
+		'fmt_970x250'           => true,
+		'fmt_728x90'            => false,
+		'fmt_pause'             => false,
+
+		// Network.
+		'network_code'          => '22953639975',
+		'slot_prefix'           => '/21849154601,22953639975/',
+
+		// Ad Unit Slot Names.
+		'slot_interstitial'     => 'cheerfultalks.com_interstitial',
+		'slot_anchor'           => 'cheerfultalks.com_anchor',
+		'slot_300x250'          => 'cheerfultalks.com_300x250',
+		'slot_970x250'          => 'cheerfultalks.com_970x250',
+		'slot_728x90'           => 'cheerfultalks.com_728x90',
+		'slot_pause'            => 'cheerfultalks.com_pause',
+	);
 }
 
 /**
- * Content Scanner — finds optimal ad break points
+ * Get merged settings (saved values + defaults).
+ *
+ * @return array
+ */
+function pl_ad_settings() {
+	static $cached = null;
+	if ( null !== $cached ) {
+		return $cached;
+	}
+	$saved  = get_option( 'pl_ad_settings', array() );
+	$cached = wp_parse_args( $saved, pl_ad_defaults() );
+	return $cached;
+}
+
+/* ================================================================
+ * 2. ADMIN MENU & SETTINGS PAGE
+ * ================================================================ */
+
+/**
+ * Register the Ad Engine admin menu page.
+ */
+function pl_ad_admin_menu() {
+	add_menu_page(
+		'Ad Engine',
+		'Ad Engine',
+		'manage_options',
+		'pl-ad-engine',
+		'pl_ad_settings_page',
+		'dashicons-money-alt',
+		59
+	);
+}
+add_action( 'admin_menu', 'pl_ad_admin_menu' );
+
+/**
+ * Register the settings group.
+ */
+function pl_ad_register_settings() {
+	register_setting( 'pl_ad_settings_group', 'pl_ad_settings', array(
+		'type'              => 'array',
+		'sanitize_callback' => 'pl_ad_sanitize_settings',
+		'default'           => pl_ad_defaults(),
+	) );
+}
+add_action( 'admin_init', 'pl_ad_register_settings' );
+
+/**
+ * Sanitize all settings on save.
+ *
+ * @param  array $input Raw POST data.
+ * @return array        Sanitized settings.
+ */
+function pl_ad_sanitize_settings( $input ) {
+	$defaults = pl_ad_defaults();
+	$clean    = array();
+
+	// Booleans — unchecked checkboxes are absent from POST.
+	$bools = array(
+		'enabled', 'dummy_mode', 'debug_overlay', 'record_data',
+		'mobile_enabled', 'desktop_enabled',
+		'fmt_interstitial', 'fmt_anchor', 'fmt_300x250',
+		'fmt_970x250', 'fmt_728x90', 'fmt_pause',
+	);
+	foreach ( $bools as $key ) {
+		$clean[ $key ] = ! empty( $input[ $key ] );
+	}
+
+	// Integers with min/max clamping.
+	$ints = array(
+		'gate_scroll_pct'       => array( 0, 100 ),
+		'gate_time_sec'         => array( 0, 60 ),
+		'gate_dir_changes'      => array( 0, 10 ),
+		'max_display_ads'       => array( 0, 10 ),
+		'min_spacing_px'        => array( 200, 2000 ),
+		'min_paragraphs_before' => array( 0, 20 ),
+		'min_gap_paragraphs'    => array( 1, 20 ),
+	);
+	foreach ( $ints as $key => $range ) {
+		$val = isset( $input[ $key ] ) ? (int) $input[ $key ] : $defaults[ $key ];
+		$clean[ $key ] = max( $range[0], min( $range[1], $val ) );
+	}
+
+	// Text fields.
+	$texts = array(
+		'network_code', 'slot_prefix',
+		'slot_interstitial', 'slot_anchor', 'slot_300x250',
+		'slot_970x250', 'slot_728x90', 'slot_pause',
+	);
+	foreach ( $texts as $key ) {
+		$clean[ $key ] = isset( $input[ $key ] ) ? sanitize_text_field( $input[ $key ] ) : $defaults[ $key ];
+	}
+
+	return $clean;
+}
+
+/**
+ * Render the settings page with tabbed navigation.
+ */
+function pl_ad_settings_page() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	// Handle ads.txt save (separate from Settings API).
+	if ( isset( $_POST['pl_ads_txt_save'] ) && check_admin_referer( 'pl_ads_txt_nonce' ) ) {
+		$ads_txt = isset( $_POST['pl_ads_txt_content'] ) ? sanitize_textarea_field( $_POST['pl_ads_txt_content'] ) : '';
+		pl_ad_write_ads_txt( $ads_txt );
+		echo '<div class="notice notice-success is-dismissible"><p>ads.txt saved successfully.</p></div>';
+	}
+
+	$settings = pl_ad_settings();
+	$tab      = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'global';
+
+	?>
+	<div class="wrap">
+		<h1>PinLightning Ad Engine</h1>
+
+		<p>
+			<?php if ( $settings['enabled'] ) : ?>
+				<span style="color:#46b450;font-weight:600;">&#9679; Ads Active</span>
+				<?php if ( $settings['dummy_mode'] ) : ?>
+					&mdash; <span style="color:#f0b849;">Dummy Mode</span>
+				<?php endif; ?>
+			<?php else : ?>
+				<span style="color:#dc3232;">&#9679; Ads Disabled</span>
+			<?php endif; ?>
+		</p>
+
+		<nav class="nav-tab-wrapper">
+			<a href="?page=pl-ad-engine&tab=global" class="nav-tab <?php echo 'global' === $tab ? 'nav-tab-active' : ''; ?>">Global Controls</a>
+			<a href="?page=pl-ad-engine&tab=codes" class="nav-tab <?php echo 'codes' === $tab ? 'nav-tab-active' : ''; ?>">Ad Codes</a>
+			<a href="?page=pl-ad-engine&tab=adstxt" class="nav-tab <?php echo 'adstxt' === $tab ? 'nav-tab-active' : ''; ?>">ads.txt</a>
+		</nav>
+
+		<?php if ( 'adstxt' === $tab ) : ?>
+			<?php pl_ad_render_ads_txt_tab(); ?>
+		<?php else : ?>
+			<form method="post" action="options.php">
+				<?php settings_fields( 'pl_ad_settings_group' ); ?>
+				<?php
+				if ( 'codes' === $tab ) {
+					pl_ad_render_codes_tab( $settings );
+				} else {
+					pl_ad_render_global_tab( $settings );
+				}
+				?>
+				<?php submit_button(); ?>
+			</form>
+		<?php endif; ?>
+	</div>
+	<?php
+}
+
+/**
+ * Global Controls tab content.
+ *
+ * @param array $s Current settings.
+ */
+function pl_ad_render_global_tab( $s ) {
+	?>
+	<table class="form-table">
+		<tr><th colspan="2"><h2>Master Switch</h2></th></tr>
+		<tr>
+			<th>Ads Enabled</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[enabled]" value="1" <?php checked( $s['enabled'] ); ?>> Enable ad serving</label>
+				<p class="description">Master kill switch. When off, no ads load or inject.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Dummy Mode</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[dummy_mode]" value="1" <?php checked( $s['dummy_mode'] ); ?>> Show colored placeholders instead of real ads</label>
+				<p class="description">For development/testing. Shows size labels and colored boxes.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Debug Overlay</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[debug_overlay]" value="1" <?php checked( $s['debug_overlay'] ); ?>> Show debug overlay for admins</label>
+			</td>
+		</tr>
+		<tr>
+			<th>Record Viewability Data</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[record_data]" value="1" <?php checked( $s['record_data'] ); ?>> Send viewability data to REST endpoint</label>
+			</td>
+		</tr>
+
+		<tr><th colspan="2"><h2>Engagement Gate</h2></th></tr>
+		<tr>
+			<th>Scroll Threshold (%)</th>
+			<td>
+				<input type="number" name="pl_ad_settings[gate_scroll_pct]" value="<?php echo esc_attr( $s['gate_scroll_pct'] ); ?>" min="0" max="100" class="small-text">
+				<p class="description">User must scroll this % before ads load. Proves engagement.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Time on Page (seconds)</th>
+			<td>
+				<input type="number" name="pl_ad_settings[gate_time_sec]" value="<?php echo esc_attr( $s['gate_time_sec'] ); ?>" min="0" max="60" class="small-text">
+				<p class="description">Minimum seconds on page before ads load.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Direction Changes</th>
+			<td>
+				<input type="number" name="pl_ad_settings[gate_dir_changes]" value="<?php echo esc_attr( $s['gate_dir_changes'] ); ?>" min="0" max="10" class="small-text">
+				<p class="description">Required scroll direction changes (proves active reading).</p>
+			</td>
+		</tr>
+
+		<tr><th colspan="2"><h2>Density Controls</h2></th></tr>
+		<tr>
+			<th>Max Display Ads</th>
+			<td>
+				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="10" class="small-text">
+				<p class="description">Maximum in-content display ads per page.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Min Spacing (px)</th>
+			<td>
+				<input type="number" name="pl_ad_settings[min_spacing_px]" value="<?php echo esc_attr( $s['min_spacing_px'] ); ?>" min="200" max="2000" class="small-text">
+				<p class="description">Minimum pixels between ad zones.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Skip First N Paragraphs</th>
+			<td>
+				<input type="number" name="pl_ad_settings[min_paragraphs_before]" value="<?php echo esc_attr( $s['min_paragraphs_before'] ); ?>" min="0" max="20" class="small-text">
+				<p class="description">No ads in the first N paragraphs of content.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Min Gap (paragraphs)</th>
+			<td>
+				<input type="number" name="pl_ad_settings[min_gap_paragraphs]" value="<?php echo esc_attr( $s['min_gap_paragraphs'] ); ?>" min="1" max="20" class="small-text">
+				<p class="description">Minimum paragraphs between ad zones.</p>
+			</td>
+		</tr>
+
+		<tr><th colspan="2"><h2>Device Controls</h2></th></tr>
+		<tr>
+			<th>Mobile</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[mobile_enabled]" value="1" <?php checked( $s['mobile_enabled'] ); ?>> Enable ads on mobile</label></td>
+		</tr>
+		<tr>
+			<th>Desktop</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[desktop_enabled]" value="1" <?php checked( $s['desktop_enabled'] ); ?>> Enable ads on desktop</label></td>
+		</tr>
+
+		<tr><th colspan="2"><h2>Format Toggles</h2></th></tr>
+		<tr>
+			<th>Interstitial</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_interstitial]" value="1" <?php checked( $s['fmt_interstitial'] ); ?>> Full-screen overlay between page views</label></td>
+		</tr>
+		<tr>
+			<th>Anchor (Bottom Sticky)</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_anchor]" value="1" <?php checked( $s['fmt_anchor'] ); ?>> Sticky banner at bottom of viewport</label></td>
+		</tr>
+		<tr>
+			<th>300x250</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_300x250]" value="1" <?php checked( $s['fmt_300x250'] ); ?>> In-content medium rectangle</label></td>
+		</tr>
+		<tr>
+			<th>970x250</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_970x250]" value="1" <?php checked( $s['fmt_970x250'] ); ?>> In-content billboard (desktop only)</label></td>
+		</tr>
+		<tr>
+			<th>728x90</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_728x90]" value="1" <?php checked( $s['fmt_728x90'] ); ?>> Leaderboard</label></td>
+		</tr>
+		<tr>
+			<th>Pause Banner</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_pause]" value="1" <?php checked( $s['fmt_pause'] ); ?>> Banner shown when user pauses scrolling</label></td>
+		</tr>
+	</table>
+	<?php
+}
+
+/**
+ * Ad Codes tab content.
+ *
+ * @param array $s Current settings.
+ */
+function pl_ad_render_codes_tab( $s ) {
+	?>
+	<table class="form-table">
+		<tr><th colspan="2"><h2>Network Configuration</h2></th></tr>
+		<tr>
+			<th>Network Code</th>
+			<td>
+				<input type="text" name="pl_ad_settings[network_code]" value="<?php echo esc_attr( $s['network_code'] ); ?>" class="regular-text">
+				<p class="description">Google Ad Manager network code (e.g. 22953639975).</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Slot Path Prefix</th>
+			<td>
+				<input type="text" name="pl_ad_settings[slot_prefix]" value="<?php echo esc_attr( $s['slot_prefix'] ); ?>" class="regular-text">
+				<p class="description">Full slot path = prefix + slot name (e.g. /21849154601,22953639975/cheerfultalks.com_300x250).</p>
+			</td>
+		</tr>
+
+		<tr><th colspan="2"><h2>Ad Unit Slot Names</h2></th></tr>
+		<tr>
+			<th>Interstitial</th>
+			<td><input type="text" name="pl_ad_settings[slot_interstitial]" value="<?php echo esc_attr( $s['slot_interstitial'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>Anchor</th>
+			<td><input type="text" name="pl_ad_settings[slot_anchor]" value="<?php echo esc_attr( $s['slot_anchor'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>300x250</th>
+			<td><input type="text" name="pl_ad_settings[slot_300x250]" value="<?php echo esc_attr( $s['slot_300x250'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>970x250</th>
+			<td><input type="text" name="pl_ad_settings[slot_970x250]" value="<?php echo esc_attr( $s['slot_970x250'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>728x90</th>
+			<td><input type="text" name="pl_ad_settings[slot_728x90]" value="<?php echo esc_attr( $s['slot_728x90'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>Pause Banner</th>
+			<td><input type="text" name="pl_ad_settings[slot_pause]" value="<?php echo esc_attr( $s['slot_pause'] ); ?>" class="regular-text"></td>
+		</tr>
+	</table>
+	<?php
+}
+
+/**
+ * ads.txt tab content.
+ */
+function pl_ad_render_ads_txt_tab() {
+	$content = pl_ad_read_ads_txt();
+	$path    = ABSPATH . 'ads.txt';
+	$exists  = file_exists( $path );
+	?>
+	<form method="post">
+		<?php wp_nonce_field( 'pl_ads_txt_nonce' ); ?>
+		<table class="form-table">
+			<tr>
+				<td>
+					<p>
+						File: <code><?php echo esc_html( $path ); ?></code><br>
+						<?php if ( $exists ) : ?>
+							Status: <span style="color:#46b450;font-weight:600;">File exists</span> &mdash;
+							<a href="<?php echo esc_url( home_url( '/ads.txt' ) ); ?>" target="_blank">View live &rarr;</a>
+						<?php else : ?>
+							Status: <span style="color:#f0b849;font-weight:600;">File does not exist yet</span> (will be created on save)
+						<?php endif; ?>
+					</p>
+					<textarea name="pl_ads_txt_content" rows="15" cols="80" class="large-text code" style="font-family:monospace"><?php echo esc_textarea( $content ); ?></textarea>
+					<p class="description">
+						Standard format: <code>google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0</code>
+					</p>
+				</td>
+			</tr>
+		</table>
+		<input type="submit" name="pl_ads_txt_save" class="button button-primary" value="Save ads.txt">
+	</form>
+	<?php
+}
+
+/* ================================================================
+ * 3. ADS.TXT READ / WRITE
+ * ================================================================ */
+
+/**
+ * Read ads.txt content from ABSPATH.
+ *
+ * @return string
+ */
+function pl_ad_read_ads_txt() {
+	$path = ABSPATH . 'ads.txt';
+	if ( file_exists( $path ) && is_readable( $path ) ) {
+		return file_get_contents( $path );
+	}
+	return '';
+}
+
+/**
+ * Write ads.txt content to ABSPATH.
+ *
+ * @param string $content The ads.txt content.
+ */
+function pl_ad_write_ads_txt( $content ) {
+	$path = ABSPATH . 'ads.txt';
+	$content = str_replace( "\r\n", "\n", $content );
+	$content = str_replace( "\r", "\n", $content );
+	$content = rtrim( $content ) . "\n";
+	file_put_contents( $path, $content );
+}
+
+/* ================================================================
+ * 4. AD SIZE STRATEGY
+ * ================================================================ */
+
+/**
+ * Get ad size for a zone based on position.
+ *
+ * Best performers: 300x250 ($0.49 eCPM), 970x250 ($0.80 eCPM).
+ * Mobile: 300x250 dominates. Desktop: alternate 300x250 and 970x250.
+ *
+ * @param  int   $zone_number Zero-based zone index.
+ * @return array              Keys: mobile, desktop.
+ */
+function pinlightning_get_zone_size( $zone_number ) {
+	$mobile_sizes  = array( '300x250' );
+	$desktop_sizes = array( '300x250', '970x250' );
+
+	return array(
+		'mobile'  => $mobile_sizes[ $zone_number % count( $mobile_sizes ) ],
+		'desktop' => $desktop_sizes[ $zone_number % count( $desktop_sizes ) ],
+	);
+}
+
+/* ================================================================
+ * 5. CONTENT SCANNER — ZONE INJECTION
+ * ================================================================ */
+
+/**
+ * Scan content and inject ad zones at optimal break points.
  *
  * Scoring rules:
  * +5  Before a new section (h2, h3)
@@ -38,152 +505,250 @@ function pinlightning_get_zone_size($zone_number) {
  * +1  After any paragraph
  * -10 Inside list, blockquote, table, pre
  * -5  Directly after a heading
+ *
+ * @param  string $content Post content HTML.
+ * @return string          Content with ad zone divs inserted.
  */
-function pinlightning_scan_and_inject_zones($content) {
-    if (!PL_ADS_ENABLED) return $content;
-    if (!is_singular() && !isset($GLOBALS['pinlightning_rest_content'])) return $content;
+function pinlightning_scan_and_inject_zones( $content ) {
+	$s = pl_ad_settings();
 
-    // Count paragraphs — skip short posts
-    $p_count = substr_count(strtolower($content), '</p>');
-    if ($p_count < PL_ADS_MIN_PARAGRAPHS + 2) return $content;
+	if ( ! $s['enabled'] ) {
+		return $content;
+	}
+	if ( ! is_singular() && ! isset( $GLOBALS['pinlightning_rest_content'] ) ) {
+		return $content;
+	}
 
-    // Parse content into block elements
-    $dom = new DOMDocument();
-    libxml_use_internal_errors(true);
-    $wrapped = '<html><body>' . mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8') . '</body></html>';
-    $dom->loadHTML($wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-    libxml_clear_errors();
+	$min_before = (int) $s['min_paragraphs_before'];
+	$min_gap    = (int) $s['min_gap_paragraphs'];
+	$max_zones  = (int) $s['max_display_ads'];
 
-    $body = $dom->getElementsByTagName('body')->item(0);
-    if (!$body) return $content;
+	// Count paragraphs — skip short posts.
+	$p_count = substr_count( strtolower( $content ), '</p>' );
+	if ( $p_count < $min_before + 2 ) {
+		return $content;
+	}
 
-    // Build block list with scores
-    $blocks = array();
-    $p_index = 0;
+	// Parse content into block elements.
+	$dom = new DOMDocument();
+	libxml_use_internal_errors( true );
+	$wrapped = '<html><body>' . mb_convert_encoding( $content, 'HTML-ENTITIES', 'UTF-8' ) . '</body></html>';
+	$dom->loadHTML( $wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+	libxml_clear_errors();
 
-    foreach ($body->childNodes as $node) {
-        if ($node->nodeType !== XML_ELEMENT_NODE) continue;
+	$body = $dom->getElementsByTagName( 'body' )->item( 0 );
+	if ( ! $body ) {
+		return $content;
+	}
 
-        $tag = strtolower($node->tagName);
-        $text_len = mb_strlen(trim($node->textContent));
-        $has_img = $node->getElementsByTagName('img')->length > 0 ||
-                   $tag === 'figure';
+	// Build block list with scores.
+	$blocks  = array();
+	$p_index = 0;
 
-        $score = 0;
+	foreach ( $body->childNodes as $node ) {
+		if ( $node->nodeType !== XML_ELEMENT_NODE ) {
+			continue;
+		}
 
-        // Positive signals
-        if ($tag === 'p' && $text_len > 300) $score += 3;
-        elseif ($tag === 'p') $score += 1;
-        if ($has_img) $score += 4;
+		$tag      = strtolower( $node->tagName );
+		$text_len = mb_strlen( trim( $node->textContent ) );
+		$has_img  = $node->getElementsByTagName( 'img' )->length > 0 || 'figure' === $tag;
 
-        // Negative signals
-        if (in_array($tag, array('ul', 'ol', 'table', 'blockquote', 'pre', 'details'))) $score -= 10;
-        if (in_array($tag, array('h1', 'h2', 'h3', 'h4', 'h5', 'h6'))) $score -= 5;
+		$score = 0;
 
-        if ($tag === 'p') $p_index++;
+		// Positive signals.
+		if ( 'p' === $tag && $text_len > 300 ) {
+			$score += 3;
+		} elseif ( 'p' === $tag ) {
+			$score += 1;
+		}
+		if ( $has_img ) {
+			$score += 4;
+		}
 
-        $blocks[] = array(
-            'node' => $node,
-            'tag' => $tag,
-            'p_index' => $p_index,
-            'score' => $score,
-            'text_len' => $text_len
-        );
-    }
+		// Negative signals.
+		if ( in_array( $tag, array( 'ul', 'ol', 'table', 'blockquote', 'pre', 'details' ), true ) ) {
+			$score -= 10;
+		}
+		if ( in_array( $tag, array( 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ), true ) ) {
+			$score -= 5;
+		}
 
-    // Boost score if next element is a heading (section break = great ad spot)
-    for ($i = 0; $i < count($blocks) - 1; $i++) {
-        if (in_array($blocks[$i + 1]['tag'], array('h2', 'h3'))) {
-            $blocks[$i]['score'] += 5;
-        }
-    }
+		if ( 'p' === $tag ) {
+			$p_index++;
+		}
 
-    // Select best positions respecting constraints
-    $positions = array();
-    $last_ad_p = -PL_ADS_MIN_GAP;
-    $zone_num = 0;
+		$blocks[] = array(
+			'node'     => $node,
+			'tag'      => $tag,
+			'p_index'  => $p_index,
+			'score'    => $score,
+			'text_len' => $text_len,
+		);
+	}
 
-    for ($i = 0; $i < count($blocks); $i++) {
-        if ($zone_num >= PL_ADS_MAX_PER_POST) break;
-        if ($blocks[$i]['score'] < 2) continue;
-        if ($blocks[$i]['p_index'] < PL_ADS_MIN_PARAGRAPHS) continue;
-        if ($blocks[$i]['p_index'] - $last_ad_p < PL_ADS_MIN_GAP) continue;
+	// Boost score if next element is a heading (section break = great ad spot).
+	for ( $i = 0; $i < count( $blocks ) - 1; $i++ ) {
+		if ( in_array( $blocks[ $i + 1 ]['tag'], array( 'h2', 'h3' ), true ) ) {
+			$blocks[ $i ]['score'] += 5;
+		}
+	}
 
-        $positions[] = $i;
-        $last_ad_p = $blocks[$i]['p_index'];
-        $zone_num++;
-    }
+	// Select best positions respecting constraints.
+	$positions = array();
+	$last_ad_p = -$min_gap;
+	$zone_num  = 0;
 
-    // Fallback: evenly spaced if scanner found too few spots
-    if ($zone_num < 2 && $p_count >= 8) {
-        $positions = array();
-        $spacing = max(PL_ADS_MIN_GAP, intval($p_count / 4));
-        $p_counter = 0;
-        $zone_num = 0;
-        for ($i = 0; $i < count($blocks); $i++) {
-            if ($blocks[$i]['tag'] === 'p') $p_counter++;
-            if ($p_counter >= PL_ADS_MIN_PARAGRAPHS && $p_counter % $spacing === 0) {
-                $positions[] = $i;
-                $zone_num++;
-                if ($zone_num >= PL_ADS_MAX_PER_POST) break;
-            }
-        }
-    }
+	for ( $i = 0; $i < count( $blocks ); $i++ ) {
+		if ( $zone_num >= $max_zones ) {
+			break;
+		}
+		if ( $blocks[ $i ]['score'] < 2 ) {
+			continue;
+		}
+		if ( $blocks[ $i ]['p_index'] < $min_before ) {
+			continue;
+		}
+		if ( $blocks[ $i ]['p_index'] - $last_ad_p < $min_gap ) {
+			continue;
+		}
 
-    // Rebuild HTML with ad zones inserted
-    $output = '';
-    $zone_counter = 0;
+		$positions[] = $i;
+		$last_ad_p   = $blocks[ $i ]['p_index'];
+		$zone_num++;
+	}
 
-    foreach ($blocks as $idx => $block) {
-        $output .= $dom->saveHTML($block['node']);
+	// Fallback: evenly spaced if scanner found too few spots.
+	if ( $zone_num < 2 && $p_count >= 8 ) {
+		$positions = array();
+		$spacing   = max( $min_gap, intval( $p_count / 4 ) );
+		$p_counter = 0;
+		$zone_num  = 0;
 
-        if (in_array($idx, $positions)) {
-            $zone_counter++;
-            $zid = 'auto-' . $zone_counter;
-            $sizes = pinlightning_get_zone_size($zone_counter - 1);
+		for ( $i = 0; $i < count( $blocks ); $i++ ) {
+			if ( 'p' === $blocks[ $i ]['tag'] ) {
+				$p_counter++;
+			}
+			if ( $p_counter >= $min_before && 0 === $p_counter % $spacing ) {
+				$positions[] = $i;
+				$zone_num++;
+				if ( $zone_num >= $max_zones ) {
+					break;
+				}
+			}
+		}
+	}
 
-            $output .= sprintf(
-                '<div class="ad-zone" data-zone-id="%s" data-size-mobile="%s" data-size-desktop="%s" data-injected="false" data-score="%d" aria-hidden="true"></div>',
-                esc_attr($zid),
-                esc_attr($sizes['mobile']),
-                esc_attr($sizes['desktop']),
-                $block['score']
-            );
-        }
-    }
+	// Rebuild HTML with ad zones inserted.
+	$output       = '';
+	$zone_counter = 0;
 
-    return $output;
+	foreach ( $blocks as $idx => $block ) {
+		$output .= $dom->saveHTML( $block['node'] );
+
+		if ( in_array( $idx, $positions, true ) ) {
+			$zone_counter++;
+			$zid   = 'auto-' . $zone_counter;
+			$sizes = pinlightning_get_zone_size( $zone_counter - 1 );
+
+			$output .= sprintf(
+				'<div class="ad-zone" data-zone-id="%s" data-size-mobile="%s" data-size-desktop="%s" data-injected="false" data-score="%d" aria-hidden="true"></div>',
+				esc_attr( $zid ),
+				esc_attr( $sizes['mobile'] ),
+				esc_attr( $sizes['desktop'] ),
+				$block['score']
+			);
+		}
+	}
+
+	return $output;
 }
-add_filter('the_content', 'pinlightning_scan_and_inject_zones', 55);
+add_filter( 'the_content', 'pinlightning_scan_and_inject_zones', 55 );
+
+/* ================================================================
+ * 6. MANUAL ZONE HELPER
+ * ================================================================ */
 
 /**
- * Manual zone helper for single.php
+ * Output an ad zone div for use in templates (single.php, etc.).
+ *
+ * @param  string $zone_id     Unique zone identifier.
+ * @param  string $mobile_size Mobile ad size (default 300x250).
+ * @param  string $desktop_size Desktop ad size (default 300x250).
+ * @return string              HTML div or empty string if disabled.
  */
-function pinlightning_ad_zone($zone_id, $mobile_size = '300x250', $desktop_size = '300x250') {
-    if (!PL_ADS_ENABLED) return '';
-    return sprintf(
-        '<div class="ad-zone" data-zone-id="%s" data-size-mobile="%s" data-size-desktop="%s" data-injected="false" aria-hidden="true"></div>',
-        esc_attr($zone_id),
-        esc_attr($mobile_size),
-        esc_attr($desktop_size)
-    );
+function pinlightning_ad_zone( $zone_id, $mobile_size = '300x250', $desktop_size = '300x250' ) {
+	$s = pl_ad_settings();
+	if ( ! $s['enabled'] ) {
+		return '';
+	}
+
+	return sprintf(
+		'<div class="ad-zone" data-zone-id="%s" data-size-mobile="%s" data-size-desktop="%s" data-injected="false" aria-hidden="true"></div>',
+		esc_attr( $zone_id ),
+		esc_attr( $mobile_size ),
+		esc_attr( $desktop_size )
+	);
 }
 
+/* ================================================================
+ * 7. FRONTEND CONFIGURATION PROVIDER
+ * ================================================================ */
+
 /**
- * Pass config to JS
+ * Pass ad engine settings to the frontend JS via wp_localize_script.
  */
 function pinlightning_ads_enqueue() {
-    if (!PL_ADS_ENABLED || !is_singular()) return;
+	$s = pl_ad_settings();
 
-    wp_localize_script('pinlightning-smart-ads', 'plAds', array(
-        'dummy' => PL_ADS_DUMMY_MODE,
-        'debug' => PL_ADS_DEBUG_OVERLAY || isset($_GET['pl_debug']) || current_user_can('manage_options'),
-        'record' => PL_ADS_RECORD_DATA,
-        'maxAds' => PL_ADS_MAX_PER_POST,
-        'recordEndpoint' => rest_url('pinlightning/v1/ad-data'),
-        'nonce' => wp_create_nonce('wp_rest'),
-        'postId' => get_the_ID(),
-        'postSlug' => get_post_field('post_name', get_the_ID())
-    ));
+	if ( ! $s['enabled'] || ! is_singular() ) {
+		return;
+	}
+
+	wp_localize_script( 'pinlightning-smart-ads', 'plAds', array(
+		// Mode.
+		'dummy'           => (bool) $s['dummy_mode'],
+		'debug'           => (bool) $s['debug_overlay'] || isset( $_GET['pl_debug'] ) || current_user_can( 'manage_options' ),
+		'record'          => (bool) $s['record_data'],
+
+		// Engagement Gate.
+		'gateScrollPct'   => (int) $s['gate_scroll_pct'],
+		'gateTimeSec'     => (int) $s['gate_time_sec'],
+		'gateDirChanges'  => (int) $s['gate_dir_changes'],
+
+		// Density.
+		'maxAds'          => (int) $s['max_display_ads'],
+		'minSpacingPx'    => (int) $s['min_spacing_px'],
+
+		// Device.
+		'mobileEnabled'   => (bool) $s['mobile_enabled'],
+		'desktopEnabled'  => (bool) $s['desktop_enabled'],
+
+		// Formats.
+		'fmtInterstitial' => (bool) $s['fmt_interstitial'],
+		'fmtAnchor'       => (bool) $s['fmt_anchor'],
+		'fmt300x250'      => (bool) $s['fmt_300x250'],
+		'fmt970x250'      => (bool) $s['fmt_970x250'],
+		'fmt728x90'       => (bool) $s['fmt_728x90'],
+		'fmtPause'        => (bool) $s['fmt_pause'],
+
+		// Network / Slots.
+		'networkCode'     => $s['network_code'],
+		'slotPrefix'      => $s['slot_prefix'],
+		'slots'           => array(
+			'interstitial' => $s['slot_interstitial'],
+			'anchor'       => $s['slot_anchor'],
+			'300x250'      => $s['slot_300x250'],
+			'970x250'      => $s['slot_970x250'],
+			'728x90'       => $s['slot_728x90'],
+			'pause'        => $s['slot_pause'],
+		),
+
+		// Context.
+		'recordEndpoint'  => rest_url( 'pinlightning/v1/ad-data' ),
+		'nonce'           => wp_create_nonce( 'wp_rest' ),
+		'postId'          => get_the_ID(),
+		'postSlug'        => get_post_field( 'post_name', get_the_ID() ),
+	) );
 }
-add_action('wp_enqueue_scripts', 'pinlightning_ads_enqueue', 20);
+add_action( 'wp_enqueue_scripts', 'pinlightning_ads_enqueue', 20 );
