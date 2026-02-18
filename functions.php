@@ -901,6 +901,7 @@ require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-optimizer.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
 require_once PINLIGHTNING_DIR . '/inc/visitor-tracker.php';
 require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';
