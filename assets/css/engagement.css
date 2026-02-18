@@ -34,7 +34,7 @@
 .eb-img-wrap:hover img{animation-play-state:paused}
 
 /* --- Shimmer Sweep --- */
-.eb-img-wrap{position:relative;overflow:hidden}
+.eb-img-wrap{position:relative}
 .eb-img-wrap::after{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.15) 45%,rgba(255,255,255,.25) 50%,rgba(255,255,255,.15) 55%,transparent 60%);transform:translateX(-100%);pointer-events:none;z-index:1}
 .eb-item:not(.in-view) .eb-img-wrap::after{animation:none}
 .eb-item.in-view .eb-img-wrap::after{animation:ebShimmer 6s ease-in-out infinite}
