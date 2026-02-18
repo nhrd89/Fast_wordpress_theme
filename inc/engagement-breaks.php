@@ -92,6 +92,20 @@ function pl_engagement_filter( $content ) {
 		}
 	}
 
+	// Calculate ad zone positions for between-item injection.
+	// Strategy: place ad zones every ~4 items, starting after item 4.
+	// These go BETWEEN .eb-item divs (complementing the auto-scanner
+	// zones from priority 55 which land INSIDE items).
+	$ad_zone_interval  = 4;
+	$ad_zone_positions = array();
+	$ad_zone_count     = 0;
+
+	if ( function_exists( 'pinlightning_ad_zone' ) ) {
+		for ( $z = $ad_zone_interval; $z < $total_items; $z += $ad_zone_interval ) {
+			$ad_zone_positions[] = $z;
+		}
+	}
+
 	// Process each part (item).
 	$item_index   = 0;
 	$output_parts = array();
@@ -117,6 +131,17 @@ function pl_engagement_filter( $content ) {
 			if ( isset( $break_map[ $item_index ] ) ) {
 				$output_parts[] = $break_map[ $item_index ];
 			}
+
+			// Inject ad zone at strategic between-item positions.
+			if ( in_array( $item_index, $ad_zone_positions, true ) ) {
+				$ad_zone_count++;
+				$desktop_size = ( $ad_zone_count % 2 === 0 ) ? '970x250' : '300x250';
+				$output_parts[] = pinlightning_ad_zone(
+					'eb-mid-' . $ad_zone_count,
+					'300x250',
+					$desktop_size
+				);
+			}
 		} else {
 			// Intro or non-item content — pass through.
 			$output_parts[] = $part;
@@ -127,20 +152,33 @@ function pl_engagement_filter( $content ) {
 
 	// Hero mosaic — insert after first paragraph, or before first H2 as fallback.
 	$mosaic_html = pl_render_hero_mosaic( $raw_content, $total_items, $post_id );
+
+	// Ad zone after hero mosaic — premium above-fold position.
+	$after_mosaic_ad = '';
+	if ( $mosaic_html && function_exists( 'pinlightning_ad_zone' ) ) {
+		$after_mosaic_ad = pinlightning_ad_zone( 'eb-after-mosaic', '300x250', '970x250' );
+	}
+
 	if ( $mosaic_html ) {
-		$first_p_end = strpos( $content, '</p>' );
+		$mosaic_block = $mosaic_html . $after_mosaic_ad;
+		$first_p_end  = strpos( $content, '</p>' );
 		if ( $first_p_end !== false ) {
 			$insert_pos = $first_p_end + 4; // after </p>
-			$content    = substr( $content, 0, $insert_pos ) . $mosaic_html . substr( $content, $insert_pos );
+			$content    = substr( $content, 0, $insert_pos ) . $mosaic_block . substr( $content, $insert_pos );
 		} else {
 			// Fallback: prepend before first H2 item.
 			$content = preg_replace(
 				'/(?=<div class="eb-item"[^>]*data-item="1")/i',
-				$mosaic_html,
+				$mosaic_block,
 				$content,
 				1
 			);
 		}
+	}
+
+	// Footer ad zone — end-of-content position.
+	if ( function_exists( 'pinlightning_ad_zone' ) ) {
+		$content .= pinlightning_ad_zone( 'eb-footer', '300x250', '728x90' );
 	}
 
 	// Append: AI tip placeholder + favorites summary.

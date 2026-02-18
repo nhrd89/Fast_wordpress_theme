@@ -141,14 +141,14 @@ function pinlightning_scripts() {
 			'endpoint' => esc_url_raw( rest_url( 'pinlightning/v1/random-posts' ) ),
 		) );
 
-		// Smart ad engine — disabled until Phase 3.
-		// wp_enqueue_script(
-		// 	'pinlightning-smart-ads',
-		// 	PINLIGHTNING_URI . '/assets/js/smart-ads.js',
-		// 	array(),
-		// 	PINLIGHTNING_VERSION,
-		// 	true
-		// );
+		// Smart ad engine (loads config via wp_localize_script in ad-engine.php).
+		wp_enqueue_script(
+			'pinlightning-smart-ads',
+			PINLIGHTNING_URI . '/assets/js/smart-ads.js',
+			array(),
+			PINLIGHTNING_VERSION,
+			true
+		);
 
 		// Scroll engagement — loaded on first scroll (see pinlightning_scroll_deferred_assets).
 		// Removed: wp_enqueue_script, wp_localize_script, preload, defer filter.
@@ -900,6 +900,7 @@ require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
 require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-analytics.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
 require_once PINLIGHTNING_DIR . '/inc/visitor-tracker.php';
 require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';
