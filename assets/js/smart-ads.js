@@ -71,6 +71,7 @@ function checkGate() {
 		state.gateOpen = true;
 		if (cfg.debug) console.log('[PL-Ads] Gate OPEN — scroll:' + Math.round(state.scrollPct) + '% time:' + Math.round(state.timeOnPage) + 's dirs:' + state.dirChanges);
 		activateVisibleZones();
+		showAnchor(); // Anchor is #1 revenue — fire immediately on gate open.
 		return true;
 	}
 	return false;
@@ -419,55 +420,59 @@ function showInterstitial() {
 	if (interstitialShown || !cfg.fmtInterstitial || !state.gateOpen) return;
 	interstitialShown = true;
 
-	var overlay = document.createElement('div');
-	overlay.className = 'pl-ad-interstitial pl-ad-active';
+	// Ensure shared GPT instance is loaded before rendering.
+	loadGPT(function() {
+		var overlay = document.createElement('div');
+		overlay.className = 'pl-ad-interstitial pl-ad-active';
 
-	var inner = document.createElement('div');
-	inner.className = 'pl-ad-interstitial-inner';
+		var inner = document.createElement('div');
+		inner.className = 'pl-ad-interstitial-inner';
 
-	var closeBtn = createCloseBtn(function() {
-		overlay.classList.remove('pl-ad-active');
-		setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-	});
-	inner.appendChild(closeBtn);
-
-	if (cfg.dummy) {
-		inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
-	} else {
-		var adDiv = document.createElement('div');
-		adDiv.id = 'pl-gpt-interstitial';
-		adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
-		inner.appendChild(adDiv);
-
-		var slotPath = cfg.slotPrefix + cfg.slots.interstitial;
-		googletag.cmd.push(function() {
-			var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-interstitial');
-			if (slot) {
-				slot.addService(googletag.pubads());
-				googletag.display('pl-gpt-interstitial');
-			}
-		});
-	}
-
-	overlay.appendChild(inner);
-	document.body.appendChild(overlay);
-
-	// Auto-close after 15s.
-	setTimeout(function() {
-		if (overlay.parentNode) {
+		var closeBtn = createCloseBtn(function() {
 			overlay.classList.remove('pl-ad-active');
 			setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-		}
-	}, 15000);
+		});
+		inner.appendChild(closeBtn);
 
-	if (cfg.debug) console.log('[PL-Ads] Interstitial shown');
+		if (cfg.dummy) {
+			inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
+		} else {
+			var adDiv = document.createElement('div');
+			adDiv.id = 'pl-gpt-interstitial';
+			adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
+			inner.appendChild(adDiv);
+
+			var slotPath = cfg.slotPrefix + cfg.slots.interstitial;
+			googletag.cmd.push(function() {
+				var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-interstitial');
+				if (slot) {
+					slot.addService(googletag.pubads());
+					googletag.display('pl-gpt-interstitial');
+				}
+			});
+		}
+
+		overlay.appendChild(inner);
+		document.body.appendChild(overlay);
+
+		// Auto-close after 15s.
+		setTimeout(function() {
+			if (overlay.parentNode) {
+				overlay.classList.remove('pl-ad-active');
+				setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
+			}
+		}, 15000);
+
+		if (cfg.debug) console.log('[PL-Ads] Interstitial shown');
+	});
 }
 
 /* ================================================================
  * MODULE 8: ANCHOR (BOTTOM STICKY)
  *
- * Sticky banner at bottom of viewport. Triggers after gate + 50%
- * scroll depth. User can dismiss with close button.
+ * #1 revenue format ($18.52/wk). Fires immediately when engagement
+ * gate opens — no additional scroll requirement. Reuses shared GPT
+ * instance from Module 3 via loadGPT().
  * ================================================================ */
 
 var anchorShown = false;
@@ -476,36 +481,39 @@ function showAnchor() {
 	if (anchorShown || !cfg.fmtAnchor || !state.gateOpen) return;
 	anchorShown = true;
 
-	var anchor = document.createElement('div');
-	anchor.className = 'pl-ad-anchor pl-ad-active';
+	// Ensure shared GPT instance is loaded before rendering.
+	loadGPT(function() {
+		var anchor = document.createElement('div');
+		anchor.className = 'pl-ad-anchor pl-ad-active';
 
-	var closeBtn = createCloseBtn(function() {
-		anchor.classList.remove('pl-ad-active');
-		setTimeout(function() { if (anchor.parentNode) anchor.remove(); }, 300);
-	});
-	anchor.appendChild(closeBtn);
-
-	if (cfg.dummy) {
-		anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
-	} else {
-		var adDiv = document.createElement('div');
-		adDiv.id = 'pl-gpt-anchor';
-		adDiv.style.cssText = 'width:320px;height:50px';
-		anchor.appendChild(adDiv);
-
-		var slotPath = cfg.slotPrefix + cfg.slots.anchor;
-		googletag.cmd.push(function() {
-			var slot = googletag.defineSlot(slotPath, [320, 50], 'pl-gpt-anchor');
-			if (slot) {
-				slot.addService(googletag.pubads());
-				googletag.display('pl-gpt-anchor');
-			}
+		var closeBtn = createCloseBtn(function() {
+			anchor.classList.remove('pl-ad-active');
+			setTimeout(function() { if (anchor.parentNode) anchor.remove(); }, 300);
 		});
-	}
+		anchor.appendChild(closeBtn);
 
-	document.body.appendChild(anchor);
+		if (cfg.dummy) {
+			anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
+		} else {
+			var adDiv = document.createElement('div');
+			adDiv.id = 'pl-gpt-anchor';
+			adDiv.style.cssText = 'width:320px;height:50px';
+			anchor.appendChild(adDiv);
 
-	if (cfg.debug) console.log('[PL-Ads] Anchor shown');
+			var slotPath = cfg.slotPrefix + cfg.slots.anchor;
+			googletag.cmd.push(function() {
+				var slot = googletag.defineSlot(slotPath, [320, 50], 'pl-gpt-anchor');
+				if (slot) {
+					slot.addService(googletag.pubads());
+					googletag.display('pl-gpt-anchor');
+				}
+			});
+		}
+
+		document.body.appendChild(anchor);
+
+		if (cfg.debug) console.log('[PL-Ads] Anchor shown');
+	});
 }
 
 /* ================================================================
@@ -523,44 +531,47 @@ function onScrollPause() {
 
 	pauseShown = true;
 
-	var pause = document.createElement('div');
-	pause.className = 'pl-ad-pause pl-ad-active';
+	// Ensure shared GPT instance is loaded before rendering.
+	loadGPT(function() {
+		var pause = document.createElement('div');
+		pause.className = 'pl-ad-pause pl-ad-active';
 
-	var closeBtn = createCloseBtn(function() {
-		pause.classList.remove('pl-ad-active');
-		setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
-	});
-	pause.appendChild(closeBtn);
-
-	if (cfg.dummy) {
-		pause.appendChild(createDummyBlock('Pause 300x250', 300, 250, '#fce4ec'));
-	} else {
-		var adDiv = document.createElement('div');
-		adDiv.id = 'pl-gpt-pause';
-		adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
-		pause.appendChild(adDiv);
-
-		var slotPath = cfg.slotPrefix + cfg.slots.pause;
-		googletag.cmd.push(function() {
-			var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-pause');
-			if (slot) {
-				slot.addService(googletag.pubads());
-				googletag.display('pl-gpt-pause');
-			}
-		});
-	}
-
-	document.body.appendChild(pause);
-
-	// Auto-close after 10s.
-	setTimeout(function() {
-		if (pause.parentNode) {
+		var closeBtn = createCloseBtn(function() {
 			pause.classList.remove('pl-ad-active');
 			setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
-		}
-	}, 10000);
+		});
+		pause.appendChild(closeBtn);
 
-	if (cfg.debug) console.log('[PL-Ads] Pause banner shown');
+		if (cfg.dummy) {
+			pause.appendChild(createDummyBlock('Pause 300x250', 300, 250, '#fce4ec'));
+		} else {
+			var adDiv = document.createElement('div');
+			adDiv.id = 'pl-gpt-pause';
+			adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
+			pause.appendChild(adDiv);
+
+			var slotPath = cfg.slotPrefix + cfg.slots.pause;
+			googletag.cmd.push(function() {
+				var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-pause');
+				if (slot) {
+					slot.addService(googletag.pubads());
+					googletag.display('pl-gpt-pause');
+				}
+			});
+		}
+
+		document.body.appendChild(pause);
+
+		// Auto-close after 10s.
+		setTimeout(function() {
+			if (pause.parentNode) {
+				pause.classList.remove('pl-ad-active');
+				setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
+			}
+		}, 10000);
+
+		if (cfg.debug) console.log('[PL-Ads] Pause banner shown');
+	});
 }
 
 /* ================================================================
@@ -786,8 +797,9 @@ function init() {
 	var fmtInterval = setInterval(function() {
 		if (!state.gateOpen) return;
 
-		// Anchor: after gate + 50% scroll depth.
-		if (!anchorShown && state.scrollPct >= 50) {
+		// Anchor: fires immediately from checkGate(), but retry here
+		// in case gate opened before init wired up the interval.
+		if (!anchorShown) {
 			showAnchor();
 		}
 
