@@ -973,16 +973,8 @@ function pl_enqueue_engagement() {
 	preg_match_all( '/src=["\']([^"\']+)["\']/', $post->post_content, $src_matches );
 	$pins = $src_matches[1] ?? array();
 
-	// Next post.
-	$next_post = get_adjacent_post( true, '', false );
-	$next_data = null;
-	if ( $next_post ) {
-		$next_data = array(
-			'title' => $next_post->post_title,
-			'url'   => get_permalink( $next_post ),
-			'img'   => get_the_post_thumbnail_url( $next_post, 'thumbnail' ) ?: '',
-		);
-	}
+	// Next post — random from same category.
+	$next_data = pl_get_next_post_data();
 
 	// AI tip text.
 	$ai_tip = get_post_meta( $post_id, '_eb_ai_tip', true );
@@ -1070,13 +1062,30 @@ function pl_count_listicle_items() {
 }
 
 /**
- * Helper: Get next post data for next-article bar.
+ * Helper: Get random post from same category for next-article bar.
  */
 function pl_get_next_post_data() {
-	$next = get_adjacent_post( true, '', false );
-	if ( ! $next ) {
+	$current_id = get_the_ID();
+	$categories = wp_get_post_categories( $current_id );
+
+	$args = array(
+		'posts_per_page'      => 1,
+		'orderby'             => 'rand',
+		'post__not_in'        => array( $current_id ),
+		'post_status'         => 'publish',
+		'no_found_rows'       => true,
+		'ignore_sticky_posts' => true,
+	);
+	if ( ! empty( $categories ) ) {
+		$args['category__in'] = $categories;
+	}
+
+	$query = new WP_Query( $args );
+	if ( ! $query->have_posts() ) {
 		return null;
 	}
+
+	$next = $query->posts[0];
 	return array(
 		'title' => $next->post_title,
 		'url'   => get_permalink( $next ),
