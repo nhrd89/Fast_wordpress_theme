@@ -1,384 +1,837 @@
 /**
- * PinLightning Smart Ad Engine — Phase 1
+ * PinLightning Smart Ad Engine — Phase 3
  *
- * 1. Smart Injector (scroll-speed aware, IntersectionObserver)
- * 2. Viewability Tracker (per-zone IAB measurement)
- * 3. Data Recorder (sends session data to server via sendBeacon)
+ * Intelligent ad placement engine for Ad.Plus via Google Publisher Tags (GPT).
+ * 12 modules: Config, Engagement Gate, GPT Loader, Zone Discovery,
+ * Zone Activation, Display Renderer, Interstitial, Anchor, Pause Banner,
+ * Viewability Tracker, Data Recorder, Debug Overlay.
+ *
+ * Zero TBT: IntersectionObserver + requestIdleCallback + passive listeners.
+ *
+ * @package PinLightning
+ * @since   1.0.0
  */
-(function() {
-    'use strict';
+;(function() {
+'use strict';
 
-    // ========== CONFIG ==========
-    var C = {
-        dummy: true,
-        debug: false,
-        record: true,
-        maxAds: 6,
-        viewThreshold: 0.5,
-        viewTimeMs: 1000,
-        maxScrollSpeed: 800,
-        minReadMs: 1500,
-        recordEndpoint: '',
-        nonce: '',
-        postId: 0,
-        postSlug: ''
-    };
-    if (window.plAds) {
-        for (var k in window.plAds) {
-            if (window.plAds.hasOwnProperty(k)) C[k] = window.plAds[k];
-        }
-    }
+/* ================================================================
+ * MODULE 1: CONFIG
+ * ================================================================ */
 
-    // ========== STATE ==========
-    var S = {
-        speed: 0,
-        speeds: [],          // rolling window for avg calculation
-        dir: 'down',
-        lastY: 0,
-        lastT: 0,
-        reading: true,
-        depth: 0,
-        loadT: Date.now(),
-        injected: 0,
-        zones: {},
-        dbgEl: null
-    };
+var cfg = window.plAds || {};
 
-    // ========== DUMMY AD SPECS ==========
-    var SPEC = {
-        '300x250': { w:300, h:250, l:'300\u00d7250', bg:'#f0f4ff', bc:'#4a90d9' },
-        '970x250': { w:970, h:250, l:'970\u00d7250', bg:'#fff8f0', bc:'#d98a4a' },
-        '728x90':  { w:728, h:90,  l:'728\u00d790',  bg:'#fff4f0', bc:'#d94a4a' },
-        '320x100': { w:320, h:100, l:'320\u00d7100', bg:'#f0fff4', bc:'#4ad94a' },
-        '300x600': { w:300, h:600, l:'300\u00d7600', bg:'#fff0f8', bc:'#d94a90' },
-        '336x280': { w:336, h:280, l:'336\u00d7280', bg:'#f4f0ff', bc:'#6a4ad9' }
-    };
+// Bail if not configured (ad engine disabled or missing config).
+if (!cfg.networkCode && !cfg.dummy) return;
 
-    // ========== 1. SCROLL TRACKER ==========
-    function trackScroll() {
-        var timer = null;
-        window.addEventListener('scroll', function() {
-            var now = Date.now();
-            var y = window.scrollY;
-            var dt = now - S.lastT;
-            if (dt > 0 && dt < 500) {
-                var spd = (Math.abs(y - S.lastY) / dt) * 1000;
-                S.speed = spd;
-                S.dir = y > S.lastY ? 'down' : 'up';
-                S.reading = spd < C.maxScrollSpeed;
-                // Rolling avg (keep last 20)
-                S.speeds.push(spd);
-                if (S.speeds.length > 20) S.speeds.shift();
-            }
-            var dh = document.documentElement.scrollHeight - window.innerHeight;
-            if (dh > 0) S.depth = Math.min(100, (y / dh) * 100);
-            S.lastY = y;
-            S.lastT = now;
-            if (timer) clearTimeout(timer);
-            timer = setTimeout(function() { S.speed = 0; S.reading = true; }, 200);
-        }, { passive: true });
-    }
+var isMobile = window.innerWidth <= 768;
+var isDesktop = !isMobile;
 
-    function getAvgSpeed() {
-        if (!S.speeds.length) return 0;
-        var sum = 0;
-        for (var i = 0; i < S.speeds.length; i++) sum += S.speeds[i];
-        return sum / S.speeds.length;
-    }
+// Device gate — exit early if ads disabled for this device.
+if (isMobile && !cfg.mobileEnabled) return;
+if (isDesktop && !cfg.desktopEnabled) return;
 
-    function getScrollPattern() {
-        var avg = getAvgSpeed();
-        var timeOnPage = Date.now() - S.loadT;
-        if (timeOnPage < 10000 && S.depth < 30) return 'bouncer';
-        if (avg > 600) return 'scanner';
-        return 'reader';
-    }
+var state = {
+	gateOpen: false,
+	gptLoaded: false,
+	gptReady: false,
+	activeAds: 0,
+	zones: [],
+	slots: {},
+	viewability: {},
+	scrollPct: 0,
+	timeOnPage: 0,
+	dirChanges: 0,
+	lastScrollY: 0,
+	lastScrollDir: 0,
+	scrollSpeed: 0,
+	pauseTimer: null,
+	sessionStart: Date.now(),
+	dataSent: false
+};
 
-    // ========== 2. SMART INJECTOR ==========
-    function initInjector() {
-        var zones = document.querySelectorAll('.ad-zone[data-injected="false"]');
-        if (!zones.length) return;
+/* ================================================================
+ * MODULE 2: ENGAGEMENT GATE
+ *
+ * Three signals must all be met before any ads load:
+ * 1. Scroll depth >= threshold (proves user is reading)
+ * 2. Time on page >= threshold (proves engagement)
+ * 3. Direction changes >= threshold (proves active scrolling)
+ * ================================================================ */
 
-        var obs = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry) {
-                if (!entry.isIntersecting) return;
-                var el = entry.target;
-                if (el.getAttribute('data-injected') === 'true') return;
-                if ((Date.now() - S.loadT) < C.minReadMs) return;
-                if (!S.reading && S.speed > 0) return;
-                if (S.injected >= C.maxAds) return;
-                inject(el);
-                obs.unobserve(el);
-            });
-        }, { rootMargin: '400px 0px', threshold: [0.1] });
+var gateChecks = {
+	scroll: false,
+	time: false,
+	direction: false
+};
 
-        zones.forEach(function(z) { obs.observe(z); });
+function checkGate() {
+	if (state.gateOpen) return true;
 
-        // Re-check for zones missed due to fast scrolling
-        setInterval(function() {
-            if (!S.reading) return;
-            var pending = document.querySelectorAll('.ad-zone[data-injected="false"]');
-            pending.forEach(function(z) {
-                var r = z.getBoundingClientRect();
-                if (r.top < window.innerHeight + 400 && r.bottom > -200 &&
-                    S.injected < C.maxAds && (Date.now() - S.loadT) >= C.minReadMs) {
-                    inject(z);
-                    obs.unobserve(z);
-                }
-            });
-        }, 800);
-    }
+	if (gateChecks.scroll && gateChecks.time && gateChecks.direction) {
+		state.gateOpen = true;
+		if (cfg.debug) console.log('[PL-Ads] Gate OPEN — scroll:' + Math.round(state.scrollPct) + '% time:' + Math.round(state.timeOnPage) + 's dirs:' + state.dirChanges);
+		activateVisibleZones();
+		return true;
+	}
+	return false;
+}
 
-    function inject(el) {
-        var zid = el.getAttribute('data-zone-id');
-        var mobile = window.innerWidth < 768;
-        var size = mobile
-            ? el.getAttribute('data-size-mobile')
-            : el.getAttribute('data-size-desktop');
-        if (!size) size = '300x250';
+// Scroll listener — throttled at 200ms.
+var scrollTimer = null;
 
-        el.setAttribute('data-injected', 'true');
-        el.setAttribute('data-ad-size', size);
-        S.injected++;
+function onScroll() {
+	if (scrollTimer) return;
+	scrollTimer = setTimeout(function() {
+		scrollTimer = null;
 
-        if (C.dummy) {
-            renderDummy(el, zid, size);
-        }
-        // Real ads: Phase 2
+		var y = window.scrollY || window.pageYOffset;
+		var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+		var pct = docHeight > 0 ? (y / docHeight) * 100 : 0;
+		state.scrollPct = pct;
 
-        // Smooth expand (zero CLS)
-        el.style.overflow = 'hidden';
-        el.style.maxHeight = '0';
-        el.style.transition = 'max-height 0.4s ease, margin 0.3s ease';
-        requestAnimationFrame(function() {
-            var sp = SPEC[size] || SPEC['300x250'];
-            el.style.maxHeight = (sp.h + 24) + 'px';
-            el.style.margin = '1.5rem 0';
-        });
-        el.classList.add('ad-zone-active');
+		// Direction change detection.
+		var dir = y > state.lastScrollY ? 1 : (y < state.lastScrollY ? -1 : 0);
+		if (dir !== 0 && dir !== state.lastScrollDir) {
+			if (state.lastScrollDir !== 0) {
+				state.dirChanges++;
+			}
+			state.lastScrollDir = dir;
+		}
 
-        // Start viewability tracking
-        trackViewability(el, zid, size);
-    }
+		// Scroll speed (px/s based on 200ms tick).
+		state.scrollSpeed = Math.abs(y - state.lastScrollY) / 0.2;
+		state.lastScrollY = y;
 
-    function renderDummy(el, zid, size) {
-        var sp = SPEC[size] || SPEC['300x250'];
-        var mobile = window.innerWidth < 768;
-        var w = mobile ? Math.min(sp.w, window.innerWidth - 32) : sp.w;
-        var h = w < sp.w ? Math.round((w / sp.w) * sp.h) : sp.h;
+		// Check gate thresholds.
+		if (!gateChecks.scroll && pct >= cfg.gateScrollPct) {
+			gateChecks.scroll = true;
+			if (cfg.debug) console.log('[PL-Ads] Gate: scroll ' + Math.round(pct) + '%');
+		}
+		if (!gateChecks.direction && state.dirChanges >= cfg.gateDirChanges) {
+			gateChecks.direction = true;
+			if (cfg.debug) console.log('[PL-Ads] Gate: directions ' + state.dirChanges);
+		}
 
-        el.innerHTML =
-            '<div style="width:' + w + 'px;height:' + h + 'px;' +
-            'background:' + sp.bg + ';border:2px dashed ' + sp.bc + ';' +
-            'display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;' +
-            'margin:0 auto;border-radius:8px;font-family:system-ui,sans-serif;position:relative;">' +
-            '<div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:1px;">Advertisement</div>' +
-            '<div style="font-weight:700;color:' + sp.bc + ';font-size:14px;">' + sp.l + '</div>' +
-            '<div style="font-size:10px;color:#888;">' + zid + '</div>' +
-            '<div id="vb-' + zid + '" style="position:absolute;bottom:4px;right:4px;' +
-            'padding:2px 6px;border-radius:4px;font-size:10px;background:#eee;color:#666;">0.0s</div>' +
-            '</div>';
-    }
+		checkGate();
 
-    // ========== 3. VIEWABILITY TRACKER ==========
-    function trackViewability(el, zid, size) {
-        S.zones[zid] = {
-            el: el,
-            size: size,
-            visible: false,
-            since: null,
-            totalMs: 0,
-            sessMs: 0,
-            impressions: 0,
-            ratio: 0,
-            maxRatio: 0,
-            ratioSamples: [],
-            firstViewT: null,
-            injectedAtDepth: S.depth,
-            injectedAtSpeed: S.speed
-        };
+		// Pause detection for pause banner.
+		clearTimeout(state.pauseTimer);
+		state.pauseTimer = setTimeout(onScrollPause, 3000);
+	}, 200);
+}
 
-        var vo = new IntersectionObserver(function(entries) {
-            var e = entries[0];
-            var z = S.zones[zid];
-            z.ratio = e.intersectionRatio;
-            if (e.intersectionRatio > z.maxRatio) z.maxRatio = e.intersectionRatio;
-            z.ratioSamples.push(e.intersectionRatio);
-            if (z.ratioSamples.length > 100) z.ratioSamples.shift();
+// Time tracking — 1s interval until threshold met.
+function startTimeTracking() {
+	var interval = setInterval(function() {
+		state.timeOnPage = (Date.now() - state.sessionStart) / 1000;
+		if (!gateChecks.time && state.timeOnPage >= cfg.gateTimeSec) {
+			gateChecks.time = true;
+			if (cfg.debug) console.log('[PL-Ads] Gate: time ' + Math.round(state.timeOnPage) + 's');
+			checkGate();
+			clearInterval(interval);
+		}
+	}, 1000);
+}
 
-            if (e.intersectionRatio >= C.viewThreshold) {
-                if (!z.visible) {
-                    z.visible = true;
-                    z.since = Date.now();
-                    if (!z.firstViewT) z.firstViewT = Date.now() - S.loadT;
-                }
-            } else {
-                if (z.visible && z.since) {
-                    var dur = Date.now() - z.since;
-                    z.totalMs += dur;
-                    if (dur >= C.viewTimeMs) z.impressions++;
-                    z.visible = false;
-                    z.since = null;
-                }
-            }
-        }, { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1.0] });
+/* ================================================================
+ * MODULE 3: GPT LOADER
+ *
+ * Lazy-loads GPT only when the first ad zone is ready to render.
+ * Falls back to dummy mode on load failure.
+ * ================================================================ */
 
-        vo.observe(el);
-    }
+var gptCallbacks = [];
 
-    function tickViewability() {
-        var ids = Object.keys(S.zones);
-        for (var i = 0; i < ids.length; i++) {
-            var z = S.zones[ids[i]];
-            z.sessMs = (z.visible && z.since) ? (Date.now() - z.since) : 0;
-            var total = z.totalMs + z.sessMs;
+function loadGPT(callback) {
+	if (callback) gptCallbacks.push(callback);
 
-            // Update dummy badge
-            if (C.dummy) {
-                var badge = document.getElementById('vb-' + ids[i]);
-                if (badge) {
-                    badge.textContent = (total / 1000).toFixed(1) + 's';
-                    badge.style.background = total >= C.viewTimeMs ? '#4caf50' : (z.visible ? '#ff9800' : '#eee');
-                    badge.style.color = total >= C.viewTimeMs ? '#fff' : (z.visible ? '#fff' : '#666');
-                }
-            }
-        }
-    }
+	if (state.gptReady) {
+		flushGptCallbacks();
+		return;
+	}
 
-    // ========== 4. DATA RECORDER ==========
-    function sendData() {
-        if (!C.record || !C.recordEndpoint) return;
+	if (state.gptLoaded) return; // Script loading, callbacks queued.
+	state.gptLoaded = true;
 
-        var ids = Object.keys(S.zones);
-        var totalViewable = 0;
-        var zonesData = [];
+	// Dummy mode: skip GPT entirely.
+	if (cfg.dummy) {
+		state.gptReady = true;
+		flushGptCallbacks();
+		return;
+	}
 
-        for (var i = 0; i < ids.length; i++) {
-            var z = S.zones[ids[i]];
-            var totalMs = z.totalMs + z.sessMs;
-            if (totalMs >= C.viewTimeMs) totalViewable++;
+	window.googletag = window.googletag || { cmd: [] };
 
-            var avgRatio = 0;
-            if (z.ratioSamples.length) {
-                var sum = 0;
-                for (var j = 0; j < z.ratioSamples.length; j++) sum += z.ratioSamples[j];
-                avgRatio = Math.round((sum / z.ratioSamples.length) * 100) / 100;
-            }
+	var script = document.createElement('script');
+	script.src = 'https://securepubads.g.doubleclick.net/tag/js/gpt.js';
+	script.async = true;
+	script.onerror = function() {
+		if (cfg.debug) console.warn('[PL-Ads] GPT failed to load — falling back to dummy');
+		cfg.dummy = true;
+		state.gptReady = true;
+		flushGptCallbacks();
+	};
+	document.head.appendChild(script);
 
-            zonesData.push({
-                zoneId: ids[i],
-                adSize: z.size,
-                totalVisibleMs: Math.round(z.totalMs + z.sessMs),
-                viewableImpressions: z.impressions + (z.sessMs >= C.viewTimeMs ? 1 : 0),
-                maxRatio: Math.round(z.maxRatio * 100) / 100,
-                avgRatio: avgRatio,
-                timeToFirstView: z.firstViewT ? Math.round(z.firstViewT) : -1,
-                injectedAtDepth: Math.round(z.injectedAtDepth * 10) / 10,
-                scrollSpeedAtInjection: Math.round(z.injectedAtSpeed)
-            });
-        }
+	googletag.cmd.push(function() {
+		googletag.pubads().enableSingleRequest();
+		googletag.pubads().collapseEmptyDivs(true);
+		googletag.enableServices();
+		state.gptReady = true;
+		if (cfg.debug) console.log('[PL-Ads] GPT ready');
+		flushGptCallbacks();
+	});
+}
 
-        var payload = {
-            session: true,
-            postId: C.postId,
-            postSlug: C.postSlug,
-            device: window.innerWidth < 768 ? 'mobile' : (window.innerWidth < 1024 ? 'tablet' : 'desktop'),
-            viewportW: window.innerWidth,
-            viewportH: window.innerHeight,
-            timeOnPage: Date.now() - S.loadT,
-            maxDepth: Math.round(S.depth * 10) / 10,
-            avgScrollSpeed: Math.round(getAvgSpeed()),
-            scrollPattern: getScrollPattern(),
-            totalAdsInjected: S.injected,
-            totalViewable: totalViewable,
-            viewabilityRate: S.injected > 0 ? Math.round((totalViewable / S.injected) * 100) : 0,
-            zones: zonesData
-        };
+function flushGptCallbacks() {
+	while (gptCallbacks.length) {
+		gptCallbacks.shift()();
+	}
+}
 
-        // Use sendBeacon (non-blocking, survives page unload)
-        if (navigator.sendBeacon) {
-            var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-            navigator.sendBeacon(C.recordEndpoint, blob);
-        } else {
-            // Fallback: sync XHR on unload
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', C.recordEndpoint, false);
-            xhr.setRequestHeader('Content-Type', 'application/json');
-            xhr.send(JSON.stringify(payload));
-        }
-    }
+/* ================================================================
+ * MODULE 4: ZONE DISCOVERY
+ *
+ * Finds all .ad-zone elements injected by the PHP content scanner
+ * and builds the zone list with per-zone metadata.
+ * ================================================================ */
 
-    // ========== 5. DEBUG OVERLAY (optional) ==========
-    function initDebug() {
-        if (!C.debug) return;
-        var el = document.createElement('div');
-        el.id = 'pl-ad-dbg';
-        el.style.cssText =
-            'position:fixed;bottom:60px;left:8px;z-index:9999;background:rgba(0,0,0,.88);' +
-            'color:#0f0;font:10px/1.5 monospace;padding:8px 10px;border-radius:8px;' +
-            'max-width:260px;pointer-events:none;backdrop-filter:blur(4px);';
-        document.body.appendChild(el);
-        S.dbgEl = el;
-    }
+function discoverZones() {
+	var els = document.querySelectorAll('.ad-zone[data-zone-id]');
+	state.zones = [];
+	for (var i = 0; i < els.length; i++) {
+		state.zones.push({
+			el: els[i],
+			id: els[i].getAttribute('data-zone-id'),
+			sizeMobile: els[i].getAttribute('data-size-mobile') || '300x250',
+			sizeDesktop: els[i].getAttribute('data-size-desktop') || '300x250',
+			score: parseInt(els[i].getAttribute('data-score') || '0', 10),
+			activated: false,
+			injected: false
+		});
+	}
+	if (cfg.debug) console.log('[PL-Ads] Discovered ' + state.zones.length + ' zones');
+}
 
-    function tickDebug() {
-        if (!S.dbgEl) return;
-        var ids = Object.keys(S.zones);
-        var tv = 0, ta = ids.length;
-        for (var i = 0; i < ids.length; i++) {
-            var z = S.zones[ids[i]];
-            if ((z.totalMs + z.sessMs) >= C.viewTimeMs) tv++;
-        }
-        var lines = [
-            '<b style="color:#ff0">\u26a1 PinLightning Ads</b>',
-            '\ud83d\udd04 ' + Math.round(S.speed) + 'px/s ' + (S.reading ? '\ud83d\udcd6' : '\ud83d\udca8') + ' ' + S.dir,
-            '\ud83d\udcca Depth:' + Math.round(S.depth) + '% Ads:' + S.injected + '/' + C.maxAds,
-            '\ud83d\udc41 Viewability: ' + (ta > 0 ? Math.round(tv / ta * 100) : 0) + '% (' + tv + '/' + ta + ')',
-            '\ud83e\udde0 Pattern: ' + getScrollPattern(),
-            '\u2014'
-        ];
-        for (var i = 0; i < ids.length; i++) {
-            var z = S.zones[ids[i]];
-            var t = z.totalMs + z.sessMs;
-            lines.push(
-                (z.visible ? '\ud83d\udfe2' : '\u26aa') + ' ' + ids[i] + ': ' +
-                (t / 1000).toFixed(1) + 's ' + Math.round(z.ratio * 100) + '% \u2713' + z.impressions
-            );
-        }
-        S.dbgEl.innerHTML = lines.join('<br>');
-    }
+/* ================================================================
+ * MODULE 5: ZONE ACTIVATION
+ *
+ * Uses IntersectionObserver to activate zones as they approach
+ * the viewport (200px pre-fetch). Enforces max ads, min spacing,
+ * and format toggles before activating.
+ * ================================================================ */
 
-    // ========== MAIN ==========
-    function tick() {
-        tickViewability();
-        if (C.debug) tickDebug();
-    }
+var zoneObserver = null;
 
-    function init() {
-        trackScroll();
-        initInjector();
-        if (C.debug) initDebug();
-        setInterval(tick, 250);
+function initZoneObserver() {
+	if (!('IntersectionObserver' in window)) {
+		// Fallback: activate visible zones on gate open.
+		return;
+	}
 
-        // Record data on page unload
-        if (C.record) {
-            // Send data when user leaves
-            document.addEventListener('visibilitychange', function() {
-                if (document.visibilityState === 'hidden') sendData();
-            });
-            // Backup: also send on unload
-            window.addEventListener('pagehide', sendData);
-            // Also send periodically every 30 seconds (in case user stays long)
-            setInterval(sendData, 30000);
-        }
-    }
+	zoneObserver = new IntersectionObserver(function(entries) {
+		for (var i = 0; i < entries.length; i++) {
+			if (entries[i].isIntersecting && state.gateOpen) {
+				var el = entries[i].target;
+				zoneObserver.unobserve(el);
+				activateZone(el);
+			}
+		}
+	}, {
+		rootMargin: '200px 0px',
+		threshold: 0
+	});
 
-    // PinLightning performance rules
-    if (document.body.classList.contains('single')) {
-        if ('requestIdleCallback' in window) {
-            requestIdleCallback(init);
-        } else {
-            setTimeout(init, 200);
-        }
-    }
+	for (var i = 0; i < state.zones.length; i++) {
+		zoneObserver.observe(state.zones[i].el);
+	}
+}
+
+function activateVisibleZones() {
+	if (!state.gateOpen) return;
+	for (var i = 0; i < state.zones.length; i++) {
+		var zone = state.zones[i];
+		if (zone.activated) continue;
+		var rect = zone.el.getBoundingClientRect();
+		if (rect.top < window.innerHeight + 400 && rect.bottom > -200) {
+			activateZone(zone.el);
+		}
+	}
+}
+
+function getZoneByEl(el) {
+	for (var i = 0; i < state.zones.length; i++) {
+		if (state.zones[i].el === el) return state.zones[i];
+	}
+	return null;
+}
+
+function activateZone(el) {
+	var zone = getZoneByEl(el);
+	if (!zone || zone.activated) return;
+
+	// Enforce max ads.
+	if (state.activeAds >= cfg.maxAds) {
+		collapseZone(el);
+		return;
+	}
+
+	// Determine size for this device.
+	var size = isMobile ? zone.sizeMobile : zone.sizeDesktop;
+
+	// Check format toggle.
+	if (!isFormatEnabled(size)) {
+		collapseZone(el);
+		return;
+	}
+
+	// Enforce min spacing.
+	if (!checkSpacing(el)) {
+		collapseZone(el);
+		return;
+	}
+
+	zone.activated = true;
+	state.activeAds++;
+
+	// Add CSS classes (reserves dimensions before ad loads).
+	el.classList.add('pl-ad-active', 'pl-ad-' + size);
+
+	// Load GPT then render.
+	loadGPT(function() {
+		renderDisplayAd(zone, size);
+	});
+}
+
+function checkSpacing(el) {
+	var rect = el.getBoundingClientRect();
+	var myTop = rect.top + (window.scrollY || window.pageYOffset);
+
+	var activeZones = document.querySelectorAll('.ad-zone.pl-ad-active');
+	for (var i = 0; i < activeZones.length; i++) {
+		if (activeZones[i] === el) continue;
+		var otherRect = activeZones[i].getBoundingClientRect();
+		var otherTop = otherRect.top + (window.scrollY || window.pageYOffset);
+		if (Math.abs(myTop - otherTop) < cfg.minSpacingPx) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function isFormatEnabled(size) {
+	if (size === '300x250') return cfg.fmt300x250;
+	if (size === '970x250') return cfg.fmt970x250;
+	if (size === '728x90') return cfg.fmt728x90;
+	return true;
+}
+
+function collapseZone(el) {
+	el.classList.add('pl-ad-collapse');
+	var zone = getZoneByEl(el);
+	if (zone) zone.activated = true; // Prevent re-processing.
+}
+
+/* ================================================================
+ * MODULE 6: DISPLAY AD RENDERER
+ *
+ * Renders either a real GPT ad or a dummy placeholder box.
+ * Sets up viewability tracking after render.
+ * ================================================================ */
+
+function renderDisplayAd(zone, size) {
+	if (zone.injected) return;
+	zone.injected = true;
+
+	var el = zone.el;
+	var parts = size.split('x');
+	var w = parseInt(parts[0], 10);
+	var h = parseInt(parts[1], 10);
+
+	if (cfg.dummy) {
+		renderDummy(el, size, w, h, zone.id, zone.score);
+		trackViewability(zone);
+		return;
+	}
+
+	// Create GPT ad container.
+	var adDiv = document.createElement('div');
+	var slotId = 'pl-gpt-' + zone.id;
+	adDiv.id = slotId;
+	adDiv.style.width = w + 'px';
+	adDiv.style.height = h + 'px';
+	adDiv.style.margin = '0 auto';
+	el.appendChild(adDiv);
+
+	// Define and display GPT slot.
+	var slotName = cfg.slots[size] || cfg.slots['300x250'];
+	var slotPath = cfg.slotPrefix + slotName;
+
+	googletag.cmd.push(function() {
+		var slot = googletag.defineSlot(slotPath, [w, h], slotId);
+		if (slot) {
+			slot.addService(googletag.pubads());
+			googletag.display(slotId);
+			state.slots[zone.id] = slot;
+			if (cfg.debug) console.log('[PL-Ads] Slot: ' + slotPath + ' (' + size + ')');
+		}
+	});
+
+	el.setAttribute('data-injected', 'true');
+	el.setAttribute('aria-hidden', 'false');
+
+	trackViewability(zone);
+
+	if (cfg.debug) {
+		addDebugInfo(el, zone.id, size, zone.score);
+	}
+}
+
+function renderDummy(el, size, w, h, zoneId, score) {
+	el.classList.add('pl-ad-dummy');
+
+	// Responsive: cap width on mobile.
+	var displayW = isMobile ? Math.min(w, window.innerWidth - 32) : w;
+	var displayH = displayW < w ? Math.round((displayW / w) * h) : h;
+
+	el.style.width = displayW + 'px';
+	el.style.height = displayH + 'px';
+	el.style.maxWidth = '100%';
+	el.innerHTML = '<span>' + size + '</span>';
+	el.setAttribute('data-injected', 'true');
+
+	if (cfg.debug) {
+		addDebugInfo(el, zoneId, size, score);
+		console.log('[PL-Ads] Dummy: ' + zoneId + ' (' + size + ')');
+	}
+}
+
+/* ================================================================
+ * MODULE 7: INTERSTITIAL
+ *
+ * Full-screen overlay ad. Triggers after 2+ display ads have loaded.
+ * Auto-closes after 15 seconds. User can dismiss with close button.
+ * ================================================================ */
+
+var interstitialShown = false;
+
+function showInterstitial() {
+	if (interstitialShown || !cfg.fmtInterstitial || !state.gateOpen) return;
+	interstitialShown = true;
+
+	var overlay = document.createElement('div');
+	overlay.className = 'pl-ad-interstitial pl-ad-active';
+
+	var inner = document.createElement('div');
+	inner.className = 'pl-ad-interstitial-inner';
+
+	var closeBtn = createCloseBtn(function() {
+		overlay.classList.remove('pl-ad-active');
+		setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
+	});
+	inner.appendChild(closeBtn);
+
+	if (cfg.dummy) {
+		inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
+	} else {
+		var adDiv = document.createElement('div');
+		adDiv.id = 'pl-gpt-interstitial';
+		adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
+		inner.appendChild(adDiv);
+
+		var slotPath = cfg.slotPrefix + cfg.slots.interstitial;
+		googletag.cmd.push(function() {
+			var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-interstitial');
+			if (slot) {
+				slot.addService(googletag.pubads());
+				googletag.display('pl-gpt-interstitial');
+			}
+		});
+	}
+
+	overlay.appendChild(inner);
+	document.body.appendChild(overlay);
+
+	// Auto-close after 15s.
+	setTimeout(function() {
+		if (overlay.parentNode) {
+			overlay.classList.remove('pl-ad-active');
+			setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
+		}
+	}, 15000);
+
+	if (cfg.debug) console.log('[PL-Ads] Interstitial shown');
+}
+
+/* ================================================================
+ * MODULE 8: ANCHOR (BOTTOM STICKY)
+ *
+ * Sticky banner at bottom of viewport. Triggers after gate + 50%
+ * scroll depth. User can dismiss with close button.
+ * ================================================================ */
+
+var anchorShown = false;
+
+function showAnchor() {
+	if (anchorShown || !cfg.fmtAnchor || !state.gateOpen) return;
+	anchorShown = true;
+
+	var anchor = document.createElement('div');
+	anchor.className = 'pl-ad-anchor pl-ad-active';
+
+	var closeBtn = createCloseBtn(function() {
+		anchor.classList.remove('pl-ad-active');
+		setTimeout(function() { if (anchor.parentNode) anchor.remove(); }, 300);
+	});
+	anchor.appendChild(closeBtn);
+
+	if (cfg.dummy) {
+		anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
+	} else {
+		var adDiv = document.createElement('div');
+		adDiv.id = 'pl-gpt-anchor';
+		adDiv.style.cssText = 'width:320px;height:50px';
+		anchor.appendChild(adDiv);
+
+		var slotPath = cfg.slotPrefix + cfg.slots.anchor;
+		googletag.cmd.push(function() {
+			var slot = googletag.defineSlot(slotPath, [320, 50], 'pl-gpt-anchor');
+			if (slot) {
+				slot.addService(googletag.pubads());
+				googletag.display('pl-gpt-anchor');
+			}
+		});
+	}
+
+	document.body.appendChild(anchor);
+
+	if (cfg.debug) console.log('[PL-Ads] Anchor shown');
+}
+
+/* ================================================================
+ * MODULE 9: PAUSE BANNER
+ *
+ * Centered overlay shown when user pauses scrolling for 3+ seconds
+ * past 30% scroll depth. Auto-closes after 10 seconds.
+ * ================================================================ */
+
+var pauseShown = false;
+
+function onScrollPause() {
+	if (pauseShown || !cfg.fmtPause || !state.gateOpen) return;
+	if (state.scrollPct < 30) return;
+
+	pauseShown = true;
+
+	var pause = document.createElement('div');
+	pause.className = 'pl-ad-pause pl-ad-active';
+
+	var closeBtn = createCloseBtn(function() {
+		pause.classList.remove('pl-ad-active');
+		setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
+	});
+	pause.appendChild(closeBtn);
+
+	if (cfg.dummy) {
+		pause.appendChild(createDummyBlock('Pause 300x250', 300, 250, '#fce4ec'));
+	} else {
+		var adDiv = document.createElement('div');
+		adDiv.id = 'pl-gpt-pause';
+		adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
+		pause.appendChild(adDiv);
+
+		var slotPath = cfg.slotPrefix + cfg.slots.pause;
+		googletag.cmd.push(function() {
+			var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-pause');
+			if (slot) {
+				slot.addService(googletag.pubads());
+				googletag.display('pl-gpt-pause');
+			}
+		});
+	}
+
+	document.body.appendChild(pause);
+
+	// Auto-close after 10s.
+	setTimeout(function() {
+		if (pause.parentNode) {
+			pause.classList.remove('pl-ad-active');
+			setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
+		}
+	}, 10000);
+
+	if (cfg.debug) console.log('[PL-Ads] Pause banner shown');
+}
+
+/* ================================================================
+ * MODULE 10: VIEWABILITY TRACKER
+ *
+ * IAB standard: 50% of pixels visible for 1 continuous second
+ * = 1 viewable impression. Tracks per-zone.
+ * ================================================================ */
+
+function trackViewability(zone) {
+	var data = {
+		zoneId: zone.id,
+		adSize: isMobile ? zone.sizeMobile : zone.sizeDesktop,
+		totalVisibleMs: 0,
+		viewableImpressions: 0,
+		maxRatio: 0,
+		ratioSum: 0,
+		ratioCount: 0,
+		timeToFirstView: 0,
+		firstViewRecorded: false,
+		injectedAtDepth: state.scrollPct,
+		scrollSpeedAtInjection: state.scrollSpeed,
+		visibleStart: 0,
+		isVisible: false,
+		viewableTimer: null
+	};
+	state.viewability[zone.id] = data;
+
+	if (!('IntersectionObserver' in window)) return;
+
+	var observer = new IntersectionObserver(function(entries) {
+		var entry = entries[0];
+		var ratio = entry.intersectionRatio;
+
+		data.ratioSum += ratio;
+		data.ratioCount++;
+		if (ratio > data.maxRatio) data.maxRatio = ratio;
+
+		if (ratio >= 0.5) {
+			if (!data.isVisible) {
+				data.isVisible = true;
+				data.visibleStart = Date.now();
+
+				if (!data.firstViewRecorded) {
+					data.firstViewRecorded = true;
+					data.timeToFirstView = Date.now() - state.sessionStart;
+				}
+
+				// 1-second continuous visibility = viewable impression.
+				data.viewableTimer = setTimeout(function() {
+					data.viewableImpressions++;
+				}, 1000);
+			}
+		} else {
+			if (data.isVisible) {
+				data.totalVisibleMs += Date.now() - data.visibleStart;
+				data.isVisible = false;
+				clearTimeout(data.viewableTimer);
+			}
+		}
+	}, {
+		threshold: [0, 0.25, 0.5, 0.75, 1.0]
+	});
+
+	observer.observe(zone.el);
+}
+
+/* ================================================================
+ * MODULE 11: DATA RECORDER
+ *
+ * Sends viewability session data to REST endpoint on page unload.
+ * Uses navigator.sendBeacon for reliability, XHR as fallback.
+ * ================================================================ */
+
+function buildSessionData() {
+	var zones = [];
+	var totalViewable = 0;
+
+	for (var zid in state.viewability) {
+		if (!state.viewability.hasOwnProperty(zid)) continue;
+		var d = state.viewability[zid];
+
+		// Close open visibility window.
+		if (d.isVisible) {
+			d.totalVisibleMs += Date.now() - d.visibleStart;
+			d.isVisible = false;
+			clearTimeout(d.viewableTimer);
+		}
+
+		var avgRatio = d.ratioCount > 0 ? d.ratioSum / d.ratioCount : 0;
+		totalViewable += d.viewableImpressions;
+
+		zones.push({
+			zoneId: d.zoneId,
+			adSize: d.adSize,
+			totalVisibleMs: d.totalVisibleMs,
+			viewableImpressions: d.viewableImpressions,
+			maxRatio: Math.round(d.maxRatio * 100) / 100,
+			avgRatio: Math.round(avgRatio * 100) / 100,
+			timeToFirstView: d.timeToFirstView,
+			injectedAtDepth: Math.round(d.injectedAtDepth * 10) / 10,
+			scrollSpeedAtInjection: Math.round(d.scrollSpeedAtInjection)
+		});
+	}
+
+	return {
+		session: true,
+		postId: cfg.postId,
+		postSlug: cfg.postSlug,
+		device: isMobile ? 'mobile' : 'desktop',
+		viewportW: window.innerWidth,
+		viewportH: window.innerHeight,
+		timeOnPage: Date.now() - state.sessionStart,
+		maxDepth: Math.round(state.scrollPct * 10) / 10,
+		avgScrollSpeed: Math.round(state.scrollSpeed),
+		scrollPattern: classifyPattern(),
+		totalAdsInjected: state.activeAds,
+		totalViewable: totalViewable,
+		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
+		zones: zones
+	};
+}
+
+function classifyPattern() {
+	var t = (Date.now() - state.sessionStart) / 1000;
+	if (t < 10 && state.scrollPct < 30) return 'bouncer';
+	if (state.dirChanges > 5 && t > 30) return 'reader';
+	return 'scanner';
+}
+
+function sendData() {
+	if (!cfg.record || state.activeAds === 0 || state.dataSent) return;
+	state.dataSent = true;
+
+	var payload = buildSessionData();
+	var json = JSON.stringify(payload);
+
+	if (navigator.sendBeacon) {
+		navigator.sendBeacon(cfg.recordEndpoint, new Blob([json], { type: 'application/json' }));
+	} else {
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', cfg.recordEndpoint, true);
+		xhr.setRequestHeader('Content-Type', 'application/json');
+		xhr.setRequestHeader('X-WP-Nonce', cfg.nonce);
+		xhr.send(json);
+	}
+
+	if (cfg.debug) console.log('[PL-Ads] Data sent', payload);
+}
+
+/* ================================================================
+ * MODULE 12: DEBUG OVERLAY
+ *
+ * Shows zone ID, size, and score as a small label on each ad.
+ * Logs periodic state dumps to console.
+ * ================================================================ */
+
+function addDebugInfo(el, zoneId, size, score) {
+	var info = document.createElement('span');
+	info.className = 'pl-ad-debug';
+	info.textContent = zoneId + ' | ' + size + ' | s:' + score;
+	el.appendChild(info);
+}
+
+function debugLog() {
+	console.log('[PL-Ads]', {
+		gate: state.gateOpen,
+		ads: state.activeAds + '/' + cfg.maxAds,
+		zones: state.zones.length,
+		scroll: Math.round(state.scrollPct) + '%',
+		time: Math.round(state.timeOnPage) + 's',
+		dirs: state.dirChanges,
+		speed: Math.round(state.scrollSpeed)
+	});
+}
+
+/* ================================================================
+ * SHARED HELPERS
+ * ================================================================ */
+
+function createCloseBtn(onClick) {
+	var btn = document.createElement('button');
+	btn.className = 'pl-ad-close';
+	btn.textContent = '\u00d7';
+	btn.setAttribute('aria-label', 'Close ad');
+	btn.addEventListener('click', onClick);
+	return btn;
+}
+
+function createDummyBlock(label, w, h, bg) {
+	var el = document.createElement('div');
+	el.style.cssText = 'width:' + w + 'px;height:' + h + 'px;max-width:100%;background:' + bg + ';border:2px dashed rgba(0,0,0,.12);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:12px;font-weight:700;color:rgba(0,0,0,.35)';
+	el.textContent = label;
+	return el;
+}
+
+/* ================================================================
+ * INIT — WIRE EVERYTHING UP
+ * ================================================================ */
+
+function init() {
+	discoverZones();
+
+	if (state.zones.length === 0 && !cfg.fmtInterstitial && !cfg.fmtAnchor && !cfg.fmtPause) {
+		if (cfg.debug) console.log('[PL-Ads] No zones or overlay formats — exiting');
+		return;
+	}
+
+	// Start engagement gate monitoring.
+	window.addEventListener('scroll', onScroll, { passive: true });
+	startTimeTracking();
+
+	// Observe zones — they activate when gate opens + they enter viewport.
+	initZoneObserver();
+
+	// Send data on page unload.
+	document.addEventListener('visibilitychange', function() {
+		if (document.visibilityState === 'hidden') sendData();
+	});
+	window.addEventListener('pagehide', sendData);
+
+	// Periodic check for overlay formats after gate opens.
+	var fmtInterval = setInterval(function() {
+		if (!state.gateOpen) return;
+
+		// Anchor: after gate + 50% scroll depth.
+		if (!anchorShown && state.scrollPct >= 50) {
+			showAnchor();
+		}
+
+		// Interstitial: after 2+ display ads have loaded.
+		if (!interstitialShown && state.activeAds >= 2) {
+			showInterstitial();
+		}
+
+		// Stop polling once all overlay formats are shown or disabled.
+		var allDone = (anchorShown || !cfg.fmtAnchor) &&
+		              (interstitialShown || !cfg.fmtInterstitial) &&
+		              (pauseShown || !cfg.fmtPause);
+		if (allDone) {
+			clearInterval(fmtInterval);
+		}
+	}, 2000);
+
+	if (cfg.debug) {
+		console.log('[PL-Ads] Init', {
+			dummy: cfg.dummy,
+			maxAds: cfg.maxAds,
+			gate: cfg.gateScrollPct + '% / ' + cfg.gateTimeSec + 's / ' + cfg.gateDirChanges + 'dirs',
+			zones: state.zones.length,
+			device: isMobile ? 'mobile' : 'desktop'
+		});
+		setInterval(debugLog, 5000);
+	}
+}
+
+// Boot: wait for DOM ready + requestIdleCallback (zero TBT).
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', function() {
+		if ('requestIdleCallback' in window) {
+			requestIdleCallback(init);
+		} else {
+			setTimeout(init, 200);
+		}
+	});
+} else {
+	if ('requestIdleCallback' in window) {
+		requestIdleCallback(init);
+	} else {
+		setTimeout(init, 200);
+	}
+}
+
 })();
