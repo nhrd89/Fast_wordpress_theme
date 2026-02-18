@@ -14,6 +14,89 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/* ================================================================
+ * AJAX: Clear All Ad Data
+ * ================================================================ */
+
+function pl_ad_clear_all_data() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( 'Unauthorized', 403 );
+	}
+	check_ajax_referer( 'pl_ad_clear_nonce', 'nonce' );
+
+	// 1. Delete stored options.
+	delete_option( 'pl_ad_analytics' );
+	delete_option( 'pl_ad_snapshots' );
+	delete_option( 'pl_ad_daily_snapshots' );
+	delete_option( 'pl_ad_optimizer_log' );
+	delete_option( 'pl_ad_optimizer_state' );
+
+	// 2. Delete transients matching pl_ad_sessions_* and pl_ad_rate_*.
+	global $wpdb;
+	$wpdb->query(
+		"DELETE FROM {$wpdb->options}
+		 WHERE option_name LIKE '_transient_pl_ad_sessions_%'
+		    OR option_name LIKE '_transient_timeout_pl_ad_sessions_%'
+		    OR option_name LIKE '_transient_pl_ad_rate_%'
+		    OR option_name LIKE '_transient_timeout_pl_ad_rate_%'"
+	);
+
+	// 3. Delete session JSON files from wp-content/uploads/pl-ad-data/.
+	$upload_dir = wp_upload_dir();
+	$data_dir   = $upload_dir['basedir'] . '/pl-ad-data';
+	if ( is_dir( $data_dir ) ) {
+		$date_dirs = glob( $data_dir . '/*', GLOB_ONLYDIR );
+		if ( $date_dirs ) {
+			foreach ( $date_dirs as $ddir ) {
+				$files = glob( $ddir . '/*.json' );
+				if ( $files ) {
+					array_map( 'unlink', $files );
+				}
+				// Remove index.php too.
+				$idx = $ddir . '/index.php';
+				if ( file_exists( $idx ) ) {
+					unlink( $idx );
+				}
+				rmdir( $ddir );
+			}
+		}
+		// Remove .htaccess and base directory.
+		$htaccess = $data_dir . '/.htaccess';
+		if ( file_exists( $htaccess ) ) {
+			unlink( $htaccess );
+		}
+		rmdir( $data_dir );
+	}
+
+	wp_send_json_success( 'All ad data cleared.' );
+}
+add_action( 'wp_ajax_pl_ad_clear_all', 'pl_ad_clear_all_data' );
+
+/* ================================================================
+ * AJAX: Clear Optimizer Only
+ * ================================================================ */
+
+function pl_ad_clear_optimizer() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( 'Unauthorized', 403 );
+	}
+	check_ajax_referer( 'pl_ad_clear_nonce', 'nonce' );
+
+	// Reset optimizer log and snapshots only — leave analytics/session data intact.
+	delete_option( 'pl_ad_optimizer_log' );
+	delete_option( 'pl_ad_optimizer_state' );
+	delete_option( 'pl_ad_snapshots' );
+	delete_option( 'pl_ad_daily_snapshots' );
+
+	// Reset ad settings back to defaults (undo any optimizer-applied changes).
+	if ( function_exists( 'pl_ad_defaults' ) ) {
+		update_option( 'pl_ad_settings', pl_ad_defaults() );
+	}
+
+	wp_send_json_success( 'Optimizer data cleared, settings reset to defaults.' );
+}
+add_action( 'wp_ajax_pl_ad_clear_optimizer', 'pl_ad_clear_optimizer' );
+
 /**
  * Register the analytics submenu under the Ad Engine menu.
  */
@@ -202,6 +285,52 @@ function pl_ad_analytics_page() {
 	?>
 	<div class="wrap">
 		<h1>Ad Analytics</h1>
+
+		<div style="display:flex;gap:10px;margin-bottom:16px">
+			<button type="button" id="plClearAllData" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Ad Data</button>
+			<button type="button" id="plClearOptimizer" class="button">Clear Optimizer Only</button>
+		</div>
+		<div id="plClearNotice" style="display:none"></div>
+
+		<script>
+		(function(){
+			var nonce = <?php echo wp_json_encode( wp_create_nonce( 'pl_ad_clear_nonce' ) ); ?>;
+			var ajaxUrl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+
+			document.getElementById('plClearAllData').addEventListener('click', function(){
+				if (!confirm('Are you sure? This will delete ALL ad analytics data including daily snapshots, optimizer state, and session data. This cannot be undone.')) return;
+				doAjax('pl_ad_clear_all');
+			});
+
+			document.getElementById('plClearOptimizer').addEventListener('click', function(){
+				if (!confirm('This will reset the optimizer log, snapshots, and ad settings back to defaults. Analytics and session data will be preserved. Continue?')) return;
+				doAjax('pl_ad_clear_optimizer');
+			});
+
+			function doAjax(action) {
+				var fd = new FormData();
+				fd.append('action', action);
+				fd.append('nonce', nonce);
+				fetch(ajaxUrl, { method: 'POST', body: fd, credentials: 'same-origin' })
+					.then(function(r){ return r.json(); })
+					.then(function(res){
+						var el = document.getElementById('plClearNotice');
+						if (res.success) {
+							el.className = 'notice notice-success';
+							el.innerHTML = '<p>' + res.data + '</p>';
+						} else {
+							el.className = 'notice notice-error';
+							el.innerHTML = '<p>Error: ' + (res.data || 'Unknown error') + '</p>';
+						}
+						el.style.display = '';
+						setTimeout(function(){ location.reload(); }, 1200);
+					})
+					.catch(function(e){
+						alert('Request failed: ' + e.message);
+					});
+			}
+		})();
+		</script>
 
 		<form method="get" style="margin-bottom:20px">
 			<input type="hidden" name="page" value="pl-ad-analytics">
