@@ -82,18 +82,13 @@ function pl_ad_clear_optimizer() {
 	}
 	check_ajax_referer( 'pl_ad_clear_nonce', 'nonce' );
 
-	// Reset optimizer log and snapshots only — leave analytics/session data intact.
+	// Reset optimizer log and snapshots only — leave pl_ad_settings untouched.
 	delete_option( 'pl_ad_optimizer_log' );
 	delete_option( 'pl_ad_optimizer_state' );
 	delete_option( 'pl_ad_snapshots' );
 	delete_option( 'pl_ad_daily_snapshots' );
 
-	// Reset ad settings back to defaults (undo any optimizer-applied changes).
-	if ( function_exists( 'pl_ad_defaults' ) ) {
-		update_option( 'pl_ad_settings', pl_ad_defaults() );
-	}
-
-	wp_send_json_success( 'Optimizer data cleared, settings reset to defaults.' );
+	wp_send_json_success( 'Optimizer data cleared. Ad settings unchanged.' );
 }
 add_action( 'wp_ajax_pl_ad_clear_optimizer', 'pl_ad_clear_optimizer' );
 
