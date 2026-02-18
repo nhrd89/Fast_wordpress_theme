@@ -77,6 +77,20 @@ function checkGate() {
 	return false;
 }
 
+// Read from engagement.js bridge when available (richer data),
+// fall back to own tracking on non-listicle pages.
+function readBridge() {
+	var b = window.__plEngagement;
+	if (b) {
+		state.scrollPct = b.scrollDepth;
+		state.timeOnPage = b.timeOnPage;
+		state.dirChanges = b.directionChanges;
+		state.scrollSpeed = b.scrollSpeed;
+		return true;
+	}
+	return false;
+}
+
 // Scroll listener — throttled at 200ms.
 var scrollTimer = null;
 
@@ -85,28 +99,32 @@ function onScroll() {
 	scrollTimer = setTimeout(function() {
 		scrollTimer = null;
 
-		var y = window.scrollY || window.pageYOffset;
-		var docHeight = document.documentElement.scrollHeight - window.innerHeight;
-		var pct = docHeight > 0 ? (y / docHeight) * 100 : 0;
-		state.scrollPct = pct;
+		// Prefer engagement.js bridge data when available.
+		if (!readBridge()) {
+			// Fallback: own tracking for non-listicle pages.
+			var y = window.scrollY || window.pageYOffset;
+			var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+			var pct = docHeight > 0 ? (y / docHeight) * 100 : 0;
+			state.scrollPct = pct;
 
-		// Direction change detection.
-		var dir = y > state.lastScrollY ? 1 : (y < state.lastScrollY ? -1 : 0);
-		if (dir !== 0 && dir !== state.lastScrollDir) {
-			if (state.lastScrollDir !== 0) {
-				state.dirChanges++;
+			// Direction change detection.
+			var dir = y > state.lastScrollY ? 1 : (y < state.lastScrollY ? -1 : 0);
+			if (dir !== 0 && dir !== state.lastScrollDir) {
+				if (state.lastScrollDir !== 0) {
+					state.dirChanges++;
+				}
+				state.lastScrollDir = dir;
 			}
-			state.lastScrollDir = dir;
+
+			// Scroll speed (px/s based on 200ms tick).
+			state.scrollSpeed = Math.abs(y - state.lastScrollY) / 0.2;
+			state.lastScrollY = y;
 		}
 
-		// Scroll speed (px/s based on 200ms tick).
-		state.scrollSpeed = Math.abs(y - state.lastScrollY) / 0.2;
-		state.lastScrollY = y;
-
 		// Check gate thresholds.
-		if (!gateChecks.scroll && pct >= cfg.gateScrollPct) {
+		if (!gateChecks.scroll && state.scrollPct >= cfg.gateScrollPct) {
 			gateChecks.scroll = true;
-			if (cfg.debug) console.log('[PL-Ads] Gate: scroll ' + Math.round(pct) + '%');
+			if (cfg.debug) console.log('[PL-Ads] Gate: scroll ' + Math.round(state.scrollPct) + '%');
 		}
 		if (!gateChecks.direction && state.dirChanges >= cfg.gateDirChanges) {
 			gateChecks.direction = true;
@@ -114,6 +132,11 @@ function onScroll() {
 		}
 
 		checkGate();
+
+		// Re-check zones on every scroll when gate is open.
+		if (state.gateOpen) {
+			activateVisibleZones();
+		}
 
 		// Pause detection for pause banner.
 		clearTimeout(state.pauseTimer);
@@ -124,7 +147,10 @@ function onScroll() {
 // Time tracking — 1s interval until threshold met.
 function startTimeTracking() {
 	var interval = setInterval(function() {
-		state.timeOnPage = (Date.now() - state.sessionStart) / 1000;
+		// Read from bridge if available, else compute own time.
+		if (!readBridge()) {
+			state.timeOnPage = (Date.now() - state.sessionStart) / 1000;
+		}
 		if (!gateChecks.time && state.timeOnPage >= cfg.gateTimeSec) {
 			gateChecks.time = true;
 			if (cfg.debug) console.log('[PL-Ads] Gate: time ' + Math.round(state.timeOnPage) + 's');
@@ -664,6 +690,7 @@ function buildSessionData() {
 		var avgRatio = d.ratioCount > 0 ? d.ratioSum / d.ratioCount : 0;
 		totalViewable += d.viewableImpressions;
 
+		// Keys are camelCase — ad-data-recorder.php converts to snake_case.
 		zones.push({
 			zoneId: d.zoneId,
 			adSize: d.adSize,
@@ -677,6 +704,9 @@ function buildSessionData() {
 		});
 	}
 
+	var b = window.__plEngagement;
+
+	// Keys are camelCase — ad-data-recorder.php converts to snake_case for storage.
 	return {
 		session: true,
 		postId: cfg.postId,
@@ -688,6 +718,8 @@ function buildSessionData() {
 		maxDepth: Math.round(state.scrollPct * 10) / 10,
 		avgScrollSpeed: Math.round(state.scrollSpeed),
 		scrollPattern: classifyPattern(),
+		itemsSeen: b ? b.itemsSeen : 0,
+		totalItems: b ? b.totalItems : 0,
 		totalAdsInjected: state.activeAds,
 		totalViewable: totalViewable,
 		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
@@ -696,6 +728,9 @@ function buildSessionData() {
 }
 
 function classifyPattern() {
+	// Prefer engagement.js bridge classification when available.
+	var b = window.__plEngagement;
+	if (b && b.pattern) return b.pattern;
 	var t = (Date.now() - state.sessionStart) / 1000;
 	if (t < 10 && state.scrollPct < 30) return 'bouncer';
 	if (state.dirChanges > 5 && t > 30) return 'reader';

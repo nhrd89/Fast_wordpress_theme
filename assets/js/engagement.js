@@ -571,6 +571,53 @@ function initSkeletons() {
 	}
 }
 
+// === Engagement Bridge ===
+// Exposes engagement state for smart-ads.js to read.
+var dirChanges = 0;
+var lastBridgeDir = 0;
+var lastBridgeY = 0;
+var bridgeSpeed = 0;
+var bridgeLastTime = 0;
+
+function updateBridge() {
+	var y = window.scrollY || window.pageYOffset;
+	var docH = document.documentElement.scrollHeight - window.innerHeight;
+	var depth = docH > 0 ? (y / docH) * 100 : 0;
+
+	// Direction changes
+	var dir = y > lastBridgeY ? 1 : (y < lastBridgeY ? -1 : 0);
+	if (dir !== 0 && dir !== lastBridgeDir) {
+		if (lastBridgeDir !== 0) dirChanges++;
+		lastBridgeDir = dir;
+	}
+
+	// Speed (px/s)
+	var now = Date.now();
+	var dt = now - bridgeLastTime;
+	if (dt > 0 && dt < 500) {
+		bridgeSpeed = Math.abs(y - lastBridgeY) / (dt / 1000);
+	}
+	lastBridgeY = y;
+	bridgeLastTime = now;
+
+	// Pattern classification
+	var elapsed = (now - pageStart) / 1000;
+	var pattern = 'scanner';
+	if (elapsed < 10 && depth < 30) pattern = 'bouncer';
+	else if (dirChanges > 5 && elapsed > 30) pattern = 'reader';
+
+	window.__plEngagement = {
+		scrollDepth: Math.round(depth * 10) / 10,
+		timeOnPage: Math.round(elapsed * 10) / 10,
+		directionChanges: dirChanges,
+		scrollSpeed: Math.round(bridgeSpeed),
+		pattern: pattern,
+		itemsSeen: seenItems.size,
+		totalItems: TOTAL
+	};
+}
+var pageStart = Date.now();
+
 // === Init ===
 function init() {
 	// Populate header stats total (mobile)
@@ -584,7 +631,13 @@ function init() {
 	initObserver();
 	checkStreak();
 
-	window.addEventListener('scroll', onScroll, { passive: true });
+	window.addEventListener('scroll', function() {
+		onScroll();
+		updateBridge();
+	}, { passive: true });
+
+	// Initialize bridge immediately
+	updateBridge();
 
 	// Scroll gate for skeletons
 	initScrollGate();

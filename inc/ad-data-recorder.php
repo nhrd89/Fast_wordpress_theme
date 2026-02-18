@@ -81,6 +81,8 @@ function pinlightning_record_ad_data($request) {
         'max_scroll_depth_pct' => floatval($body['maxDepth'] ?? 0),
         'avg_scroll_speed' => floatval($body['avgScrollSpeed'] ?? 0),
         'scroll_pattern' => sanitize_text_field($body['scrollPattern'] ?? ''), // 'reader', 'scanner', 'bouncer'
+        'items_seen' => intval($body['itemsSeen'] ?? 0),
+        'total_items' => intval($body['totalItems'] ?? 0),
         'total_ads_injected' => intval($body['totalAdsInjected'] ?? 0),
         'total_viewable' => intval($body['totalViewable'] ?? 0),
         'viewability_rate' => floatval($body['viewabilityRate'] ?? 0),
