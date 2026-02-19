@@ -783,10 +783,12 @@ function pinlightning_ads_enqueue() {
 		),
 
 		// Context.
-		'recordEndpoint'  => rest_url( 'pinlightning/v1/ad-data' ),
-		'nonce'           => wp_create_nonce( 'wp_rest' ),
-		'postId'          => get_the_ID(),
-		'postSlug'        => get_post_field( 'post_name', get_the_ID() ),
+		'recordEndpoint'    => rest_url( 'pinlightning/v1/ad-data' ),
+		'heartbeatEndpoint' => rest_url( 'pl-ads/v1/heartbeat' ),
+		'liveMonitor'       => (bool) get_transient( 'pl_live_monitor_active' ),
+		'nonce'             => wp_create_nonce( 'wp_rest' ),
+		'postId'            => get_the_ID(),
+		'postSlug'          => get_post_field( 'post_name', get_the_ID() ),
 	) );
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_ads_enqueue', 20 );

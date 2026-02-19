@@ -811,6 +811,102 @@ function createDummyBlock(label, w, h, bg) {
 }
 
 /* ================================================================
+ * MODULE 13: LIVE MONITOR HEARTBEAT
+ *
+ * Sends lightweight heartbeat to admin Live Sessions dashboard.
+ * ZERO frontend impact: only activates when plAds.liveMonitor is true,
+ * uses requestIdleCallback + sendBeacon, silently stops on failure.
+ * ================================================================ */
+
+var sessionId = Math.random().toString(36).substring(2, 10) + Date.now().toString(36).slice(-4);
+var heartbeatActive = false;
+var heartbeatFails = 0;
+
+function startHeartbeat() {
+	if (!cfg.liveMonitor || heartbeatActive) return;
+	heartbeatActive = true;
+
+	setInterval(function() {
+		if (heartbeatFails >= 3) return; // Stop after 3 failures.
+		if ('requestIdleCallback' in window) {
+			requestIdleCallback(sendHeartbeat, { timeout: 2000 });
+		} else {
+			sendHeartbeat();
+		}
+	}, 3000);
+}
+
+function sendHeartbeat() {
+	var zoneDetail = [];
+	for (var zid in state.viewability) {
+		if (!state.viewability.hasOwnProperty(zid)) continue;
+		var d = state.viewability[zid];
+		zoneDetail.push({
+			zoneId: d.zoneId,
+			adSize: d.adSize,
+			injectedAtDepth: d.injectedAtDepth,
+			scrollSpeedAtInjection: d.scrollSpeedAtInjection,
+			totalVisibleMs: d.totalVisibleMs + (d.isVisible ? Date.now() - d.visibleStart : 0),
+			viewableImpressions: d.viewableImpressions,
+			maxRatio: d.maxRatio,
+			timeToFirstView: d.timeToFirstView
+		});
+	}
+
+	var totalViewable = 0;
+	for (var i = 0; i < zoneDetail.length; i++) {
+		totalViewable += zoneDetail[i].viewableImpressions;
+	}
+
+	var activeZoneIds = [];
+	for (var j = 0; j < state.zones.length; j++) {
+		if (state.zones[j].activated && state.zones[j].injected) {
+			activeZoneIds.push(state.zones[j].id);
+		}
+	}
+
+	var b = window.__plEngagement;
+	var payload = {
+		sid: sessionId,
+		postId: cfg.postId,
+		postSlug: cfg.postSlug,
+		postTitle: document.title.split(' - ')[0].split(' | ')[0].substring(0, 80),
+		device: isMobile ? 'mobile' : 'desktop',
+		viewportW: window.innerWidth,
+		viewportH: window.innerHeight,
+		timeOnPage: Math.round((Date.now() - state.sessionStart) / 1000),
+		scrollPct: Math.round(state.scrollPct * 10) / 10,
+		scrollSpeed: Math.round(state.scrollSpeed),
+		scrollPattern: classifyPattern(),
+		gateScroll: gateChecks.scroll,
+		gateTime: gateChecks.time,
+		gateDirection: gateChecks.direction,
+		gateOpen: state.gateOpen,
+		activeAds: state.activeAds,
+		viewableAds: totalViewable,
+		zonesActive: activeZoneIds.join(','),
+		referrer: document.referrer || '',
+		language: (navigator.language || '').substring(0, 5),
+		zoneDetail: zoneDetail
+	};
+
+	var json = JSON.stringify(payload);
+	var url = cfg.heartbeatEndpoint;
+
+	if (navigator.sendBeacon) {
+		var ok = navigator.sendBeacon(url, new Blob([json], { type: 'application/json' }));
+		if (!ok) heartbeatFails++;
+		else heartbeatFails = 0;
+	} else {
+		try {
+			fetch(url, { method: 'POST', body: json, headers: { 'Content-Type': 'application/json' }, keepalive: true })
+				.then(function() { heartbeatFails = 0; })
+				.catch(function() { heartbeatFails++; });
+		} catch(e) { heartbeatFails++; }
+	}
+}
+
+/* ================================================================
  * INIT — WIRE EVERYTHING UP
  * ================================================================ */
 
@@ -834,6 +930,9 @@ function init() {
 		if (document.visibilityState === 'hidden') sendData();
 	});
 	window.addEventListener('pagehide', sendData);
+
+	// Live monitor heartbeat (only if admin is watching).
+	startHeartbeat();
 
 	// Periodic check for overlay formats after gate opens.
 	var fmtInterval = setInterval(function() {
