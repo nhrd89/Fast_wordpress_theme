@@ -176,8 +176,13 @@ function pl_live_sessions_archive_stale( $stale_sessions ) {
 		if ( ! is_array( $data ) ) {
 			continue;
 		}
+		// If ad-track already archived this session with richer data, don't overwrite.
+		if ( isset( $recent[ $sid ] ) && ! empty( $recent[ $sid ]['source'] ) && strpos( $recent[ $sid ]['source'], 'ad-track' ) !== false ) {
+			continue;
+		}
 		$data['status']   = 'ended';
 		$data['ended_at'] = time();
+		$data['source']   = 'heartbeat';
 		$recent[ $sid ]   = $data;
 	}
 

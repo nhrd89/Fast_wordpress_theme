@@ -78,6 +78,7 @@ function pinlightning_record_ad_data($request) {
     $session = array(
         'timestamp' => current_time('mysql'),
         'unix' => time(),
+        'session_id' => sanitize_text_field($body['sid'] ?? ''),
         'post_id' => intval($body['postId'] ?? 0),
         'post_slug' => sanitize_text_field($body['postSlug'] ?? ''),
         'device' => sanitize_text_field($body['device'] ?? 'unknown'),
@@ -139,8 +140,28 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $recent = array();
     }
 
-    // Build a Live Sessions-compatible entry from ad session data.
-    $sid = 'ad_' . substr( md5( $session['unix'] . $session['post_slug'] . wp_rand() ), 0, 12 );
+    // Use the same session ID as the heartbeat module to avoid duplicates.
+    // If the heartbeat already archived this session, we UPDATE it with
+    // richer ad-track data instead of creating a second entry.
+    $js_sid = ! empty( $session['session_id'] ) ? $session['session_id'] : '';
+
+    if ( $js_sid && isset( $recent[ $js_sid ] ) ) {
+        // Heartbeat entry exists — merge richer ad-track data into it.
+        $existing = $recent[ $js_sid ];
+        $existing['active_ads']     = $session['total_ads_injected'];
+        $existing['viewable_ads']   = $session['total_viewable'];
+        $existing['zones_active']   = implode( ',', array_column( $session['zones'], 'zone_id' ) );
+        $existing['events']         = $session['zones'];
+        $existing['scroll_pattern'] = $session['scroll_pattern'];
+        $existing['scroll_pct']     = max( $existing['scroll_pct'] ?? 0, $session['max_scroll_depth_pct'] );
+        $existing['time_on_page_s'] = max( $existing['time_on_page_s'] ?? 0, round( $session['time_on_page_ms'] / 1000, 1 ) );
+        $existing['source']         = 'heartbeat+ad-track';
+        $recent[ $js_sid ]          = $existing;
+        goto prune_and_save;
+    }
+
+    // No heartbeat entry — create a new one using the JS session ID when available.
+    $sid = $js_sid ?: 'ad_' . substr( md5( $session['unix'] . $session['post_slug'] . wp_rand() ), 0, 12 );
 
     $entry = array(
         'sid'            => $sid,
@@ -172,6 +193,7 @@ function pinlightning_archive_ad_session_to_live( $session ) {
 
     $recent[ $sid ] = $entry;
 
+    prune_and_save:
     // Prune older than 2 hours, cap at 300.
     $cutoff = time() - 7200;
     $recent = array_filter( $recent, function( $s ) use ( $cutoff ) {

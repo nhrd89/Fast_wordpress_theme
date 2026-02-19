@@ -160,6 +160,7 @@ function startTimeTracking() {
 			gateChecks.time = true;
 			if (cfg.debug) console.log('[PL-Ads] Gate: time ' + Math.round(state.timeOnPage) + 's');
 			checkGate();
+			showAnchor(); // Anchor fires on time gate alone — no scroll required.
 			clearInterval(interval);
 		}
 	}, 1000);
@@ -505,15 +506,16 @@ function showInterstitial() {
 /* ================================================================
  * MODULE 8: ANCHOR (BOTTOM STICKY)
  *
- * #1 revenue format ($18.52/wk). Fires immediately when engagement
- * gate opens — no additional scroll requirement. Reuses shared GPT
- * instance from Module 3 via loadGPT().
+ * #1 revenue format ($18.52/wk). Fires on TIME gate only — no scroll
+ * required. Users on page 5+ seconds without scrolling are real humans
+ * (e.g., Pinterest users reading the hero area). Anchor at viewport
+ * bottom generates revenue from these sessions.
  * ================================================================ */
 
 var anchorShown = false;
 
 function showAnchor() {
-	if (anchorShown || !cfg.fmtAnchor || !state.gateOpen) return;
+	if (anchorShown || !cfg.fmtAnchor || !gateChecks.time) return;
 	anchorShown = true;
 
 	// Ensure shared GPT instance is loaded before rendering.
@@ -718,6 +720,7 @@ function buildSessionData() {
 	// Keys are camelCase — ad-data-recorder.php converts to snake_case for storage.
 	return {
 		session: true,
+		sid: sessionId,
 		postId: cfg.postId,
 		postSlug: cfg.postSlug,
 		device: isMobile ? 'mobile' : 'desktop',

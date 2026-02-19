@@ -40,7 +40,7 @@ function pl_ad_defaults() {
 		// Density Controls.
 		'max_display_ads'       => 4,
 		'min_spacing_px'        => 800,
-		'min_paragraphs_before' => 3,
+		'min_paragraphs_before' => 2,
 		'min_gap_paragraphs'    => 3,
 
 		// Device Controls.
