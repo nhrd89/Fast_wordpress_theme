@@ -10,7 +10,7 @@
  * - Server: stores each heartbeat's full payload in the session index transient
  *   (keyed by sid). This avoids the race condition where a short-TTL per-session
  *   transient expires before stale detection can archive it.
- * - When a session goes stale (>30s no heartbeat), its final state is moved to
+ * - When a session goes stale (>60s no heartbeat), its final state is moved to
  *   pl_live_recent_sessions (2-hour TTL) for post-session debugging.
  * - Admin: JS polls GET /pl-ads/v1/live-sessions every 5s to refresh both tables
  *
@@ -121,8 +121,8 @@ function pl_live_sessions_heartbeat( $request ) {
 	}
 	$index[ $sid ] = $session;
 
-	// Prune stale entries from index (no heartbeat for >30s) — move to recent.
-	$cutoff = time() - 30;
+	// Prune stale entries from index (no heartbeat for >60s) — move to recent.
+	$cutoff = time() - 60;
 	$stale  = array();
 	foreach ( $index as $s_id => $s_data ) {
 		if ( ! is_array( $s_data ) ) {
@@ -196,7 +196,7 @@ function pl_live_sessions_get( $request ) {
 	$active = array();
 	if ( is_array( $index ) ) {
 		// Check for stale entries and archive them now (in case heartbeat hasn't run recently).
-		$cutoff      = $now - 30;
+		$cutoff      = $now - 60;
 		$stale       = array();
 		$clean_index = array();
 
