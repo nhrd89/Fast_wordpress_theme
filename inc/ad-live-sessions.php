@@ -289,17 +289,16 @@ function pl_live_sessions_page() {
 	<div class="wrap">
 		<h1>Live Sessions</h1>
 
+		<p id="plLiveStatus" style="display:flex;align-items:center;gap:6px;font-size:13px;color:#646970;margin:0 0 10px">
+			<span id="plLiveDot" style="width:8px;height:8px;border-radius:50%;background:#00a32a;display:inline-block;animation:plPulse 2s infinite"></span>
+			Monitoring &mdash;
+			<strong>Active: <span id="plActiveCount">0</span></strong>
+			<span style="color:#c3c4c7">|</span>
+			<strong>Recent: <span id="plRecentCount">0</span></strong>
+		</p>
 		<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
-			<span id="plLiveStatus" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#646970">
-				<span id="plLiveDot" style="width:8px;height:8px;border-radius:50%;background:#00a32a;display:inline-block;animation:plPulse 2s infinite"></span>
-				Monitoring &mdash;
-				<strong>Active: <span id="plActiveCount">0</span></strong>
-				<span style="color:#c3c4c7">|</span>
-				<strong>Recent: <span id="plRecentCount">0</span></strong>
-			</span>
-			<span style="flex:1"></span>
-			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>
 			<button type="button" id="plClearLiveSessions" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Data</button>
+			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>
 		</div>
 		<div id="plClearNotice" style="display:none"></div>
 

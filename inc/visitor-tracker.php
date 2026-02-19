@@ -46,12 +46,16 @@ add_action('rest_api_init', function() {
 });
 
 function plt_realtime_data() {
-    $now = current_time('timestamp');
+    // CRITICAL: use time() (UTC), NOT current_time('timestamp') (local).
+    // Sessions store 'unix' => time() (UTC). Comparing UTC timestamps against
+    // local-time cutoffs causes the count to drop to 0 on any site with
+    // a timezone ahead of UTC.
+    $now = time();
     $cutoff_5min = $now - 300;
     $cutoff_1min = $now - 60;
     $cutoff_30min = $now - 1800;
 
-    $today_start = strtotime('today', $now);
+    $today_start = strtotime('today midnight');
     $sessions = plt_get_sessions_in_range($today_start, $now);
 
     $active_5min = [];
@@ -112,7 +116,7 @@ function plt_realtime_data() {
         'total_sessions_5min' => $total_5min,
         'total_sessions_1min' => $total_1min,
         'visitors' => array_reverse($active_5min),
-        'timestamp' => date('H:i:s', $now),
+        'timestamp' => current_time('H:i:s'), // Display local time for admin.
     ];
 }
 
