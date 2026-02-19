@@ -7,9 +7,11 @@
  *
  * Architecture:
  * - Browser: smart-ads.js heartbeat module POSTs to /pl-ads/v1/heartbeat every 3s
- * - Server: stores each heartbeat as a transient with 30s TTL (auto-cleanup)
+ * - Server: stores each heartbeat's full payload in the session index transient
+ *   (keyed by sid). This avoids the race condition where a short-TTL per-session
+ *   transient expires before stale detection can archive it.
  * - When a session goes stale (>30s no heartbeat), its final state is moved to
- *   pl_live_recent_sessions (30-minute TTL) for post-session debugging.
+ *   pl_live_recent_sessions (2-hour TTL) for post-session debugging.
  * - Admin: JS polls GET /pl-ads/v1/live-sessions every 5s to refresh both tables
  *
  * @package PinLightning
@@ -112,22 +114,24 @@ function pl_live_sessions_heartbeat( $request ) {
 		}
 	}
 
-	// Store with 30s TTL. Also add to the session index.
-	set_transient( 'pl_live_sess_' . $sid, $session, 30 );
-
-	// Maintain an index of active session IDs (120s TTL for the index).
+	// Store full payload in the index (not a separate transient — avoids TTL race).
 	$index = get_transient( 'pl_live_sess_index' );
 	if ( ! is_array( $index ) ) {
 		$index = array();
 	}
-	$index[ $sid ] = time();
+	$index[ $sid ] = $session;
 
-	// Prune stale entries from index (older than 60s) — move them to recent.
-	$cutoff = time() - 60;
+	// Prune stale entries from index (no heartbeat for >30s) — move to recent.
+	$cutoff = time() - 30;
 	$stale  = array();
-	foreach ( $index as $s_id => $s_ts ) {
-		if ( $s_ts < $cutoff ) {
-			$stale[ $s_id ] = $s_ts;
+	foreach ( $index as $s_id => $s_data ) {
+		if ( ! is_array( $s_data ) ) {
+			// Legacy format (just timestamp) — remove.
+			unset( $index[ $s_id ] );
+			continue;
+		}
+		if ( ( $s_data['ts'] ?? 0 ) < $cutoff && $s_id !== $sid ) {
+			$stale[ $s_id ] = $s_data;
 		}
 	}
 
@@ -136,46 +140,46 @@ function pl_live_sessions_heartbeat( $request ) {
 		$index = array_diff_key( $index, $stale );
 	}
 
-	set_transient( 'pl_live_sess_index', $index, 120 );
+	set_transient( 'pl_live_sess_index', $index, 300 );
 
 	return new WP_REST_Response( array( 'ok' => true ), 200 );
 }
 
 /**
  * Move stale sessions (final heartbeat data) to the recent sessions store.
+ *
+ * @param array $stale_sessions Associative array: sid => full session payload.
  */
-function pl_live_sessions_archive_stale( $stale_sids ) {
+function pl_live_sessions_archive_stale( $stale_sessions ) {
 	$recent = get_transient( 'pl_live_recent_sessions' );
 	if ( ! is_array( $recent ) ) {
 		$recent = array();
 	}
 
-	foreach ( $stale_sids as $sid => $ts ) {
-		// Grab the final heartbeat data (may still be in transient briefly).
-		$data = get_transient( 'pl_live_sess_' . $sid );
-		if ( $data ) {
-			$data['status']   = 'ended';
-			$data['ended_at'] = time();
-			$recent[ $sid ]   = $data;
-			delete_transient( 'pl_live_sess_' . $sid );
+	foreach ( $stale_sessions as $sid => $data ) {
+		if ( ! is_array( $data ) ) {
+			continue;
 		}
+		$data['status']   = 'ended';
+		$data['ended_at'] = time();
+		$recent[ $sid ]   = $data;
 	}
 
-	// Prune recent sessions older than 30 minutes, cap at 100 entries.
-	$thirty_min_ago = time() - 1800;
-	$recent = array_filter( $recent, function( $s ) use ( $thirty_min_ago ) {
-		return ( $s['ended_at'] ?? $s['ts'] ?? 0 ) >= $thirty_min_ago;
+	// Prune recent sessions older than 2 hours, cap at 300 entries.
+	$two_hours_ago = time() - 7200;
+	$recent = array_filter( $recent, function( $s ) use ( $two_hours_ago ) {
+		return ( $s['ended_at'] ?? $s['ts'] ?? 0 ) >= $two_hours_ago;
 	} );
 
-	// Keep most recent 100.
-	if ( count( $recent ) > 100 ) {
+	// Keep most recent 300.
+	if ( count( $recent ) > 300 ) {
 		uasort( $recent, function( $a, $b ) {
 			return ( $b['ended_at'] ?? $b['ts'] ) - ( $a['ended_at'] ?? $a['ts'] );
 		} );
-		$recent = array_slice( $recent, 0, 100, true );
+		$recent = array_slice( $recent, 0, 300, true );
 	}
 
-	set_transient( 'pl_live_recent_sessions', $recent, 1800 );
+	set_transient( 'pl_live_recent_sessions', $recent, 7200 );
 }
 
 /**
@@ -191,31 +195,33 @@ function pl_live_sessions_get( $request ) {
 	// -- Active sessions --
 	$active = array();
 	if ( is_array( $index ) ) {
-		// Check for stale entries and archive them now (in case heartbeat hasn't run).
-		$cutoff      = $now - 60;
+		// Check for stale entries and archive them now (in case heartbeat hasn't run recently).
+		$cutoff      = $now - 30;
 		$stale       = array();
 		$clean_index = array();
 
-		foreach ( $index as $sid => $ts ) {
-			if ( $ts < $cutoff ) {
-				$stale[ $sid ] = $ts;
+		foreach ( $index as $sid => $s_data ) {
+			if ( ! is_array( $s_data ) ) {
+				// Legacy format (just timestamp) — discard.
+				continue;
+			}
+			if ( ( $s_data['ts'] ?? 0 ) < $cutoff ) {
+				$stale[ $sid ] = $s_data;
 			} else {
-				$clean_index[ $sid ] = $ts;
+				$clean_index[ $sid ] = $s_data;
 			}
 		}
 
 		if ( ! empty( $stale ) ) {
 			pl_live_sessions_archive_stale( $stale );
-			set_transient( 'pl_live_sess_index', $clean_index, 120 );
+			set_transient( 'pl_live_sess_index', $clean_index, 300 );
 		}
 
-		foreach ( $clean_index as $sid => $ts ) {
-			$data = get_transient( 'pl_live_sess_' . $sid );
-			if ( $data ) {
-				$data['age_s']  = $now - $data['ts'];
-				$data['status'] = 'active';
-				$active[]       = $data;
-			}
+		// Read active sessions directly from index (full payloads stored there).
+		foreach ( $clean_index as $sid => $data ) {
+			$data['age_s']  = $now - $data['ts'];
+			$data['status'] = 'active';
+			$active[]       = $data;
 		}
 
 		// Sort active by most recent heartbeat.
@@ -333,7 +339,7 @@ function pl_live_sessions_page() {
 
 		<!-- RECENT SESSIONS -->
 		<div class="pl-section-recent" style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;overflow-x:auto">
-			<div class="pl-section-header">Recent Sessions (Last 30 min)</div>
+			<div class="pl-section-header">Recent Sessions (Last 2 Hours)</div>
 			<table class="pl-sess-table">
 				<thead>
 					<tr>
