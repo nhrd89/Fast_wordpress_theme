@@ -92,6 +92,69 @@ function pl_ad_clear_optimizer() {
 }
 add_action( 'wp_ajax_pl_ad_clear_optimizer', 'pl_ad_clear_optimizer' );
 
+/* ================================================================
+ * ADMIN_INIT: Export handlers (send raw file, not JSON)
+ * ================================================================ */
+
+function pl_ad_export_handler() {
+	if ( ! isset( $_GET['pl_ad_export'] ) ) {
+		return;
+	}
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'Unauthorized' );
+	}
+	if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'pl_ad_export_nonce' ) ) {
+		wp_die( 'Invalid nonce' );
+	}
+
+	$type     = sanitize_key( $_GET['pl_ad_export'] );
+	$date_str = gmdate( 'Y-m-d' );
+
+	if ( 'settings' === $type ) {
+		$payload = array(
+			'_meta' => array(
+				'export_type'   => 'settings_only',
+				'site_url'      => site_url(),
+				'export_date'   => $date_str,
+				'theme_version' => defined( 'PINLIGHTNING_VERSION' ) ? PINLIGHTNING_VERSION : '1.0.0',
+			),
+			'pl_ad_settings' => get_option( 'pl_ad_settings', array() ),
+			'pl_ad_codes'    => get_option( 'pl_ad_codes', array() ),
+		);
+		$filename = 'pl-ad-settings-' . $date_str . '.json';
+	} else {
+		// Full export.
+		$sessions = pl_ad_analytics_load_sessions( 1 );
+		$computed = pl_ad_analytics_compute( pl_ad_analytics_load_sessions( 30 ) );
+
+		$payload = array(
+			'_meta' => array(
+				'export_type'    => 'full',
+				'site_url'       => site_url(),
+				'export_date'    => $date_str,
+				'theme_version'  => defined( 'PINLIGHTNING_VERSION' ) ? PINLIGHTNING_VERSION : '1.0.0',
+				'total_sessions' => $computed['total_sessions'],
+			),
+			'pl_ad_settings'         => get_option( 'pl_ad_settings', array() ),
+			'pl_ad_codes'            => get_option( 'pl_ad_codes', array() ),
+			'pl_ad_analytics'        => get_option( 'pl_ad_analytics', array() ),
+			'pl_ad_daily_snapshots'  => get_option( 'pl_ad_snapshots', array() ),
+			'pl_ad_optimizer_state'  => get_option( 'pl_ad_optimizer_state', array() ),
+			'pl_ad_optimizer_log'    => get_option( 'pl_ad_optimizer_log', array() ),
+			'latest_day_sessions'    => $sessions,
+			'zone_performance'       => $computed['zones'],
+		);
+		$filename = 'pl-ad-export-' . $date_str . '.json';
+	}
+
+	header( 'Content-Type: application/json' );
+	header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+	header( 'Cache-Control: no-cache, no-store' );
+	echo wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+	exit;
+}
+add_action( 'admin_init', 'pl_ad_export_handler' );
+
 /**
  * Register the analytics submenu under the Ad Engine menu.
  */
@@ -281,9 +344,12 @@ function pl_ad_analytics_page() {
 	<div class="wrap">
 		<h1>Ad Analytics</h1>
 
-		<div style="display:flex;gap:10px;margin-bottom:16px">
+		<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
 			<button type="button" id="plClearAllData" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Ad Data</button>
 			<button type="button" id="plClearOptimizer" class="button">Clear Optimizer Only</button>
+			<span style="border-left:1px solid #c3c4c7;height:24px;margin:0 4px"></span>
+			<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=pl-ad-analytics&pl_ad_export=full' ), 'pl_ad_export_nonce' ) ); ?>" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Data (JSON)</a>
+			<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=pl-ad-analytics&pl_ad_export=settings' ), 'pl_ad_export_nonce' ) ); ?>" class="button">Export Settings Only</a>
 		</div>
 		<div id="plClearNotice" style="display:none"></div>
 
@@ -298,7 +364,7 @@ function pl_ad_analytics_page() {
 			});
 
 			document.getElementById('plClearOptimizer').addEventListener('click', function(){
-				if (!confirm('This will reset the optimizer log, snapshots, and ad settings back to defaults. Analytics and session data will be preserved. Continue?')) return;
+				if (!confirm('This will reset the optimizer log and daily snapshots. Your ad settings will not be changed. Continue?')) return;
 				doAjax('pl_ad_clear_optimizer');
 			});
 
