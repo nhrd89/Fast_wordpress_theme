@@ -23,6 +23,11 @@ var cfg = window.plAds || {};
 // Bail if not configured (ad engine disabled or missing config).
 if (!cfg.networkCode && !cfg.dummy) return;
 
+// Bot detection — exit before loading any ad code.
+if (navigator.webdriver) return;
+if (/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|wget|curl|python-requests|go-http-client|java\/|libwww/i.test(navigator.userAgent)) return;
+if (window.innerWidth === 0 && window.innerHeight === 0) return;
+
 var isMobile = window.innerWidth <= 768;
 var isDesktop = !isMobile;
 

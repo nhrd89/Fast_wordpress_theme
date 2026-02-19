@@ -49,6 +49,12 @@ function pinlightning_record_ad_data($request) {
         return new WP_REST_Response(array('ok' => false), 400);
     }
 
+    // Server-side bot detection — reject bot user agents.
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    if ( preg_match( '/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|wget|curl|python-requests|go-http-client|java\/|libwww/i', $ua ) ) {
+        return new WP_REST_Response( array( 'ok' => true ), 200 );
+    }
+
     // Rate limit: max 1 write per 5 seconds per IP
     $ip_hash = md5($_SERVER['REMOTE_ADDR'] . date('YmdHi'));
     $transient = 'pl_ad_rate_' . $ip_hash;
@@ -114,7 +120,71 @@ function pinlightning_record_ad_data($request) {
     $filename = $data_dir . '/' . uniqid('s_') . '.json';
     file_put_contents($filename, json_encode($session, JSON_PRETTY_PRINT));
 
+    // Also archive to Live Sessions Recent store so every completed ad session
+    // appears on the admin dashboard (not just heartbeat-tracked ones).
+    pinlightning_archive_ad_session_to_live( $session );
+
     return new WP_REST_Response(array('ok' => true), 200);
+}
+
+/**
+ * Archive a completed ad session to the Live Sessions Recent store.
+ *
+ * This ensures every ad session appears in Recent even if the heartbeat
+ * module wasn't active (admin didn't have Live Sessions open).
+ */
+function pinlightning_archive_ad_session_to_live( $session ) {
+    $recent = get_transient( 'pl_live_recent_sessions' );
+    if ( ! is_array( $recent ) ) {
+        $recent = array();
+    }
+
+    // Build a Live Sessions-compatible entry from ad session data.
+    $sid = 'ad_' . substr( md5( $session['unix'] . $session['post_slug'] . wp_rand() ), 0, 12 );
+
+    $entry = array(
+        'sid'            => $sid,
+        'ts'             => $session['unix'],
+        'post_id'        => $session['post_id'],
+        'post_slug'      => $session['post_slug'],
+        'post_title'     => $session['post_slug'], // ad recorder doesn't have title
+        'device'         => $session['device'],
+        'viewport_w'     => $session['viewport_w'],
+        'viewport_h'     => $session['viewport_h'],
+        'time_on_page_s' => round( $session['time_on_page_ms'] / 1000, 1 ),
+        'scroll_pct'     => $session['max_scroll_depth_pct'],
+        'scroll_speed'   => intval( $session['avg_scroll_speed'] ),
+        'scroll_pattern' => $session['scroll_pattern'],
+        'gate_scroll'    => $session['gate_scroll'],
+        'gate_time'      => $session['gate_time'],
+        'gate_direction' => $session['gate_direction'],
+        'gate_open'      => $session['gate_open'],
+        'active_ads'     => $session['total_ads_injected'],
+        'viewable_ads'   => $session['total_viewable'],
+        'zones_active'   => implode( ',', array_column( $session['zones'], 'zone_id' ) ),
+        'referrer'       => '',
+        'language'       => '',
+        'events'         => $session['zones'],
+        'status'         => 'ended',
+        'ended_at'       => time(),
+        'source'         => 'ad-track', // Distinguish from heartbeat-sourced entries.
+    );
+
+    $recent[ $sid ] = $entry;
+
+    // Prune older than 2 hours, cap at 300.
+    $cutoff = time() - 7200;
+    $recent = array_filter( $recent, function( $s ) use ( $cutoff ) {
+        return ( $s['ended_at'] ?? $s['ts'] ?? 0 ) >= $cutoff;
+    } );
+    if ( count( $recent ) > 300 ) {
+        uasort( $recent, function( $a, $b ) {
+            return ( $b['ended_at'] ?? $b['ts'] ) - ( $a['ended_at'] ?? $a['ts'] );
+        } );
+        $recent = array_slice( $recent, 0, 300, true );
+    }
+
+    set_transient( 'pl_live_recent_sessions', $recent, 7200 );
 }
 
 /**

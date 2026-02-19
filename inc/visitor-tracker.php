@@ -153,6 +153,7 @@ function plt_collect_data($request) {
         'returning' => intval($body['ret'] ?? 0),
         'visitor_id' => sanitize_text_field($body['vid'] ?? ''),
         'is_human' => intval($body['human'] ?? 0),
+        'has_interacted' => intval($body['has_interacted'] ?? 0),
         'is_dedup' => intval($body['dedup'] ?? 0),
         'ga4cid' => sanitize_text_field($body['ga4cid'] ?? ''),
         'timezone' => sanitize_text_field($body['tz'] ?? ''),
@@ -2691,7 +2692,6 @@ add_action('wp_footer', function() {
 if(navigator.webdriver)return;
 if(/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|statuscode|wget|curl|python-requests|go-http-client|java\/|libwww/i.test(navigator.userAgent))return;
 if(window.innerWidth===0&&window.innerHeight===0)return;
-if(typeof navigator.languages!=='undefined'&&navigator.languages.length===0)return;
 
 // === VISIBILITY GATE (skip prerender/prefetch) ===
 function boot(){
@@ -3232,7 +3232,7 @@ function buildPayload(){
     return {t:timeOnPage,url:location.pathname,pid:PID,ref:document.referrer,
         dev:dev,vw:vw,vh:vh,ret:ret,vid:vid,ga4cid:ga4cid,
         tz:Intl.DateTimeFormat().resolvedOptions().timeZone||'',lang:navigator.language||'',
-        human:interacted?1:0,dedup:isDup?1:0,
+        human:1,has_interacted:interacted?1:0,dedup:isDup?1:0,
         d:Math.round(maxDepth*10)/10,ccp:Math.round(ccp*10)/10,
         ss:Math.round(avgSpd),ms:Math.round(maxSpd),sp:pattern,
         ch:document.documentElement.scrollHeight,se:scrollEvts,dc:dirChanges,
