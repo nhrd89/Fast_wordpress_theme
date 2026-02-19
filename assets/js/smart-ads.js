@@ -281,11 +281,15 @@ function initZoneObserver() {
 
 function activateVisibleZones() {
 	if (!state.gateOpen) return;
+	// Desktop: mouse-wheel scrolling is fast (1000-2000px/s). Zones may scroll
+	// past the viewport before the gate opens. Use a generous look-behind so
+	// zones that were recently scrolled past still get activated.
+	var lookBehind = isDesktop ? -2000 : -400;
 	for (var i = 0; i < state.zones.length; i++) {
 		var zone = state.zones[i];
 		if (zone.activated) continue;
 		var rect = zone.el.getBoundingClientRect();
-		if (rect.top < window.innerHeight + 400 && rect.bottom > -200) {
+		if (rect.top < window.innerHeight + 400 && rect.bottom > lookBehind) {
 			activateZone(zone.el);
 		}
 	}

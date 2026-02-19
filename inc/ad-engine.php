@@ -35,7 +35,7 @@ function pl_ad_defaults() {
 		// Engagement Gate.
 		'gate_scroll_pct'       => 15,
 		'gate_time_sec'         => 5,
-		'gate_dir_changes'      => 1,
+		'gate_dir_changes'      => 0,
 
 		// Density Controls.
 		'max_display_ads'       => 4,
