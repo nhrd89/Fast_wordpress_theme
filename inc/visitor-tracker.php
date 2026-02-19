@@ -2625,51 +2625,74 @@ function plt_full_analytics_page() {
 
             if (!countEl) return;
 
+            var nonce = '<?php echo wp_create_nonce('wp_rest'); ?>';
+            var apiUrl = '<?php echo esc_url(rest_url('plt/v1/realtime')); ?>';
+            var pollCount = 0;
+
             countEl.style.transition = 'transform 0.2s ease';
 
             function refreshRealtime() {
-                fetch('<?php echo esc_url(rest_url('plt/v1/realtime')); ?>', {
-                    headers: { 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>' }
-                })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    countEl.textContent = data.count;
-                    countEl.style.transform = 'scale(1.1)';
-                    setTimeout(function() { countEl.style.transform = 'scale(1)'; }, 200);
+                pollCount++;
+                try {
+                    fetch(apiUrl, {
+                        credentials: 'same-origin',
+                        headers: { 'X-WP-Nonce': nonce }
+                    })
+                    .then(function(r) {
+                        // Refresh nonce from response header if available.
+                        var newNonce = r.headers.get('X-WP-Nonce');
+                        if (newNonce) nonce = newNonce;
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        try {
+                            countEl.textContent = data.count;
+                            countEl.style.transform = 'scale(1.1)';
+                            setTimeout(function() { countEl.style.transform = 'scale(1)'; }, 200);
 
-                    if (count30El) count30El.textContent = data.count_30min || 0;
-                    if (label5El) label5El.textContent = data.count;
-                    if (label30El) label30El.textContent = data.count_30min || 0;
+                            if (count30El) count30El.textContent = data.count_30min || 0;
+                            if (label5El) label5El.textContent = data.count;
+                            if (label30El) label30El.textContent = data.count_30min || 0;
 
-                    if (subEl) {
-                        var parts = [];
-                        if (data.total_sessions_5min) parts.push(data.total_sessions_5min + ' total sessions');
-                        parts.push('Updated: ' + data.timestamp);
-                        if (data.count_1min > 0) parts.push(data.count_1min + ' in last min');
-                        subEl.textContent = parts.join(' \u00b7 ');
-                    }
+                            if (subEl) {
+                                var parts = [];
+                                if (data.total_sessions_5min) parts.push(data.total_sessions_5min + ' total sessions');
+                                parts.push('Updated: ' + data.timestamp);
+                                if (data.count_1min > 0) parts.push(data.count_1min + ' in last min');
+                                subEl.textContent = parts.join(' \u00b7 ');
+                            }
 
-                    if (bodyEl && data.visitors) {
-                        var html = '';
-                        data.visitors.forEach(function(v) {
-                            html += '<tr style="border-bottom:1px solid #f3f4f6">' +
-                                '<td style="padding:8px 12px">' + v.country + '</td>' +
-                                '<td style="padding:8px 12px"><span class="pla-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:4px;font-size:11px">' + v.device + '</span></td>' +
-                                '<td style="padding:8px 12px">' + v.page + '</td>' +
-                                '<td style="padding:8px 12px">' + v.time + '</td>' +
-                                '</tr>';
-                        });
-                        bodyEl.innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">No active visitors</td></tr>';
-                    }
+                            if (bodyEl && data.visitors) {
+                                var html = '';
+                                data.visitors.forEach(function(v) {
+                                    html += '<tr style="border-bottom:1px solid #f3f4f6">' +
+                                        '<td style="padding:8px 12px">' + v.country + '</td>' +
+                                        '<td style="padding:8px 12px"><span class="pla-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:4px;font-size:11px">' + v.device + '</span></td>' +
+                                        '<td style="padding:8px 12px">' + v.page + '</td>' +
+                                        '<td style="padding:8px 12px">' + v.time + '</td>' +
+                                        '</tr>';
+                                });
+                                bodyEl.innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">No active visitors</td></tr>';
+                            }
 
-                    if (tableWrap) {
-                        tableWrap.style.display = data.count > 0 ? '' : 'none';
-                    }
-                })
-                .catch(function() {});
+                            if (tableWrap) {
+                                tableWrap.style.display = data.count > 0 ? '' : 'none';
+                            }
+                        } catch(e) {
+                            console.warn('[PL-Analytics] Render error (poll #' + pollCount + '):', e.message);
+                        }
+                    })
+                    .catch(function(e) {
+                        console.warn('[PL-Analytics] Fetch error (poll #' + pollCount + '):', e.message || 'network');
+                    });
+                } catch(e) {
+                    console.warn('[PL-Analytics] Poll error:', e.message);
+                }
             }
 
-            setInterval(refreshRealtime, 30000);
+            // Poll every 15 seconds for responsive feel.
+            setInterval(refreshRealtime, 15000);
         })();
         </script>
     </div>

@@ -262,6 +262,14 @@ function pl_live_sessions_page() {
 		return;
 	}
 
+	// Handle Clear All Data.
+	$cleared = false;
+	if ( isset( $_POST['pl_clear_live_sessions'] ) && wp_verify_nonce( $_POST['_pl_clear_nonce'] ?? '', 'pl_clear_live_sessions' ) ) {
+		delete_transient( 'pl_live_sess_index' );
+		delete_transient( 'pl_live_recent_sessions' );
+		$cleared = true;
+	}
+
 	// Signal to frontends that an admin is watching (60s TTL, refreshed by page load).
 	set_transient( 'pl_live_monitor_active', 1, 60 );
 
@@ -270,6 +278,10 @@ function pl_live_sessions_page() {
 	?>
 	<div class="wrap">
 		<h1>Live Sessions</h1>
+
+		<?php if ( $cleared ) : ?>
+		<div class="notice notice-success is-dismissible"><p>All session data cleared.</p></div>
+		<?php endif; ?>
 
 		<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
 			<span id="plLiveStatus" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#646970">
@@ -281,6 +293,10 @@ function pl_live_sessions_page() {
 			</span>
 			<span style="flex:1"></span>
 			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>
+			<form method="post" style="display:inline" onsubmit="return confirm('Clear all active and recent session data?')">
+				<?php wp_nonce_field( 'pl_clear_live_sessions', '_pl_clear_nonce' ); ?>
+				<button type="submit" name="pl_clear_live_sessions" value="1" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Data</button>
+			</form>
 		</div>
 
 		<style>
