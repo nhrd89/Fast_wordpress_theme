@@ -116,6 +116,18 @@ function pl_ad_migrate_slot_names() {
 		$dirty = true;
 	}
 
+	// Migrate min_paragraphs_before from 3 to 2 (earlier first zone).
+	if ( isset( $saved['min_paragraphs_before'] ) && (int) $saved['min_paragraphs_before'] === 3 ) {
+		$saved['min_paragraphs_before'] = 2;
+		$dirty = true;
+	}
+
+	// Migrate gate_dir_changes from 1 to 0 (removed as gate requirement).
+	if ( isset( $saved['gate_dir_changes'] ) && (int) $saved['gate_dir_changes'] === 1 ) {
+		$saved['gate_dir_changes'] = 0;
+		$dirty = true;
+	}
+
 	if ( $dirty ) {
 		update_option( 'pl_ad_settings', $saved );
 	}

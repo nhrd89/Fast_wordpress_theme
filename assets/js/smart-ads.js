@@ -75,7 +75,7 @@ function checkGate() {
 	if (gateChecks.scroll && gateChecks.time && gateChecks.direction) {
 		state.gateOpen = true;
 		if (cfg.debug) console.log('[PL-Ads] Gate OPEN — scroll:' + Math.round(state.scrollPct) + '% time:' + Math.round(state.timeOnPage) + 's dirs:' + state.dirChanges);
-		activateVisibleZones();
+		activateAllScrolledZones(); // Retroactive: activate ALL zones already scrolled past.
 		showAnchor(); // Anchor is #1 revenue — fire immediately on gate open.
 		return true;
 	}
@@ -88,9 +88,12 @@ function readBridge() {
 	var b = window.__plEngagement;
 	if (b) {
 		state.scrollPct = b.scrollDepth;
-		state.timeOnPage = b.timeOnPage;
 		state.dirChanges = b.directionChanges;
 		state.scrollSpeed = b.scrollSpeed;
+		// ALWAYS compute own timeOnPage — the bridge only updates on scroll
+		// events, so it stays at ~0 for non-scrolling visitors. This caused
+		// the time gate to never fire for 0%-scroll sessions (BUG 3).
+		state.timeOnPage = (Date.now() - state.sessionStart) / 1000;
 		return true;
 	}
 	return false;
@@ -280,17 +283,40 @@ function initZoneObserver() {
 	}
 }
 
-function activateVisibleZones() {
-	if (!state.gateOpen) return;
-	// Desktop: mouse-wheel scrolling is fast (1000-2000px/s). Zones may scroll
-	// past the viewport before the gate opens. Use a generous look-behind so
-	// zones that were recently scrolled past still get activated.
-	var lookBehind = isDesktop ? -2000 : -400;
+/**
+ * Called ONCE when the gate first opens. Activates ALL zones the user
+ * has already scrolled past (retroactive) plus zones near/below the
+ * viewport. No lookback limit — if the gate opens at 82% scroll, zones
+ * at 20% are still activated.
+ */
+function activateAllScrolledZones() {
+	var scrollTop = window.scrollY || window.pageYOffset;
+	var cutoff = scrollTop + window.innerHeight + 400;
 	for (var i = 0; i < state.zones.length; i++) {
 		var zone = state.zones[i];
 		if (zone.activated) continue;
 		var rect = zone.el.getBoundingClientRect();
-		if (rect.top < window.innerHeight + 400 && rect.bottom > lookBehind) {
+		var zoneAbsTop = rect.top + scrollTop;
+		if (zoneAbsTop <= cutoff) {
+			if (cfg.debug) console.log('[PL-Ads] Retroactive activate: ' + zone.id + ' at ' + Math.round(zoneAbsTop) + 'px (viewport at ' + Math.round(scrollTop) + 'px)');
+			activateZone(zone.el);
+		}
+	}
+}
+
+/**
+ * Called on every scroll tick AFTER gate is open. Only activates zones
+ * near the current viewport (forward-looking). Zones above viewport
+ * were already handled by activateAllScrolledZones on gate open.
+ */
+function activateVisibleZones() {
+	if (!state.gateOpen) return;
+	for (var i = 0; i < state.zones.length; i++) {
+		var zone = state.zones[i];
+		if (zone.activated) continue;
+		var rect = zone.el.getBoundingClientRect();
+		// Activate zones in or near the viewport (400px lookahead below, 200px above).
+		if (rect.top < window.innerHeight + 400 && rect.bottom > -200) {
 			activateZone(zone.el);
 		}
 	}
@@ -309,6 +335,7 @@ function activateZone(el) {
 
 	// Enforce max ads.
 	if (state.activeAds >= cfg.maxAds) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ')');
 		collapseZone(el);
 		return;
 	}
@@ -318,18 +345,21 @@ function activateZone(el) {
 
 	// Check format toggle.
 	if (!isFormatEnabled(size)) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: format ' + size + ' disabled');
 		collapseZone(el);
 		return;
 	}
 
 	// Enforce min spacing.
 	if (!checkSpacing(el)) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: spacing < ' + cfg.minSpacingPx + 'px');
 		collapseZone(el);
 		return;
 	}
 
 	zone.activated = true;
 	state.activeAds++;
+	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + size + ') — total: ' + state.activeAds);
 
 	// Add CSS classes (reserves dimensions before ad loads).
 	el.classList.add('pl-ad-active', 'pl-ad-' + size);
@@ -651,6 +681,7 @@ function trackViewability(zone) {
 			if (!data.isVisible) {
 				data.isVisible = true;
 				data.visibleStart = Date.now();
+				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VISIBLE (ratio=' + Math.round(ratio * 100) + '%)');
 
 				if (!data.firstViewRecorded) {
 					data.firstViewRecorded = true;
@@ -660,6 +691,7 @@ function trackViewability(zone) {
 				// 1-second continuous visibility = viewable impression.
 				data.viewableTimer = setTimeout(function() {
 					data.viewableImpressions++;
+					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE IMPRESSION #' + data.viewableImpressions);
 				}, 1000);
 			}
 		} else {
@@ -667,6 +699,7 @@ function trackViewability(zone) {
 				data.totalVisibleMs += Date.now() - data.visibleStart;
 				data.isVisible = false;
 				clearTimeout(data.viewableTimer);
+				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' hidden (visible ' + data.totalVisibleMs + 'ms total)');
 			}
 		}
 	}, {
