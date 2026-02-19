@@ -40,6 +40,8 @@ var state = {
 	gptLoaded: false,
 	gptReady: false,
 	activeAds: 0,
+	viewableCount: 0,       // zones that got at least 1 viewable impression
+	budgetExhausted: false,  // true when viewability rate drops below 40% after 2+ ads
 	zones: [],
 	slots: {},
 	viewability: {},
@@ -75,7 +77,7 @@ function checkGate() {
 	if (gateChecks.scroll && gateChecks.time && gateChecks.direction) {
 		state.gateOpen = true;
 		if (cfg.debug) console.log('[PL-Ads] Gate OPEN — scroll:' + Math.round(state.scrollPct) + '% time:' + Math.round(state.timeOnPage) + 's dirs:' + state.dirChanges);
-		activateAllScrolledZones(); // Retroactive: activate ALL zones already scrolled past.
+		onGateOpen();
 		showAnchor(); // Anchor is #1 revenue — fire immediately on gate open.
 		return true;
 	}
@@ -140,11 +142,6 @@ function onScroll() {
 		}
 
 		checkGate();
-
-		// Re-check zones on every scroll when gate is open.
-		if (state.gateOpen) {
-			activateVisibleZones();
-		}
 
 		// Pause detection for pause banner.
 		clearTimeout(state.pauseTimer);
@@ -250,31 +247,36 @@ function discoverZones() {
 }
 
 /* ================================================================
- * MODULE 5: ZONE ACTIVATION
+ * MODULE 5: VIEWABILITY-FIRST ZONE ACTIVATION
  *
- * Uses IntersectionObserver to activate zones as they approach
- * the viewport (200px pre-fetch). Enforces max ads, min spacing,
- * and format toggles before activating.
+ * Strategy: Only inject ads when confident the user will see them.
+ *
+ * - IO triggers 300px BELOW viewport (forward-looking only)
+ * - Zones already scrolled past are NEVER activated (wasted impression)
+ * - Speed-gated activation:
+ *     < 600px/s  → reading speed, activate immediately
+ *     600-1200   → fast scan, downgrade large sizes to 300x250
+ *     > 1200     → flying past, SKIP this zone entirely
+ *   First ad uses stricter 800px/s threshold.
+ * - Viewability budget: after 2+ ads, if <40% viewable → stop serving
+ * - Anchor/interstitial/pause unaffected (out-of-page formats)
  * ================================================================ */
 
 var zoneObserver = null;
 
 function initZoneObserver() {
-	if (!('IntersectionObserver' in window)) {
-		// Fallback: activate visible zones on gate open.
-		return;
-	}
+	if (!('IntersectionObserver' in window)) return;
 
 	zoneObserver = new IntersectionObserver(function(entries) {
 		for (var i = 0; i < entries.length; i++) {
-			if (entries[i].isIntersecting && state.gateOpen) {
-				var el = entries[i].target;
-				zoneObserver.unobserve(el);
-				activateZone(el);
-			}
+			if (!entries[i].isIntersecting) continue;
+			var el = entries[i].target;
+			if (!state.gateOpen) continue; // Zone enters trigger area before gate — leave observed.
+			zoneObserver.unobserve(el);
+			tryActivateZone(el);
 		}
 	}, {
-		rootMargin: '200px 0px',
+		rootMargin: '0px 0px 300px 0px', // 300px below viewport only.
 		threshold: 0
 	});
 
@@ -284,42 +286,103 @@ function initZoneObserver() {
 }
 
 /**
- * Called ONCE when the gate first opens. Activates ALL zones the user
- * has already scrolled past (retroactive) plus zones near/below the
- * viewport. No lookback limit — if the gate opens at 82% scroll, zones
- * at 20% are still activated.
+ * Called once when the gate opens. Activates zones currently IN or
+ * just below the viewport. Zones already scrolled past are skipped —
+ * they would produce 0% viewability.
  */
-function activateAllScrolledZones() {
-	var scrollTop = window.scrollY || window.pageYOffset;
-	var cutoff = scrollTop + window.innerHeight + 400;
+function onGateOpen() {
 	for (var i = 0; i < state.zones.length; i++) {
 		var zone = state.zones[i];
 		if (zone.activated) continue;
 		var rect = zone.el.getBoundingClientRect();
-		var zoneAbsTop = rect.top + scrollTop;
-		if (zoneAbsTop <= cutoff) {
-			if (cfg.debug) console.log('[PL-Ads] Retroactive activate: ' + zone.id + ' at ' + Math.round(zoneAbsTop) + 'px (viewport at ' + Math.round(scrollTop) + 'px)');
-			activateZone(zone.el);
+		// In viewport or within 300px below. NOT above viewport (rect.bottom <= 0).
+		if (rect.bottom > 0 && rect.top < window.innerHeight + 300) {
+			if (zoneObserver) zoneObserver.unobserve(zone.el);
+			tryActivateZone(zone.el);
+		} else if (rect.bottom <= 0) {
+			// Zone is above viewport — user already scrolled past it.
+			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: already scrolled past (above viewport)');
+			if (zoneObserver) zoneObserver.unobserve(zone.el);
+			collapseZone(zone.el, 'scrolled-past');
 		}
 	}
 }
 
 /**
- * Called on every scroll tick AFTER gate is open. Only activates zones
- * near the current viewport (forward-looking). Zones above viewport
- * were already handled by activateAllScrolledZones on gate open.
+ * Speed-gated, budget-aware zone activation.
+ * Decides whether to activate, downgrade, or skip based on real-time
+ * scroll speed and session viewability rate.
  */
-function activateVisibleZones() {
-	if (!state.gateOpen) return;
-	for (var i = 0; i < state.zones.length; i++) {
-		var zone = state.zones[i];
-		if (zone.activated) continue;
-		var rect = zone.el.getBoundingClientRect();
-		// Activate zones in or near the viewport (400px lookahead below, 200px above).
-		if (rect.top < window.innerHeight + 400 && rect.bottom > -200) {
-			activateZone(zone.el);
-		}
+function tryActivateZone(el) {
+	var zone = getZoneByEl(el);
+	if (!zone || zone.activated) return;
+
+	// --- Viewability budget ---
+	if (state.budgetExhausted) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: viewability budget exhausted (' + state.viewableCount + '/' + state.activeAds + ' viewable)');
+		collapseZone(el, 'budget');
+		return;
 	}
+
+	// --- Max ads ---
+	if (state.activeAds >= cfg.maxAds) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ')');
+		collapseZone(el, 'max');
+		return;
+	}
+
+	var speed = state.scrollSpeed;
+	var isFirst = state.activeAds === 0;
+
+	// --- Speed gate ---
+	// First ad is stricter: must be < 800px/s (high confidence).
+	// Subsequent: must be < 1200px/s.
+	if (isFirst && speed > 800) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: first-ad speed ' + Math.round(speed) + 'px/s > 800');
+		collapseZone(el, 'speed');
+		return;
+	}
+	if (!isFirst && speed > 1200) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: speed ' + Math.round(speed) + 'px/s > 1200');
+		collapseZone(el, 'speed');
+		return;
+	}
+
+	// Determine size for this device.
+	var size = isMobile ? zone.sizeMobile : zone.sizeDesktop;
+
+	// --- Speed-based size downgrade ---
+	// 600-1200px/s: fast scanner — downgrade large desktop formats
+	// to 300x250 (smaller = faster to view, higher viewability).
+	if (speed >= 600 && (size === '970x250' || size === '728x90')) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' downgrade: ' + size + ' \u2192 300x250 (speed ' + Math.round(speed) + 'px/s)');
+		size = '300x250';
+	}
+
+	// Standard checks.
+	if (!isFormatEnabled(size)) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: format ' + size + ' disabled');
+		collapseZone(el, 'format');
+		return;
+	}
+	if (!checkSpacing(el)) {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: spacing < ' + cfg.minSpacingPx + 'px');
+		collapseZone(el, 'spacing');
+		return;
+	}
+
+	// --- ACTIVATE ---
+	var label = speed < 600 ? 'reading' : 'scanning';
+	zone.activated = true;
+	zone.activatedSize = size;
+	state.activeAds++;
+	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + size + ', ' + label + ' ' + Math.round(speed) + 'px/s) \u2014 total: ' + state.activeAds);
+
+	el.classList.add('pl-ad-active', 'pl-ad-' + size);
+
+	loadGPT(function() {
+		renderDisplayAd(zone, size);
+	});
 }
 
 function getZoneByEl(el) {
@@ -327,47 +390,6 @@ function getZoneByEl(el) {
 		if (state.zones[i].el === el) return state.zones[i];
 	}
 	return null;
-}
-
-function activateZone(el) {
-	var zone = getZoneByEl(el);
-	if (!zone || zone.activated) return;
-
-	// Enforce max ads.
-	if (state.activeAds >= cfg.maxAds) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ')');
-		collapseZone(el);
-		return;
-	}
-
-	// Determine size for this device.
-	var size = isMobile ? zone.sizeMobile : zone.sizeDesktop;
-
-	// Check format toggle.
-	if (!isFormatEnabled(size)) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: format ' + size + ' disabled');
-		collapseZone(el);
-		return;
-	}
-
-	// Enforce min spacing.
-	if (!checkSpacing(el)) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: spacing < ' + cfg.minSpacingPx + 'px');
-		collapseZone(el);
-		return;
-	}
-
-	zone.activated = true;
-	state.activeAds++;
-	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + size + ') — total: ' + state.activeAds);
-
-	// Add CSS classes (reserves dimensions before ad loads).
-	el.classList.add('pl-ad-active', 'pl-ad-' + size);
-
-	// Load GPT then render.
-	loadGPT(function() {
-		renderDisplayAd(zone, size);
-	});
 }
 
 function checkSpacing(el) {
@@ -393,10 +415,27 @@ function isFormatEnabled(size) {
 	return true;
 }
 
-function collapseZone(el) {
+function collapseZone(el, reason) {
 	el.classList.add('pl-ad-collapse');
+	if (reason) el.setAttribute('data-skip-reason', reason);
 	var zone = getZoneByEl(el);
 	if (zone) zone.activated = true; // Prevent re-processing.
+
+	// In dummy mode, show why the zone was skipped.
+	if (cfg.dummy && reason) {
+		var speed = Math.round(state.scrollSpeed);
+		var msg = 'SKIPPED';
+		if (reason === 'speed') msg = 'SKIPPED: speed ' + speed + 'px/s > threshold';
+		else if (reason === 'budget') msg = 'SKIPPED: viewability budget exhausted';
+		else if (reason === 'scrolled-past') msg = 'SKIPPED: already scrolled past';
+		else if (reason === 'max') msg = 'SKIPPED: max ads reached';
+		else if (reason === 'spacing') msg = 'SKIPPED: too close to another ad';
+		else if (reason === 'format') msg = 'SKIPPED: format disabled';
+
+		el.classList.add('pl-ad-dummy');
+		el.style.cssText = 'width:300px;height:40px;max-width:100%;background:#ffebee;border:2px dashed #ef5350;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:11px;font-weight:700;color:#c62828;margin:8px auto';
+		el.textContent = msg;
+	}
 }
 
 /* ================================================================
@@ -461,15 +500,19 @@ function renderDummy(el, size, w, h, zoneId, score) {
 	var displayW = isMobile ? Math.min(w, window.innerWidth - 32) : w;
 	var displayH = displayW < w ? Math.round((displayW / w) * h) : h;
 
+	var speed = Math.round(state.scrollSpeed);
+	var label = speed < 600 ? 'reading' : 'scanning';
+	var statusText = 'ACTIVATED: ' + speed + 'px/s \u2014 ' + label;
+
 	el.style.width = displayW + 'px';
 	el.style.height = displayH + 'px';
 	el.style.maxWidth = '100%';
-	el.innerHTML = '<span>' + size + '</span>';
+	el.innerHTML = '<span style="font-size:11px;line-height:1.3">' + size + '<br>' + statusText + '</span>';
 	el.setAttribute('data-injected', 'true');
 
 	if (cfg.debug) {
 		addDebugInfo(el, zoneId, size, score);
-		console.log('[PL-Ads] Dummy: ' + zoneId + ' (' + size + ')');
+		console.log('[PL-Ads] Dummy: ' + zoneId + ' (' + size + ') ' + statusText);
 	}
 }
 
@@ -651,7 +694,7 @@ function onScrollPause() {
 function trackViewability(zone) {
 	var data = {
 		zoneId: zone.id,
-		adSize: isMobile ? zone.sizeMobile : zone.sizeDesktop,
+		adSize: zone.activatedSize || (isMobile ? zone.sizeMobile : zone.sizeDesktop),
 		totalVisibleMs: 0,
 		viewableImpressions: 0,
 		maxRatio: 0,
@@ -691,7 +734,17 @@ function trackViewability(zone) {
 				// 1-second continuous visibility = viewable impression.
 				data.viewableTimer = setTimeout(function() {
 					data.viewableImpressions++;
-					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE IMPRESSION #' + data.viewableImpressions);
+					// Track first viewable impression per zone for budget.
+					if (data.viewableImpressions === 1) {
+						state.viewableCount++;
+						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE — session: ' + state.viewableCount + '/' + state.activeAds + ' zones viewable');
+						// Check budget: after 2+ ads, if <40% viewable, stop serving.
+						if (state.activeAds >= 2 && state.viewableCount / state.activeAds < 0.4) {
+							state.budgetExhausted = true;
+							if (cfg.debug) console.log('[PL-Ads] Viewability budget EXHAUSTED: ' + state.viewableCount + '/' + state.activeAds + ' (' + Math.round(state.viewableCount / state.activeAds * 100) + '%)');
+						}
+					}
+					if (cfg.debug && data.viewableImpressions > 1) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE IMPRESSION #' + data.viewableImpressions);
 				}, 1000);
 			}
 		} else {
@@ -772,6 +825,8 @@ function buildSessionData() {
 		totalAdsInjected: state.activeAds,
 		totalViewable: totalViewable,
 		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
+		viewableZones: state.viewableCount,
+		budgetExhausted: state.budgetExhausted,
 		zones: zones
 	};
 }
@@ -827,6 +882,8 @@ function debugLog() {
 	console.log('[PL-Ads]', {
 		gate: state.gateOpen,
 		ads: state.activeAds + '/' + cfg.maxAds,
+		viewable: state.viewableCount + '/' + state.activeAds,
+		budget: state.budgetExhausted ? 'EXHAUSTED' : 'ok',
 		zones: state.zones.length,
 		scroll: Math.round(state.scrollPct) + '%',
 		time: Math.round(state.timeOnPage) + 's',
