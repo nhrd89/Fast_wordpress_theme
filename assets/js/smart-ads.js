@@ -720,6 +720,10 @@ function buildSessionData() {
 		scrollPattern: classifyPattern(),
 		itemsSeen: b ? b.itemsSeen : 0,
 		totalItems: b ? b.totalItems : 0,
+		gateOpen: state.gateOpen,
+		gateScroll: gateChecks.scroll,
+		gateTime: gateChecks.time,
+		gateDirection: gateChecks.direction,
 		totalAdsInjected: state.activeAds,
 		totalViewable: totalViewable,
 		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
@@ -738,7 +742,10 @@ function classifyPattern() {
 }
 
 function sendData() {
-	if (!cfg.record || state.activeAds === 0 || state.dataSent) return;
+	if (!cfg.record || state.dataSent) return;
+	// Record if gate opened OR user spent 2+ seconds (captures full funnel).
+	var elapsed = (Date.now() - state.sessionStart) / 1000;
+	if (!state.gateOpen && elapsed < 2) return;
 	state.dataSent = true;
 
 	var payload = buildSessionData();

@@ -9,7 +9,7 @@
  * Each session creates one JSON file.
  *
  * Claude Code can analyze this data via:
- *   curl https://cheerfultalks.com/wp-json/pinlightning/v1/ad-data?days=7
+ *   curl https://cheerlives.com/wp-json/pinlightning/v1/ad-data?days=7
  */
 
 add_action('rest_api_init', function() {
@@ -83,6 +83,10 @@ function pinlightning_record_ad_data($request) {
         'scroll_pattern' => sanitize_text_field($body['scrollPattern'] ?? ''), // 'reader', 'scanner', 'bouncer'
         'items_seen' => intval($body['itemsSeen'] ?? 0),
         'total_items' => intval($body['totalItems'] ?? 0),
+        'gate_open' => !empty($body['gateOpen']),
+        'gate_scroll' => !empty($body['gateScroll']),
+        'gate_time' => !empty($body['gateTime']),
+        'gate_direction' => !empty($body['gateDirection']),
         'total_ads_injected' => intval($body['totalAdsInjected'] ?? 0),
         'total_viewable' => intval($body['totalViewable'] ?? 0),
         'viewability_rate' => floatval($body['viewabilityRate'] ?? 0),
@@ -178,12 +182,20 @@ function pinlightning_summarize_ad_data($sessions) {
     $devices = array('mobile' => 0, 'desktop' => 0, 'tablet' => 0);
     $patterns = array('reader' => 0, 'scanner' => 0, 'bouncer' => 0);
     $zone_stats = array();
+    $gate_funnel = array('loaded' => $total, 'scroll' => 0, 'time' => 0, 'direction' => 0, 'open' => 0, 'ads_shown' => 0);
 
     foreach ($sessions as $s) {
         $total_time += $s['time_on_page_ms'] ?? 0;
         $total_depth += $s['max_scroll_depth_pct'] ?? 0;
         $total_ads += $s['total_ads_injected'] ?? 0;
         $total_viewable += $s['total_viewable'] ?? 0;
+
+        // Gate funnel tracking.
+        if (!empty($s['gate_scroll'])) $gate_funnel['scroll']++;
+        if (!empty($s['gate_time'])) $gate_funnel['time']++;
+        if (!empty($s['gate_direction'])) $gate_funnel['direction']++;
+        if (!empty($s['gate_open'])) $gate_funnel['open']++;
+        if (($s['total_ads_injected'] ?? 0) > 0) $gate_funnel['ads_shown']++;
 
         $dev = $s['device'] ?? 'unknown';
         if (isset($devices[$dev])) $devices[$dev]++;
@@ -212,6 +224,7 @@ function pinlightning_summarize_ad_data($sessions) {
         'avg_scroll_depth_pct' => round($total_depth / $total, 1),
         'avg_ads_per_session' => round($total_ads / $total, 1),
         'overall_viewability_pct' => $total_ads > 0 ? round(($total_viewable / $total_ads) * 100, 1) : 0,
+        'gate_funnel' => $gate_funnel,
         'devices' => $devices,
         'scroll_patterns' => $patterns,
         'zone_performance' => $zone_stats,

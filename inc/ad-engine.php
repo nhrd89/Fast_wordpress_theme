@@ -53,19 +53,19 @@ function pl_ad_defaults() {
 		'fmt_300x250'           => true,
 		'fmt_970x250'           => true,
 		'fmt_728x90'            => false,
-		'fmt_pause'             => false,
+		'fmt_pause'             => true,
 
 		// Network.
 		'network_code'          => '22953639975',
 		'slot_prefix'           => '/21849154601,22953639975/',
 
 		// Ad Unit Slot Names.
-		'slot_interstitial'     => 'cheerfultalks.com_interstitial',
-		'slot_anchor'           => 'cheerfultalks.com_anchor',
-		'slot_300x250'          => 'cheerfultalks.com_300x250',
-		'slot_970x250'          => 'cheerfultalks.com_970x250',
-		'slot_728x90'           => 'cheerfultalks.com_728x90',
-		'slot_pause'            => 'cheerfultalks.com_pause',
+		'slot_interstitial'     => 'Ad.Plus-Interstitial',
+		'slot_anchor'           => 'Ad.Plus-Anchor',
+		'slot_300x250'          => 'Ad.Plus-300x250',
+		'slot_970x250'          => 'Ad.Plus-970x250',
+		'slot_728x90'           => 'Ad.Plus-728x90',
+		'slot_pause'            => 'Ad.Plus-Pause-300x250',
 	);
 }
 
@@ -83,6 +83,44 @@ function pl_ad_settings() {
 	$cached = wp_parse_args( $saved, pl_ad_defaults() );
 	return $cached;
 }
+
+/**
+ * One-time migration: replace cheerfultalks.com slot names with Ad.Plus-* in saved DB option.
+ */
+function pl_ad_migrate_slot_names() {
+	$saved = get_option( 'pl_ad_settings', array() );
+	if ( empty( $saved ) ) {
+		return;
+	}
+
+	$dirty = false;
+	$map   = array(
+		'slot_interstitial' => 'Ad.Plus-Interstitial',
+		'slot_anchor'       => 'Ad.Plus-Anchor',
+		'slot_300x250'      => 'Ad.Plus-300x250',
+		'slot_970x250'      => 'Ad.Plus-970x250',
+		'slot_728x90'       => 'Ad.Plus-728x90',
+		'slot_pause'        => 'Ad.Plus-Pause-300x250',
+	);
+
+	foreach ( $map as $key => $new_val ) {
+		if ( isset( $saved[ $key ] ) && strpos( $saved[ $key ], 'cheerfultalks' ) !== false ) {
+			$saved[ $key ] = $new_val;
+			$dirty = true;
+		}
+	}
+
+	// Also migrate fmt_pause if it was saved as false.
+	if ( isset( $saved['fmt_pause'] ) && ! $saved['fmt_pause'] ) {
+		$saved['fmt_pause'] = true;
+		$dirty = true;
+	}
+
+	if ( $dirty ) {
+		update_option( 'pl_ad_settings', $saved );
+	}
+}
+add_action( 'admin_init', 'pl_ad_migrate_slot_names' );
 
 /* ================================================================
  * 2. ADMIN MENU & SETTINGS PAGE
@@ -371,7 +409,7 @@ function pl_ad_render_codes_tab( $s ) {
 			<th>Slot Path Prefix</th>
 			<td>
 				<input type="text" name="pl_ad_settings[slot_prefix]" value="<?php echo esc_attr( $s['slot_prefix'] ); ?>" class="regular-text">
-				<p class="description">Full slot path = prefix + slot name (e.g. /21849154601,22953639975/cheerfultalks.com_300x250).</p>
+				<p class="description">Full slot path = prefix + slot name (e.g. /21849154601,22953639975/Ad.Plus-300x250).</p>
 			</td>
 		</tr>
 
