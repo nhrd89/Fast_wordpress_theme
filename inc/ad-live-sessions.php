@@ -8,7 +8,9 @@
  * Architecture:
  * - Browser: smart-ads.js heartbeat module POSTs to /pl-ads/v1/heartbeat every 3s
  * - Server: stores each heartbeat as a transient with 30s TTL (auto-cleanup)
- * - Admin: JS polls GET /pl-ads/v1/live-sessions every 5s to refresh the table
+ * - When a session goes stale (>30s no heartbeat), its final state is moved to
+ *   pl_live_recent_sessions (30-minute TTL) for post-session debugging.
+ * - Admin: JS polls GET /pl-ads/v1/live-sessions every 5s to refresh both tables
  *
  * @package PinLightning
  * @since   1.0.0
@@ -46,7 +48,7 @@ function pl_live_sessions_rest_routes() {
 		'permission_callback' => '__return_true',
 	) );
 
-	// Admin reads active sessions.
+	// Admin reads active + recent sessions.
 	register_rest_route( 'pl-ads/v1', '/live-sessions', array(
 		'methods'             => 'GET',
 		'callback'            => 'pl_live_sessions_get',
@@ -120,11 +122,19 @@ function pl_live_sessions_heartbeat( $request ) {
 	}
 	$index[ $sid ] = time();
 
-	// Prune stale entries from index (older than 60s).
+	// Prune stale entries from index (older than 60s) — move them to recent.
 	$cutoff = time() - 60;
-	$index  = array_filter( $index, function( $ts ) use ( $cutoff ) {
-		return $ts >= $cutoff;
-	} );
+	$stale  = array();
+	foreach ( $index as $s_id => $s_ts ) {
+		if ( $s_ts < $cutoff ) {
+			$stale[ $s_id ] = $s_ts;
+		}
+	}
+
+	if ( ! empty( $stale ) ) {
+		pl_live_sessions_archive_stale( $stale );
+		$index = array_diff_key( $index, $stale );
+	}
 
 	set_transient( 'pl_live_sess_index', $index, 120 );
 
@@ -132,43 +142,108 @@ function pl_live_sessions_heartbeat( $request ) {
 }
 
 /**
- * Return all active sessions for admin polling.
+ * Move stale sessions (final heartbeat data) to the recent sessions store.
+ */
+function pl_live_sessions_archive_stale( $stale_sids ) {
+	$recent = get_transient( 'pl_live_recent_sessions' );
+	if ( ! is_array( $recent ) ) {
+		$recent = array();
+	}
+
+	foreach ( $stale_sids as $sid => $ts ) {
+		// Grab the final heartbeat data (may still be in transient briefly).
+		$data = get_transient( 'pl_live_sess_' . $sid );
+		if ( $data ) {
+			$data['status']   = 'ended';
+			$data['ended_at'] = time();
+			$recent[ $sid ]   = $data;
+			delete_transient( 'pl_live_sess_' . $sid );
+		}
+	}
+
+	// Prune recent sessions older than 30 minutes, cap at 100 entries.
+	$thirty_min_ago = time() - 1800;
+	$recent = array_filter( $recent, function( $s ) use ( $thirty_min_ago ) {
+		return ( $s['ended_at'] ?? $s['ts'] ?? 0 ) >= $thirty_min_ago;
+	} );
+
+	// Keep most recent 100.
+	if ( count( $recent ) > 100 ) {
+		uasort( $recent, function( $a, $b ) {
+			return ( $b['ended_at'] ?? $b['ts'] ) - ( $a['ended_at'] ?? $a['ts'] );
+		} );
+		$recent = array_slice( $recent, 0, 100, true );
+	}
+
+	set_transient( 'pl_live_recent_sessions', $recent, 1800 );
+}
+
+/**
+ * Return all active + recent sessions for admin polling.
  */
 function pl_live_sessions_get( $request ) {
 	// Keep the liveMonitor flag alive while admin is polling.
 	set_transient( 'pl_live_monitor_active', 1, 60 );
 
-	$include_recent = $request->get_param( 'recent' ) === '1';
-	$index          = get_transient( 'pl_live_sess_index' );
+	$now   = time();
+	$index = get_transient( 'pl_live_sess_index' );
 
-	if ( ! is_array( $index ) || empty( $index ) ) {
-		return new WP_REST_Response( array( 'sessions' => array(), 'count' => 0 ), 200 );
+	// -- Active sessions --
+	$active = array();
+	if ( is_array( $index ) ) {
+		// Check for stale entries and archive them now (in case heartbeat hasn't run).
+		$cutoff      = $now - 60;
+		$stale       = array();
+		$clean_index = array();
+
+		foreach ( $index as $sid => $ts ) {
+			if ( $ts < $cutoff ) {
+				$stale[ $sid ] = $ts;
+			} else {
+				$clean_index[ $sid ] = $ts;
+			}
+		}
+
+		if ( ! empty( $stale ) ) {
+			pl_live_sessions_archive_stale( $stale );
+			set_transient( 'pl_live_sess_index', $clean_index, 120 );
+		}
+
+		foreach ( $clean_index as $sid => $ts ) {
+			$data = get_transient( 'pl_live_sess_' . $sid );
+			if ( $data ) {
+				$data['age_s']  = $now - $data['ts'];
+				$data['status'] = 'active';
+				$active[]       = $data;
+			}
+		}
+
+		// Sort active by most recent heartbeat.
+		usort( $active, function( $a, $b ) {
+			return $b['ts'] - $a['ts'];
+		} );
 	}
 
-	$sessions = array();
-	$now      = time();
-	$cutoff   = $include_recent ? $now - 1800 : $now - 60;
-
-	foreach ( $index as $sid => $ts ) {
-		if ( $ts < $cutoff ) {
-			continue;
+	// -- Recent sessions (ended) --
+	$recent_raw = get_transient( 'pl_live_recent_sessions' );
+	$recent     = array();
+	if ( is_array( $recent_raw ) ) {
+		foreach ( $recent_raw as $s ) {
+			$s['age_s'] = $now - ( $s['ended_at'] ?? $s['ts'] );
+			$recent[]   = $s;
 		}
-		$data = get_transient( 'pl_live_sess_' . $sid );
-		if ( $data ) {
-			$data['age_s'] = $now - $data['ts'];
-			$sessions[]    = $data;
-		}
+		// Sort recent by ended_at desc.
+		usort( $recent, function( $a, $b ) {
+			return ( $b['ended_at'] ?? $b['ts'] ) - ( $a['ended_at'] ?? $a['ts'] );
+		} );
 	}
-
-	// Sort by most recent heartbeat.
-	usort( $sessions, function( $a, $b ) {
-		return $b['ts'] - $a['ts'];
-	} );
 
 	return new WP_REST_Response( array(
-		'sessions' => $sessions,
-		'count'    => count( $sessions ),
-		'ts'       => $now,
+		'active'       => $active,
+		'active_count' => count( $active ),
+		'recent'       => $recent,
+		'recent_count' => count( $recent ),
+		'ts'           => $now,
 	), 200 );
 }
 
@@ -193,18 +268,24 @@ function pl_live_sessions_page() {
 		<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
 			<span id="plLiveStatus" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#646970">
 				<span id="plLiveDot" style="width:8px;height:8px;border-radius:50%;background:#00a32a;display:inline-block;animation:plPulse 2s infinite"></span>
-				Monitoring — <strong id="plLiveCount">0</strong> active sessions
+				Monitoring &mdash;
+				<strong>Active: <span id="plActiveCount">0</span></strong>
+				<span style="color:#c3c4c7">|</span>
+				<strong>Recent: <span id="plRecentCount">0</span></strong>
 			</span>
 			<span style="flex:1"></span>
-			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export Live Sessions (JSON)</button>
+			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>
 		</div>
 
 		<style>
 			@keyframes plPulse { 0%,100%{opacity:1}50%{opacity:.3} }
-			#plLiveTable { border-collapse:collapse;width:100%;font-size:13px }
-			#plLiveTable th { background:#f0f0f1;position:sticky;top:0;z-index:1;text-align:left;padding:8px 10px;border-bottom:2px solid #c3c4c7;white-space:nowrap }
-			#plLiveTable td { padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top }
-			#plLiveTable tr:hover td { background:#f6f7f7 }
+			.pl-section-header { padding:10px 14px;font-weight:600;font-size:13px;border-bottom:2px solid }
+			.pl-section-active .pl-section-header { background:#edfcf2;color:#00a32a;border-color:#00a32a }
+			.pl-section-recent .pl-section-header { background:#f0f0f1;color:#646970;border-color:#c3c4c7 }
+			.pl-sess-table { border-collapse:collapse;width:100%;font-size:13px }
+			.pl-sess-table th { background:#f6f7f7;position:sticky;top:0;z-index:1;text-align:left;padding:8px 10px;border-bottom:1px solid #c3c4c7;white-space:nowrap;font-size:12px }
+			.pl-sess-table td { padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top }
+			.pl-sess-table tr:hover td { background:#f6f7f7 }
 			.pl-row-expand { cursor:pointer }
 			.pl-gate-ok { color:#00a32a }
 			.pl-gate-fail { color:#d63638 }
@@ -214,12 +295,18 @@ function pl_live_sessions_page() {
 			.pl-detail-inner h4 { margin:0 0 6px;font-size:13px }
 			.pl-detail-inner table { font-size:12px;width:100%;border-collapse:collapse }
 			.pl-detail-inner table th,.pl-detail-inner table td { padding:3px 6px;text-align:left;border-bottom:1px solid #e0e0e0 }
-			.pl-empty { text-align:center;color:#646970;padding:40px 20px }
+			.pl-empty { text-align:center;color:#646970;padding:24px 20px;font-size:13px }
 			.pl-stale td { opacity:.5 }
+			.pl-ended td { color:#646970 }
+			.pl-status-badge { display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:600 }
+			.pl-status-active { background:#edfcf2;color:#00a32a }
+			.pl-status-ended { background:#f0f0f1;color:#646970 }
 		</style>
 
-		<div style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;overflow-x:auto">
-			<table id="plLiveTable">
+		<!-- ACTIVE SESSIONS -->
+		<div class="pl-section-active" style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;margin-bottom:20px;overflow-x:auto">
+			<div class="pl-section-header">Active Sessions</div>
+			<table class="pl-sess-table">
 				<thead>
 					<tr>
 						<th>Session</th>
@@ -238,8 +325,36 @@ function pl_live_sessions_page() {
 						<th>Lang</th>
 					</tr>
 				</thead>
-				<tbody id="plLiveBody">
+				<tbody id="plActiveBody">
 					<tr><td colspan="14" class="pl-empty">Waiting for first heartbeat...</td></tr>
+				</tbody>
+			</table>
+		</div>
+
+		<!-- RECENT SESSIONS -->
+		<div class="pl-section-recent" style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;overflow-x:auto">
+			<div class="pl-section-header">Recent Sessions (Last 30 min)</div>
+			<table class="pl-sess-table">
+				<thead>
+					<tr>
+						<th>Session</th>
+						<th>Post</th>
+						<th>Device</th>
+						<th>Duration</th>
+						<th>Scroll</th>
+						<th>Pattern</th>
+						<th>Gate Status</th>
+						<th>Ads</th>
+						<th>Viewable</th>
+						<th>Rate</th>
+						<th>Speed</th>
+						<th>Zones</th>
+						<th>Ended</th>
+						<th>Lang</th>
+					</tr>
+				</thead>
+				<tbody id="plRecentBody">
+					<tr><td colspan="14" class="pl-empty">No recent sessions yet.</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -249,9 +364,11 @@ function pl_live_sessions_page() {
 	(function() {
 		var API = <?php echo wp_json_encode( $api ); ?>;
 		var NONCE = <?php echo wp_json_encode( $nonce ); ?>;
-		var tbody = document.getElementById('plLiveBody');
-		var countEl = document.getElementById('plLiveCount');
-		var expandedSid = null;
+		var activeBody = document.getElementById('plActiveBody');
+		var recentBody = document.getElementById('plRecentBody');
+		var activeCountEl = document.getElementById('plActiveCount');
+		var recentCountEl = document.getElementById('plRecentCount');
+		var expandedSids = {};
 		var lastData = null;
 
 		function gateIcon(ok) {
@@ -271,6 +388,12 @@ function pl_live_sessions_page() {
 			return m > 0 ? m + 'm ' + sec + 's' : sec + 's';
 		}
 
+		function fmtAgo(seconds) {
+			if (seconds < 60) return seconds + 's ago';
+			var m = Math.floor(seconds / 60);
+			return m + 'm ago';
+		}
+
 		function shortRef(ref) {
 			if (!ref) return 'direct';
 			if (ref.indexOf('pinterest') !== -1) return 'pinterest';
@@ -279,13 +402,18 @@ function pl_live_sessions_page() {
 			try { return new URL(ref).hostname.replace('www.', ''); } catch(e) { return ref.substring(0, 20); }
 		}
 
-		function renderRow(s) {
-			var stale = s.age_s > 15 ? ' class="pl-stale pl-row-expand"' : ' class="pl-row-expand"';
+		function renderRow(s, isRecent) {
+			var rowClass = 'pl-row-expand';
+			if (isRecent) rowClass += ' pl-ended';
+			else if (s.age_s > 15) rowClass += ' pl-stale';
+
 			var rate = s.active_ads > 0 ? Math.round((s.viewable_ads / s.active_ads) * 100) : 0;
 			var title = s.post_title || s.post_slug || '(ID ' + s.post_id + ')';
 			if (title.length > 35) title = title.substring(0, 32) + '...';
 
-			var html = '<tr' + stale + ' data-sid="' + s.sid + '">' +
+			var lastCol = isRecent ? fmtAgo(s.age_s) : (s.language || '-');
+
+			var html = '<tr class="' + rowClass + '" data-sid="' + s.sid + '">' +
 				'<td><code>' + s.sid + '</code></td>' +
 				'<td title="' + (s.post_title || s.post_slug) + '">' + title + '</td>' +
 				'<td>' + s.device + '</td>' +
@@ -298,37 +426,45 @@ function pl_live_sessions_page() {
 				'<td>' + rate + '%</td>' +
 				'<td>' + s.scroll_speed + '</td>' +
 				'<td><code style="font-size:11px">' + (s.zones_active || '-') + '</code></td>' +
-				'<td>' + shortRef(s.referrer) + '</td>' +
-				'<td>' + (s.language || '-') + '</td>' +
+				'<td>' + (isRecent ? shortRef(s.referrer) : shortRef(s.referrer)) + '</td>' +
+				'<td>' + lastCol + '</td>' +
 				'</tr>';
 
 			// Detail row.
-			var show = expandedSid === s.sid ? '' : ' style="display:none"';
+			var show = expandedSids[s.sid] ? '' : ' style="display:none"';
 			html += '<tr class="pl-detail"' + show + ' data-detail="' + s.sid + '"><td colspan="14">';
-			html += renderDetail(s);
+			html += renderDetail(s, isRecent);
 			html += '</td></tr>';
 
 			return html;
 		}
 
-		function renderDetail(s) {
+		function renderDetail(s, isRecent) {
 			var h = '<div class="pl-detail-inner">';
 
 			// Gate funnel.
 			h += '<div>';
-			h += '<h4>Gate Funnel</h4>';
+			h += '<h4>Gate Funnel' + (isRecent ? ' (Final State)' : '') + '</h4>';
 			h += '<table><tr><th>Signal</th><th>Status</th></tr>';
 			h += '<tr><td>Scroll (' + Math.round(s.scroll_pct) + '%)</td><td>' + gateIcon(s.gate_scroll) + '</td></tr>';
 			h += '<tr><td>Time (' + fmtTime(s.time_on_page_s) + ')</td><td>' + gateIcon(s.gate_time) + '</td></tr>';
 			h += '<tr><td>Direction changes</td><td>' + gateIcon(s.gate_direction) + '</td></tr>';
 			h += '<tr><td><strong>Gate</strong></td><td>' + (s.gate_open ? '<span class="pl-gate-ok" style="font-weight:700">OPEN</span>' : '<span class="pl-gate-fail">CLOSED</span>') + '</td></tr>';
 			h += '</table>';
-			h += '<p style="font-size:12px;color:#646970;margin-top:8px">Viewport: ' + s.viewport_w + 'x' + s.viewport_h + '<br>Device: ' + s.device + '<br>Referrer: ' + (s.referrer || 'direct') + '</p>';
-			h += '</div>';
+			h += '<p style="font-size:12px;color:#646970;margin-top:8px">';
+			h += 'Viewport: ' + s.viewport_w + 'x' + s.viewport_h + '<br>';
+			h += 'Device: ' + s.device + '<br>';
+			h += 'Referrer: ' + (s.referrer || 'direct') + '<br>';
+			h += 'Language: ' + (s.language || '-');
+			if (isRecent && s.ended_at) {
+				var endDate = new Date(s.ended_at * 1000);
+				h += '<br>Ended: ' + endDate.toLocaleTimeString();
+			}
+			h += '</p></div>';
 
 			// Zone detail.
 			h += '<div>';
-			h += '<h4>Zone Detail (' + (s.events ? s.events.length : 0) + ' zones)</h4>';
+			h += '<h4>Zone Detail (' + (s.events ? s.events.length : 0) + ' zones)' + (isRecent ? ' — Final' : '') + '</h4>';
 			if (s.events && s.events.length > 0) {
 				h += '<table><tr><th>Zone</th><th>Size</th><th>Depth</th><th>Speed</th><th>Visible</th><th>Viewable</th><th>Max %</th></tr>';
 				for (var i = 0; i < s.events.length; i++) {
@@ -345,7 +481,7 @@ function pl_live_sessions_page() {
 				}
 				h += '</table>';
 			} else {
-				h += '<p style="color:#646970;font-size:12px">No zones activated yet (gate may be closed).</p>';
+				h += '<p style="color:#646970;font-size:12px">No zones activated' + (isRecent ? '.' : ' yet (gate may be closed).') + '</p>';
 			}
 			h += '</div>';
 
@@ -353,57 +489,81 @@ function pl_live_sessions_page() {
 			return h;
 		}
 
+		function renderTable(tbody, sessions, isRecent, emptyMsg) {
+			if (sessions.length === 0) {
+				tbody.innerHTML = '<tr><td colspan="14" class="pl-empty">' + emptyMsg + '</td></tr>';
+				return;
+			}
+			var html = '';
+			for (var i = 0; i < sessions.length; i++) {
+				html += renderRow(sessions[i], isRecent);
+			}
+			tbody.innerHTML = html;
+
+			// Bind expand clicks.
+			var rows = tbody.querySelectorAll('.pl-row-expand');
+			for (var j = 0; j < rows.length; j++) {
+				rows[j].addEventListener('click', onRowClick);
+			}
+		}
+
 		function refresh() {
 			fetch(API + '?_wpnonce=' + NONCE, { credentials: 'same-origin' })
 				.then(function(r) { return r.json(); })
 				.then(function(res) {
 					lastData = res;
-					var sessions = res.sessions || [];
-					countEl.textContent = sessions.length;
 
-					if (sessions.length === 0) {
-						tbody.innerHTML = '<tr><td colspan="14" class="pl-empty">No active sessions. Heartbeats appear when visitors browse posts with the ad engine active.</td></tr>';
-						return;
-					}
+					activeCountEl.textContent = res.active_count || 0;
+					recentCountEl.textContent = res.recent_count || 0;
 
-					var html = '';
-					for (var i = 0; i < sessions.length; i++) {
-						html += renderRow(sessions[i]);
-					}
-					tbody.innerHTML = html;
-
-					// Re-bind expand clicks.
-					var rows = tbody.querySelectorAll('.pl-row-expand');
-					for (var j = 0; j < rows.length; j++) {
-						rows[j].addEventListener('click', onRowClick);
-					}
+					renderTable(
+						activeBody,
+						res.active || [],
+						false,
+						'No active sessions. Heartbeats appear when visitors browse posts with the ad engine active.'
+					);
+					renderTable(
+						recentBody,
+						res.recent || [],
+						true,
+						'No recent sessions yet.'
+					);
 				})
 				.catch(function() {});
 		}
 
 		function onRowClick() {
 			var sid = this.getAttribute('data-sid');
-			expandedSid = expandedSid === sid ? null : sid;
-			var detail = tbody.querySelector('[data-detail="' + sid + '"]');
-			if (detail) {
-				detail.style.display = expandedSid === sid ? '' : 'none';
+			expandedSids[sid] = !expandedSids[sid];
+
+			// Find detail row in both tables.
+			var tables = [activeBody, recentBody];
+			for (var t = 0; t < tables.length; t++) {
+				var detail = tables[t].querySelector('[data-detail="' + sid + '"]');
+				if (detail) {
+					detail.style.display = expandedSids[sid] ? '' : 'none';
+				}
 			}
 		}
 
-		// Export button.
+		// Export button — includes both active and recent.
 		document.getElementById('plExportLive').addEventListener('click', function() {
-			fetch(API + '?_wpnonce=' + NONCE + '&recent=1', { credentials: 'same-origin' })
-				.then(function(r) { return r.json(); })
-				.then(function(res) {
-					var blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
-					var url = URL.createObjectURL(blob);
-					var a = document.createElement('a');
-					a.href = url;
-					var d = new Date().toISOString().slice(0, 10);
-					a.download = 'pl-live-sessions-' + d + '.json';
-					a.click();
-					URL.revokeObjectURL(url);
-				});
+			if (!lastData) return;
+			var exportData = {
+				exported_at: new Date().toISOString(),
+				active_count: lastData.active_count || 0,
+				recent_count: lastData.recent_count || 0,
+				active: lastData.active || [],
+				recent: lastData.recent || []
+			};
+			var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+			var url = URL.createObjectURL(blob);
+			var a = document.createElement('a');
+			a.href = url;
+			var d = new Date().toISOString().slice(0, 10);
+			a.download = 'pl-live-sessions-' + d + '.json';
+			a.click();
+			URL.revokeObjectURL(url);
 		});
 
 		// Start polling.
