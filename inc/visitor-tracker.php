@@ -55,12 +55,31 @@ function plt_realtime_data() {
 
     $active_5min = [];
     $active_1min = 0;
+    $total_5min = 0;
+    $total_1min = 0;
+    $seen_vids = [];
 
     foreach ($sessions as $s) {
         $ts = $s['unix'] ?? strtotime($s['ts'] ?? '');
         if (!$ts) continue;
 
         if ($ts >= $cutoff_5min) {
+            $total_5min++;
+            if ($ts >= $cutoff_1min) $total_1min++;
+
+            // Only count human, non-duplicate sessions as active visitors
+            $is_human = !empty($s['is_human']);
+            $is_dedup = !empty($s['is_dedup']);
+            // Backwards compat: sessions without is_human field (pre-filter) count as human
+            if (!isset($s['is_human'])) $is_human = true;
+
+            if (!$is_human || $is_dedup) continue;
+
+            // Deduplicate by visitor_id for unique visitor count
+            $vid = $s['visitor_id'] ?? '';
+            if ($vid && isset($seen_vids[$vid])) continue;
+            if ($vid) $seen_vids[$vid] = true;
+
             $page_url = $s['url'] ?? '';
             $short = preg_replace('#https?://[^/]+#', '', $page_url);
 
@@ -78,6 +97,8 @@ function plt_realtime_data() {
     return [
         'count' => count($active_5min),
         'count_1min' => $active_1min,
+        'total_sessions_5min' => $total_5min,
+        'total_sessions_1min' => $total_1min,
         'visitors' => array_reverse($active_5min),
         'timestamp' => date('H:i:s', $now),
     ];
@@ -86,6 +107,12 @@ function plt_realtime_data() {
 function plt_collect_data($request) {
     $body = $request->get_json_params();
     if (empty($body) || !isset($body['t'])) return new WP_REST_Response(['ok'=>false], 400);
+
+    // Server-side bot detection (backup for JS-side filtering)
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $is_server_bot = preg_match('/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|wget|curl|python-requests|go-http-client|java\/|libwww/i', $ua);
+    // Drop bot requests entirely — don't store them
+    if ($is_server_bot) return new WP_REST_Response(['ok'=>true], 200);
 
     $ip_hash = md5($_SERVER['REMOTE_ADDR'] . date('YmdHi'));
     if (get_transient('plt_r_' . $ip_hash)) return new WP_REST_Response(['ok'=>true], 200);
@@ -113,6 +140,8 @@ function plt_collect_data($request) {
         'vh' => intval($body['vh'] ?? 0),
         'returning' => intval($body['ret'] ?? 0),
         'visitor_id' => sanitize_text_field($body['vid'] ?? ''),
+        'is_human' => intval($body['human'] ?? 0),
+        'is_dedup' => intval($body['dedup'] ?? 0),
         'ga4cid' => sanitize_text_field($body['ga4cid'] ?? ''),
         'timezone' => sanitize_text_field($body['tz'] ?? ''),
         'language' => sanitize_text_field($body['lang'] ?? ''),
@@ -1691,16 +1720,28 @@ function plt_full_analytics_page() {
     $depth_buckets = array_fill(0, 10, 0);
     $realtime_cutoff = time() - 300;
     $realtime_count = 0;
+    $realtime_total = 0;
+    $realtime_vids = [];
     $total_pin_saves = 0;
     $pin_sessions = 0;
     $exit_depths = [];
     $viewport_widths = [];
     $completions = [];
+    $human_sessions = 0;
+    $bot_sessions = 0;
+    $dedup_sessions = 0;
 
     // ─── PROCESS EACH SESSION ───
     foreach ($sessions as $s) {
         $ts = $s['unix'] ?? strtotime($s['ts'] ?? '');
         if (!$ts) continue;
+
+        // Track human/bot/dedup counts
+        $is_human = isset($s['is_human']) ? !empty($s['is_human']) : true; // backwards compat
+        $is_dedup = !empty($s['is_dedup']);
+        if (!$is_human) { $bot_sessions++; }
+        if ($is_dedup) { $dedup_sessions++; }
+        if ($is_human) { $human_sessions++; }
 
         $date = date('Y-m-d', $ts);
         $hour = (int)date('G', $ts);
@@ -1754,7 +1795,16 @@ function plt_full_analytics_page() {
         $pattern = strtolower($s['scroll_pattern'] ?? 'scanner');
         if (isset($patterns[$pattern])) $patterns[$pattern]++;
 
-        if ($ts >= $realtime_cutoff) $realtime_count++;
+        if ($ts >= $realtime_cutoff) {
+            $realtime_total++;
+            if ($is_human && !$is_dedup) {
+                $rt_vid = $s['visitor_id'] ?? '';
+                if (!$rt_vid || !isset($realtime_vids[$rt_vid])) {
+                    $realtime_count++;
+                    if ($rt_vid) $realtime_vids[$rt_vid] = true;
+                }
+            }
+        }
 
         $pin_s = $s['pin_saves']['saves'] ?? 0;
         if ($pin_s > 0) { $total_pin_saves += intval($pin_s); $pin_sessions++; }
@@ -1897,13 +1947,13 @@ function plt_full_analytics_page() {
             <div class="pla-card pla-realtime pla-stat" id="plaRealtimeCard">
                 <div><span class="pla-pulse"></span></div>
                 <div class="pla-stat-value" id="plaRealtimeCount"><?php echo $realtime_count; ?></div>
-                <div class="pla-stat-label">Active Now (5 min)</div>
-                <div class="pla-stat-sub" id="plaRealtimeSub" style="color:rgba(255,255,255,.6)">Last updated: <?php echo date('H:i:s'); ?></div>
+                <div class="pla-stat-label">Active Visitors (5 min)</div>
+                <div class="pla-stat-sub" id="plaRealtimeSub" style="color:rgba(255,255,255,.6)"><?php echo $realtime_total; ?> total sessions &middot; Updated: <?php echo date('H:i:s'); ?></div>
             </div>
             <div class="pla-card pla-stat">
-                <div class="pla-stat-value"><?php echo number_format($total); ?></div>
-                <div class="pla-stat-label">Total Sessions</div>
-                <div class="pla-stat-sub"><?php echo number_format($unique_visitors); ?> unique &middot; <?php echo $sessions_per_visitor; ?> sessions/visitor</div>
+                <div class="pla-stat-value"><?php echo number_format($human_sessions); ?></div>
+                <div class="pla-stat-label">Human Sessions</div>
+                <div class="pla-stat-sub"><?php echo number_format($unique_visitors); ?> unique visitors &middot; <?php echo number_format($total); ?> total (<?php echo $bot_sessions; ?> bots filtered)</div>
             </div>
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $avg_depth; ?>%</div>
@@ -1922,7 +1972,7 @@ function plt_full_analytics_page() {
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $returning_pct; ?>%</div>
                 <div class="pla-stat-label">Returning Visitors</div>
-                <div class="pla-stat-sub"><?php echo $returning_visitors; ?> / <?php echo $total; ?></div>
+                <div class="pla-stat-sub"><?php echo $returning_visitors; ?> returning / <?php echo $unique_visitors; ?> unique &middot; <?php echo $sessions_per_visitor; ?> sessions/visitor</div>
             </div>
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $avg_active; ?>s</div>
@@ -1944,7 +1994,7 @@ function plt_full_analytics_page() {
         <!-- REAL-TIME VISITORS TABLE -->
         <?php if ($realtime_count > 0): ?>
         <div class="pla-card" id="plaRealtimeTable" style="margin-bottom:24px">
-            <h3>Active Visitors (Last 5 Minutes)</h3>
+            <h3>Active Visitors (Last 5 Minutes) &mdash; Human Only</h3>
             <div style="overflow-x:auto">
                 <table class="pla-table" style="width:100%;border-collapse:collapse;font-size:13px">
                     <thead>
@@ -2341,8 +2391,11 @@ function plt_full_analytics_page() {
                     setTimeout(function() { countEl.style.transform = 'scale(1)'; }, 200);
 
                     if (subEl) {
-                        subEl.textContent = 'Updated: ' + data.timestamp +
-                            (data.count_1min > 0 ? ' \u00b7 ' + data.count_1min + ' in last min' : '');
+                        var parts = [];
+                        if (data.total_sessions_5min) parts.push(data.total_sessions_5min + ' total sessions');
+                        parts.push('Updated: ' + data.timestamp);
+                        if (data.count_1min > 0) parts.push(data.count_1min + ' in last min');
+                        subEl.textContent = parts.join(' \u00b7 ');
                     }
 
                     if (bodyEl && data.visitors) {
@@ -2383,10 +2436,44 @@ add_action('wp_footer', function() {
 <script>
 (function(){
 'use strict';
+
+// === BOT DETECTION (pre-init, before any tracking) ===
+if(navigator.webdriver)return;
+if(/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|statuscode|wget|curl|python-requests|go-http-client|java\/|libwww/i.test(navigator.userAgent))return;
+if(window.innerWidth===0&&window.innerHeight===0)return;
+if(typeof navigator.languages!=='undefined'&&navigator.languages.length===0)return;
+
+// === VISIBILITY GATE (skip prerender/prefetch) ===
+function boot(){
+if(document.visibilityState==='prerender'){
+document.addEventListener('visibilitychange',function f(){
+if(document.visibilityState==='visible'){document.removeEventListener('visibilitychange',f);startInit();}
+});return;
+}
+startInit();
+}
+function startInit(){
+if('requestIdleCallback' in window)requestIdleCallback(init);
+else setTimeout(init,300);
+}
+
 function init(){
 var EP='<?php echo esc_js($endpoint); ?>',PID=<?php echo intval($post_id); ?>,T0=Date.now();
 var vw=window.innerWidth,vh=window.innerHeight;
 var dev=vw<768?'mobile':(vw<1024?'tablet':'desktop');
+
+// === INTERACTION GATE (human verification) ===
+var interacted=false;
+function onInteract(){interacted=true;}
+window.addEventListener('scroll',onInteract,{passive:true,once:true});
+window.addEventListener('click',onInteract,{passive:true,once:true});
+window.addEventListener('touchstart',onInteract,{passive:true,once:true});
+window.addEventListener('mousemove',onInteract,{passive:true,once:true});
+window.addEventListener('keydown',onInteract,{passive:true,once:true});
+
+// === SESSION DEDUPLICATION ===
+var isDup=false;
+try{if(sessionStorage.getItem('plt_page_'+PID)){isDup=true;}else{sessionStorage.setItem('plt_page_'+PID,'1');}}catch(e){}
 
 // Visitor ID (persistent across sessions)
 var ret=0,vid='';
@@ -2895,6 +2982,7 @@ function buildPayload(){
     return {t:timeOnPage,url:location.pathname,pid:PID,ref:document.referrer,
         dev:dev,vw:vw,vh:vh,ret:ret,vid:vid,ga4cid:ga4cid,
         tz:Intl.DateTimeFormat().resolvedOptions().timeZone||'',lang:navigator.language||'',
+        human:interacted?1:0,dedup:isDup?1:0,
         d:Math.round(maxDepth*10)/10,ccp:Math.round(ccp*10)/10,
         ss:Math.round(avgSpd),ms:Math.round(maxSpd),sp:pattern,
         ch:document.documentElement.scrollHeight,se:scrollEvts,dc:dirChanges,
@@ -2921,8 +3009,7 @@ document.addEventListener('visibilitychange',function(){if(document.visibilitySt
 window.addEventListener('pagehide',send);
 }
 
-if('requestIdleCallback' in window)requestIdleCallback(init);
-else setTimeout(init,300);
+boot();
 })();
 </script>
 <?php
