@@ -21,7 +21,7 @@
 var cfg = window.plAds || {};
 
 // wp_localize_script converts ALL values to strings. Parse numerics now.
-cfg.maxAds = parseInt(cfg.maxAds, 10) || 4;
+cfg.maxAds = parseInt(cfg.maxAds, 10) || 5;
 cfg.gateScrollPct = parseInt(cfg.gateScrollPct, 10) || 15;
 cfg.gateTimeSec = parseInt(cfg.gateTimeSec, 10) || 5;
 cfg.gateDirChanges = parseInt(cfg.gateDirChanges, 10) || 0;
@@ -69,7 +69,19 @@ var state = {
 	scrollSpeed: 0,
 	pauseTimer: null,
 	sessionStart: Date.now(),
-	dataSent: false
+	dataSent: false,
+
+	// Overlay viewability tracking.
+	anchorFiredAt: 0,
+	anchorImpressions: 0,
+	anchorViewableImps: 0,
+	interstitialShownAt: 0,
+	interstitialClosedAt: 0,
+	interstitialViewable: 0,
+	pauseShownAt: 0,
+	pauseClosedAt: 0,
+	pauseViewable: 0,
+	pauseTotalVisibleMs: 0
 };
 
 /* ================================================================
@@ -572,6 +584,7 @@ function renderDummy(el, size, w, h, zoneId, score) {
  * ================================================================ */
 
 var interstitialShown = false;
+var interstitialSlot = null;
 
 function showInterstitial() {
 	if (interstitialShown || !cfg.fmtInterstitial || !state.gateOpen) return;
@@ -579,6 +592,8 @@ function showInterstitial() {
 
 	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
+		state.interstitialShownAt = Date.now();
+
 		if (cfg.dummy) {
 			// Dummy mode: custom overlay with close button + auto-close.
 			var overlay = document.createElement('div');
@@ -587,10 +602,17 @@ function showInterstitial() {
 			var inner = document.createElement('div');
 			inner.className = 'pl-ad-interstitial-inner';
 
-			var closeBtn = createCloseBtn(function() {
+			var onInterstitialClose = function() {
+				if (!state.interstitialClosedAt) {
+					state.interstitialClosedAt = Date.now();
+					state.interstitialViewable = (state.interstitialClosedAt - state.interstitialShownAt >= 1000) ? 1 : 0;
+					if (cfg.debug) console.log('[PL-Ads] Interstitial closed: ' + (state.interstitialClosedAt - state.interstitialShownAt) + 'ms, viewable=' + state.interstitialViewable);
+				}
 				overlay.classList.remove('pl-ad-active');
 				setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-			});
+			};
+
+			var closeBtn = createCloseBtn(onInterstitialClose);
 			inner.appendChild(closeBtn);
 			inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
 
@@ -598,10 +620,7 @@ function showInterstitial() {
 			document.body.appendChild(overlay);
 
 			setTimeout(function() {
-				if (overlay.parentNode) {
-					overlay.classList.remove('pl-ad-active');
-					setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-				}
+				if (overlay.parentNode) onInterstitialClose();
 			}, 15000);
 		} else {
 			// Real GPT interstitial — GPT manages the overlay, close button, and timing.
@@ -609,7 +628,18 @@ function showInterstitial() {
 			googletag.cmd.push(function() {
 				var slot = googletag.defineOutOfPageSlot(slotPath, googletag.enums.OutOfPageFormat.INTERSTITIAL);
 				if (slot) {
+					interstitialSlot = slot;
 					slot.addService(googletag.pubads());
+
+					// Track when GPT dismisses the interstitial.
+					googletag.pubads().addEventListener('slotVisibilityChanged', function(event) {
+						if (event.slot === interstitialSlot && event.inViewPercentage === 0 && state.interstitialShownAt && !state.interstitialClosedAt) {
+							state.interstitialClosedAt = Date.now();
+							state.interstitialViewable = (state.interstitialClosedAt - state.interstitialShownAt >= 1000) ? 1 : 0;
+							if (cfg.debug) console.log('[PL-Ads] Interstitial dismissed by GPT: ' + (state.interstitialClosedAt - state.interstitialShownAt) + 'ms, viewable=' + state.interstitialViewable);
+						}
+					});
+
 					if (cfg.debug) console.log('[PL-Ads] Interstitial slot defined (out-of-page): ' + slotPath);
 				}
 			});
@@ -636,6 +666,11 @@ function showAnchor() {
 
 	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
+		state.anchorFiredAt = Date.now();
+		state.anchorImpressions = 1;
+		// Anchor is sticky and always in viewport — viewable after 1s.
+		setTimeout(function() { state.anchorViewableImps = 1; }, 1000);
+
 		if (cfg.dummy) {
 			// Dummy mode: custom sticky bottom bar with close button.
 			var anchor = document.createElement('div');
@@ -649,6 +684,13 @@ function showAnchor() {
 			anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
 
 			document.body.appendChild(anchor);
+
+			// Dummy mode: simulate 30s refresh for impression counting.
+			setInterval(function() {
+				state.anchorImpressions++;
+				state.anchorViewableImps++;
+				if (cfg.debug) console.log('[PL-Ads] Anchor dummy refresh: impressions=' + state.anchorImpressions);
+			}, 30000);
 		} else {
 			// Real GPT anchor — GPT manages the sticky bottom placement and dismiss.
 			var slotPath = cfg.slotPrefix + cfg.slots.anchor;
@@ -661,7 +703,9 @@ function showAnchor() {
 					// 30-second refresh interval per Ad.Plus requirements.
 					setInterval(function() {
 						googletag.pubads().refresh([slot]);
-						if (cfg.debug) console.log('[PL-Ads] Anchor refreshed (30s interval)');
+						state.anchorImpressions++;
+						state.anchorViewableImps++;
+						if (cfg.debug) console.log('[PL-Ads] Anchor refreshed (30s interval): impressions=' + state.anchorImpressions);
 					}, 30000);
 				}
 			});
@@ -694,13 +738,23 @@ function onScrollPause() {
 
 	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
+		state.pauseShownAt = Date.now();
+
 		var pause = document.createElement('div');
 		pause.className = 'pl-ad-pause pl-ad-active';
 
-		var closeBtn = createCloseBtn(function() {
+		var onPauseClose = function() {
+			if (!state.pauseClosedAt) {
+				state.pauseClosedAt = Date.now();
+				state.pauseTotalVisibleMs = state.pauseClosedAt - state.pauseShownAt;
+				state.pauseViewable = (state.pauseTotalVisibleMs >= 1000) ? 1 : 0;
+				if (cfg.debug) console.log('[PL-Ads] Pause closed: ' + state.pauseTotalVisibleMs + 'ms, viewable=' + state.pauseViewable);
+			}
 			pause.classList.remove('pl-ad-active');
 			setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
-		});
+		};
+
+		var closeBtn = createCloseBtn(onPauseClose);
 		pause.appendChild(closeBtn);
 
 		if (cfg.dummy) {
@@ -727,10 +781,7 @@ function onScrollPause() {
 
 		// Auto-close after 10s.
 		setTimeout(function() {
-			if (pause.parentNode) {
-				pause.classList.remove('pl-ad-active');
-				setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
-			}
+			if (pause.parentNode) onPauseClose();
 		}, 10000);
 
 		if (cfg.debug) console.log('[PL-Ads] Pause banner shown');
@@ -973,6 +1024,14 @@ function buildSessionData() {
 		anchorStatus: anchorShown ? 'firing' : 'off',
 		interstitialStatus: interstitialShown ? 'fired' : 'off',
 		pauseStatus: pauseShown ? 'fired' : 'off',
+		// Overlay viewability data.
+		anchorImpressions: state.anchorImpressions,
+		anchorViewable: state.anchorViewableImps,
+		anchorVisibleMs: state.anchorFiredAt ? Date.now() - state.anchorFiredAt : 0,
+		interstitialViewable: state.interstitialViewable,
+		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
+		pauseViewable: state.pauseViewable,
+		pauseVisibleMs: state.pauseTotalVisibleMs || (state.pauseShownAt && !state.pauseClosedAt ? Date.now() - state.pauseShownAt : 0),
 		zones: zones
 	};
 }
@@ -1144,6 +1203,14 @@ function sendHeartbeat() {
 		anchorStatus: anchorShown ? 'firing' : (gateChecks.time ? 'waiting' : 'off'),
 		interstitialStatus: interstitialShown ? 'fired' : (state.gateOpen && state.activeAds >= 2 ? 'waiting' : 'off'),
 		pauseStatus: pauseShown ? 'fired' : (state.gateOpen ? 'waiting' : 'off'),
+		// Overlay viewability data.
+		anchorImpressions: state.anchorImpressions,
+		anchorViewable: state.anchorViewableImps,
+		anchorVisibleMs: state.anchorFiredAt ? Date.now() - state.anchorFiredAt : 0,
+		interstitialViewable: state.interstitialViewable,
+		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
+		pauseViewable: state.pauseViewable,
+		pauseVisibleMs: state.pauseTotalVisibleMs || (state.pauseShownAt && !state.pauseClosedAt ? Date.now() - state.pauseShownAt : 0),
 		// Retry stats.
 		pendingRetries: state.pendingRetries,
 		totalRetries: state.totalRetries,

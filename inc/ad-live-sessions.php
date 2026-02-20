@@ -116,6 +116,14 @@ function pl_live_sessions_heartbeat( $request ) {
 		'anchor_status'       => sanitize_text_field( $body['anchorStatus'] ?? 'off' ),
 		'interstitial_status' => sanitize_text_field( $body['interstitialStatus'] ?? 'off' ),
 		'pause_status'        => sanitize_text_field( $body['pauseStatus'] ?? 'off' ),
+		// Overlay viewability data.
+		'anchor_impressions'      => intval( $body['anchorImpressions'] ?? 0 ),
+		'anchor_viewable'         => intval( $body['anchorViewable'] ?? 0 ),
+		'anchor_visible_ms'       => intval( $body['anchorVisibleMs'] ?? 0 ),
+		'interstitial_viewable'   => intval( $body['interstitialViewable'] ?? 0 ),
+		'interstitial_duration_ms' => intval( $body['interstitialDurationMs'] ?? 0 ),
+		'pause_viewable'          => intval( $body['pauseViewable'] ?? 0 ),
+		'pause_visible_ms'        => intval( $body['pauseVisibleMs'] ?? 0 ),
 		// Retry stats.
 		'pending_retries'     => intval( $body['pendingRetries'] ?? 0 ),
 		'total_retries'       => intval( $body['totalRetries'] ?? 0 ),
@@ -452,6 +460,14 @@ function pl_live_sessions_page() {
 			return '<span class="pl-gate-fail" title="off">&#10007;</span>';
 		}
 
+		function fmtOverlay(status, extra) {
+			var icon = fmtStatus(status);
+			if (extra && (status === 'firing' || status === 'fired')) {
+				return icon + ' <span style="font-size:11px">' + extra + '</span>';
+			}
+			return icon;
+		}
+
 		function renderRow(s, isRecent) {
 			var rowClass = 'pl-row-expand';
 			if (isRecent) rowClass += ' pl-ended';
@@ -476,9 +492,9 @@ function pl_live_sessions_page() {
 				'<td>' + rate + '%</td>' +
 				'<td>' + s.scroll_speed + '</td>' +
 				'<td><code style="font-size:11px">' + (s.zones_active || '-') + '</code></td>' +
-				'<td>' + fmtStatus(s.anchor_status) + '</td>' +
-				'<td>' + fmtStatus(s.interstitial_status) + '</td>' +
-				'<td>' + fmtStatus(s.pause_status) + '</td>' +
+				'<td>' + fmtOverlay(s.anchor_status, s.anchor_impressions ? s.anchor_impressions + '/' + (s.anchor_viewable || 0) : '') + '</td>' +
+				'<td>' + fmtOverlay(s.interstitial_status, s.interstitial_duration_ms ? (s.interstitial_duration_ms / 1000).toFixed(1) + 's' : '') + '</td>' +
+				'<td>' + fmtOverlay(s.pause_status, s.pause_visible_ms ? (s.pause_visible_ms / 1000).toFixed(1) + 's' : '') + '</td>' +
 				'<td>' + (isRecent ? shortRef(s.referrer) : shortRef(s.referrer)) + '</td>' +
 				'<td>' + lastCol + '</td>' +
 				'</tr>';
@@ -518,10 +534,20 @@ function pl_live_sessions_page() {
 			// Out-of-page ads.
 			h += '<div>';
 			h += '<h4>Out-of-Page Ads</h4>';
-			h += '<table><tr><th>Format</th><th>Status</th></tr>';
-			h += '<tr><td>Anchor (320x50)</td><td>' + fmtStatus(s.anchor_status) + ' ' + (s.anchor_status || 'off') + '</td></tr>';
-			h += '<tr><td>Interstitial (300x250)</td><td>' + fmtStatus(s.interstitial_status) + ' ' + (s.interstitial_status || 'off') + '</td></tr>';
-			h += '<tr><td>Pause (300x250)</td><td>' + fmtStatus(s.pause_status) + ' ' + (s.pause_status || 'off') + '</td></tr>';
+			h += '<table><tr><th>Format</th><th>Status</th><th>Viewable</th><th>Detail</th></tr>';
+			var anchorDetail = s.anchor_impressions ? s.anchor_impressions + ' imp, ' + (s.anchor_viewable || 0) + ' viewable' : '-';
+			if (s.anchor_visible_ms) anchorDetail += ', ' + (s.anchor_visible_ms / 1000).toFixed(1) + 's visible';
+			h += '<tr><td>Anchor (320x50)</td><td>' + fmtStatus(s.anchor_status) + ' ' + (s.anchor_status || 'off') + '</td>';
+			h += '<td>' + (s.anchor_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
+			h += '<td style="font-size:12px">' + anchorDetail + '</td></tr>';
+			var intDur = s.interstitial_duration_ms ? (s.interstitial_duration_ms / 1000).toFixed(1) + 's' : '-';
+			h += '<tr><td>Interstitial (300x250)</td><td>' + fmtStatus(s.interstitial_status) + ' ' + (s.interstitial_status || 'off') + '</td>';
+			h += '<td>' + (s.interstitial_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
+			h += '<td style="font-size:12px">Duration: ' + intDur + '</td></tr>';
+			var pauseDur = s.pause_visible_ms ? (s.pause_visible_ms / 1000).toFixed(1) + 's' : '-';
+			h += '<tr><td>Pause (300x250)</td><td>' + fmtStatus(s.pause_status) + ' ' + (s.pause_status || 'off') + '</td>';
+			h += '<td>' + (s.pause_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
+			h += '<td style="font-size:12px">Visible: ' + pauseDur + '</td></tr>';
 			h += '</table>';
 			// Retry stats.
 			var retries = s.total_retries || 0;

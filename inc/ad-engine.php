@@ -38,7 +38,7 @@ function pl_ad_defaults() {
 		'gate_dir_changes'      => 0,
 
 		// Density Controls.
-		'max_display_ads'       => 4,
+		'max_display_ads'       => 5,
 		'min_spacing_px'        => 800,
 		'min_paragraphs_before' => 2,
 		'min_gap_paragraphs'    => 3,
