@@ -28,7 +28,7 @@ function pl_ad_defaults() {
 	return array(
 		// Global Controls.
 		'enabled'               => false,
-		'dummy_mode'            => true,
+		'dummy_mode'            => false,
 		'debug_overlay'         => false,
 		'record_data'           => true,
 

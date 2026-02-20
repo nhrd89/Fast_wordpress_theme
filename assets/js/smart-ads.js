@@ -43,6 +43,9 @@ var isDesktop = !isMobile;
 if (isMobile && !cfg.mobileEnabled) return;
 if (isDesktop && !cfg.desktopEnabled) return;
 
+// Track per-size div ID counters for Ad.Plus unique div IDs (300x250-1, 300x250-2, etc.).
+var slotSizeCounter = {};
+
 var state = {
 	gateOpen: false,
 	gptLoaded: false,
@@ -500,9 +503,12 @@ function renderDisplayAd(zone, size) {
 		return;
 	}
 
-	// Create GPT ad container.
+	// Create GPT ad container with Ad.Plus-required div IDs (300x250-1, 300x250-2, etc.).
+	if (!slotSizeCounter[size]) slotSizeCounter[size] = 0;
+	slotSizeCounter[size]++;
+	var slotId = size + '-' + slotSizeCounter[size];
+
 	var adDiv = document.createElement('div');
-	var slotId = 'pl-gpt-' + zone.id;
 	adDiv.id = slotId;
 	adDiv.style.width = w + 'px';
 	adDiv.style.height = h + 'px';
@@ -573,46 +579,41 @@ function showInterstitial() {
 
 	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
-		var overlay = document.createElement('div');
-		overlay.className = 'pl-ad-interstitial pl-ad-active';
-
-		var inner = document.createElement('div');
-		inner.className = 'pl-ad-interstitial-inner';
-
-		var closeBtn = createCloseBtn(function() {
-			overlay.classList.remove('pl-ad-active');
-			setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-		});
-		inner.appendChild(closeBtn);
-
 		if (cfg.dummy) {
-			inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
-		} else {
-			var adDiv = document.createElement('div');
-			adDiv.id = 'pl-gpt-interstitial';
-			adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
-			inner.appendChild(adDiv);
+			// Dummy mode: custom overlay with close button + auto-close.
+			var overlay = document.createElement('div');
+			overlay.className = 'pl-ad-interstitial pl-ad-active';
 
+			var inner = document.createElement('div');
+			inner.className = 'pl-ad-interstitial-inner';
+
+			var closeBtn = createCloseBtn(function() {
+				overlay.classList.remove('pl-ad-active');
+				setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
+			});
+			inner.appendChild(closeBtn);
+			inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
+
+			overlay.appendChild(inner);
+			document.body.appendChild(overlay);
+
+			setTimeout(function() {
+				if (overlay.parentNode) {
+					overlay.classList.remove('pl-ad-active');
+					setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
+				}
+			}, 15000);
+		} else {
+			// Real GPT interstitial — GPT manages the overlay, close button, and timing.
 			var slotPath = cfg.slotPrefix + cfg.slots.interstitial;
 			googletag.cmd.push(function() {
-				var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-interstitial');
+				var slot = googletag.defineOutOfPageSlot(slotPath, googletag.enums.OutOfPageFormat.INTERSTITIAL);
 				if (slot) {
 					slot.addService(googletag.pubads());
-					googletag.display('pl-gpt-interstitial');
+					if (cfg.debug) console.log('[PL-Ads] Interstitial slot defined (out-of-page): ' + slotPath);
 				}
 			});
 		}
-
-		overlay.appendChild(inner);
-		document.body.appendChild(overlay);
-
-		// Auto-close after 15s.
-		setTimeout(function() {
-			if (overlay.parentNode) {
-				overlay.classList.remove('pl-ad-active');
-				setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-			}
-		}, 15000);
 
 		if (cfg.debug) console.log('[PL-Ads] Interstitial shown');
 	});
@@ -635,34 +636,36 @@ function showAnchor() {
 
 	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
-		var anchor = document.createElement('div');
-		anchor.className = 'pl-ad-anchor pl-ad-active';
-
-		var closeBtn = createCloseBtn(function() {
-			anchor.classList.remove('pl-ad-active');
-			setTimeout(function() { if (anchor.parentNode) anchor.remove(); }, 300);
-		});
-		anchor.appendChild(closeBtn);
-
 		if (cfg.dummy) {
-			anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
-		} else {
-			var adDiv = document.createElement('div');
-			adDiv.id = 'pl-gpt-anchor';
-			adDiv.style.cssText = 'width:320px;height:50px';
-			anchor.appendChild(adDiv);
+			// Dummy mode: custom sticky bottom bar with close button.
+			var anchor = document.createElement('div');
+			anchor.className = 'pl-ad-anchor pl-ad-active';
 
+			var closeBtn = createCloseBtn(function() {
+				anchor.classList.remove('pl-ad-active');
+				setTimeout(function() { if (anchor.parentNode) anchor.remove(); }, 300);
+			});
+			anchor.appendChild(closeBtn);
+			anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
+
+			document.body.appendChild(anchor);
+		} else {
+			// Real GPT anchor — GPT manages the sticky bottom placement and dismiss.
 			var slotPath = cfg.slotPrefix + cfg.slots.anchor;
 			googletag.cmd.push(function() {
-				var slot = googletag.defineSlot(slotPath, [320, 50], 'pl-gpt-anchor');
+				var slot = googletag.defineOutOfPageSlot(slotPath, googletag.enums.OutOfPageFormat.BOTTOM_ANCHOR);
 				if (slot) {
 					slot.addService(googletag.pubads());
-					googletag.display('pl-gpt-anchor');
+					if (cfg.debug) console.log('[PL-Ads] Anchor slot defined (out-of-page BOTTOM_ANCHOR): ' + slotPath);
+
+					// 30-second refresh interval per Ad.Plus requirements.
+					setInterval(function() {
+						googletag.pubads().refresh([slot]);
+						if (cfg.debug) console.log('[PL-Ads] Anchor refreshed (30s interval)');
+					}, 30000);
 				}
 			});
 		}
-
-		document.body.appendChild(anchor);
 
 		if (cfg.debug) console.log('[PL-Ads] Anchor shown');
 	});
@@ -712,8 +715,10 @@ function onScrollPause() {
 			googletag.cmd.push(function() {
 				var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-pause');
 				if (slot) {
+					slot.setConfig({ contentPause: true });
 					slot.addService(googletag.pubads());
 					googletag.display('pl-gpt-pause');
+					if (cfg.debug) console.log('[PL-Ads] Pause slot defined with contentPause config: ' + slotPath);
 				}
 			});
 		}
