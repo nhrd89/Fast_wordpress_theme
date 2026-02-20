@@ -295,6 +295,7 @@ function pl_ad_settings_page() {
 		<div style="margin-bottom:10px;display:flex;gap:8px;">
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-analytics-dashboard' ) ); ?>" class="button button-primary">Analytics Dashboard</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-live-sessions' ) ); ?>" class="button">Live Sessions</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-optimizer' ) ); ?>" class="button">Optimizer</a>
 		</div>
 
 		<nav class="nav-tab-wrapper">

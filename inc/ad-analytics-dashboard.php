@@ -35,7 +35,168 @@ function pl_ad_dashboard_menu() {
 add_action( 'admin_menu', 'pl_ad_dashboard_menu' );
 
 /* ================================================================
- * 2. MAIN RENDER FUNCTION
+ * 2. EXPORT & CLEAR HANDLERS (admin_init — runs before page output)
+ * ================================================================ */
+
+/**
+ * Handle analytics JSON export.
+ */
+function pl_ad_handle_analytics_export() {
+	if ( ! isset( $_POST['pl_ad_export_analytics'] ) ) {
+		return;
+	}
+	if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'pl_ad_export_analytics_nonce' ) ) {
+		return;
+	}
+
+	$range = sanitize_key( $_POST['export_range'] ?? 'today' );
+	$today = current_time( 'Y-m-d' );
+
+	switch ( $range ) {
+		case 'yesterday':
+			$start = gmdate( 'Y-m-d', strtotime( '-1 day' ) );
+			$end   = $start;
+			break;
+		case '7days':
+			$start = gmdate( 'Y-m-d', strtotime( '-6 days' ) );
+			$end   = $today;
+			break;
+		case '30days':
+			$start = gmdate( 'Y-m-d', strtotime( '-29 days' ) );
+			$end   = $today;
+			break;
+		case 'custom':
+			$start = sanitize_text_field( $_POST['export_start'] ?? $today );
+			$end   = sanitize_text_field( $_POST['export_end'] ?? $today );
+			break;
+		default:
+			$start = $today;
+			$end   = $today;
+	}
+
+	$data    = pl_ad_get_stats_range( $start, $end );
+	$summary = pl_ad_compute_export_summary( $data['combined'] );
+
+	$export = array(
+		'exported_at' => current_time( 'c' ),
+		'range'       => $range,
+		'start_date'  => $start,
+		'end_date'    => $end,
+		'summary'     => $summary,
+		'combined'    => $data['combined'],
+		'daily'       => $data['daily'],
+	);
+
+	$filename = 'pl-ad-analytics-' . $start . '-to-' . $end . '.json';
+
+	header( 'Content-Type: application/json' );
+	header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+	header( 'Cache-Control: no-store' );
+	echo wp_json_encode( $export, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+	exit;
+}
+add_action( 'admin_init', 'pl_ad_handle_analytics_export' );
+
+/**
+ * Handle clearing all aggregated analytics data.
+ */
+function pl_ad_handle_analytics_clear() {
+	if ( ! isset( $_POST['pl_ad_clear_analytics'] ) ) {
+		return;
+	}
+	if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'pl_ad_clear_analytics_nonce' ) ) {
+		return;
+	}
+
+	global $wpdb;
+	$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE 'pl\_ad\_stats\_%'" );
+
+	wp_safe_redirect( admin_url( 'admin.php?page=pl-ad-analytics-dashboard&cleared=1' ) );
+	exit;
+}
+add_action( 'admin_init', 'pl_ad_handle_analytics_clear' );
+
+/**
+ * Compute pre-calculated summary metrics for export.
+ *
+ * @param  array $s Combined stats array.
+ * @return array    Key metrics summary.
+ */
+function pl_ad_compute_export_summary( $s ) {
+	$sessions = $s['total_sessions'];
+
+	$gate_pass_rate = $s['gate_checks'] > 0
+		? round( ( $s['gate_opens'] / $s['gate_checks'] ) * 100, 1 )
+		: 0;
+
+	$adplus_fill_rate = $s['total_ad_requests'] > 0
+		? round( ( $s['total_ad_fills'] / $s['total_ad_requests'] ) * 100, 1 )
+		: 0;
+
+	$newor_fill_rate = $s['waldo_total_requested'] > 0
+		? round( ( $s['waldo_total_filled'] / $s['waldo_total_requested'] ) * 100, 1 )
+		: 0;
+
+	$combined_showing = 0;
+	foreach ( $s['by_zone'] as $z ) {
+		$combined_showing += ( $z['filled'] ?? 0 ) + ( $z['passback_filled'] ?? 0 );
+	}
+	$effective_fill = $s['total_zones_activated'] > 0
+		? round( ( $combined_showing / $s['total_zones_activated'] ) * 100, 1 )
+		: 0;
+
+	$viewability = $s['total_zones_activated'] > 0
+		? round( ( $s['total_viewable_ads'] / $s['total_zones_activated'] ) * 100, 1 )
+		: 0;
+
+	$total_clicks = $s['total_display_clicks'] + $s['total_anchor_clicks']
+		+ $s['total_interstitial_clicks'] + $s['total_pause_clicks'];
+	$total_imps   = $s['total_ad_fills'] + $s['waldo_total_filled'] + $s['anchor_total_impressions'];
+	$ctr          = $total_imps > 0 ? round( ( $total_clicks / $total_imps ) * 100, 2 ) : 0;
+
+	$avg_time   = $sessions > 0 ? round( $s['total_time_s'] / $sessions, 1 ) : 0;
+	$avg_scroll = $sessions > 0 ? round( $s['total_scroll_pct'] / $sessions, 1 ) : 0;
+	$avg_zones  = $sessions > 0 ? round( $s['total_zones_activated'] / $sessions, 1 ) : 0;
+
+	// Top referrer.
+	$top_referrer = '-';
+	if ( ! empty( $s['by_referrer'] ) ) {
+		arsort( $s['by_referrer'] );
+		$top_referrer = array_key_first( $s['by_referrer'] );
+	}
+
+	// Top device.
+	$top_device = '-';
+	if ( ! empty( $s['by_device'] ) ) {
+		arsort( $s['by_device'] );
+		$top_device = array_key_first( $s['by_device'] );
+	}
+
+	$retry_rate = $s['total_retries'] > 0
+		? round( ( $s['retries_successful'] / $s['total_retries'] ) * 100, 1 )
+		: 0;
+
+	return array(
+		'total_sessions'    => $sessions,
+		'gate_pass_rate'    => $gate_pass_rate . '%',
+		'adplus_fill_rate'  => $adplus_fill_rate . '%',
+		'newor_fill_rate'   => $newor_fill_rate . '%',
+		'effective_fill'    => $effective_fill . '%',
+		'viewability'       => $viewability . '%',
+		'total_clicks'      => $total_clicks,
+		'ctr'               => $ctr . '%',
+		'avg_time_s'        => $avg_time,
+		'avg_scroll_pct'    => $avg_scroll,
+		'avg_zones_session' => $avg_zones,
+		'top_referrer'      => $top_referrer,
+		'top_device'        => $top_device,
+		'retry_success_rate' => $retry_rate . '%',
+		'anchor_impressions' => $s['anchor_total_impressions'],
+	);
+}
+
+/* ================================================================
+ * 3. MAIN RENDER FUNCTION
  * ================================================================ */
 
 /**
@@ -80,6 +241,10 @@ function pl_ad_render_analytics() {
 	<div class="wrap" id="pl-analytics">
 		<h1>Ad Engine Analytics</h1>
 
+		<?php if ( ! empty( $_GET['cleared'] ) ) : ?>
+			<div class="notice notice-success is-dismissible"><p>All analytics data has been cleared.</p></div>
+		<?php endif; ?>
+
 		<!-- Date Range Selector -->
 		<div class="pl-date-range" style="margin:15px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
 			<?php
@@ -106,10 +271,28 @@ function pl_ad_render_analytics() {
 		</div>
 
 		<!-- Navigation links -->
-		<div style="margin-bottom:20px;display:flex;gap:8px;">
+		<div style="margin-bottom:20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-live-sessions' ) ); ?>" class="button">Live Sessions</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-optimizer' ) ); ?>" class="button">Optimizer</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-analytics' ) ); ?>" class="button">Legacy Analytics</a>
+
+			<span style="border-left:1px solid #c3c4c7;height:24px;margin:0 4px;"></span>
+
+			<!-- Export JSON -->
+			<form method="post" style="display:inline;margin:0;">
+				<?php wp_nonce_field( 'pl_ad_export_analytics_nonce' ); ?>
+				<input type="hidden" name="export_range" value="<?php echo esc_attr( $range ); ?>">
+				<input type="hidden" name="export_start" value="<?php echo esc_attr( $start ); ?>">
+				<input type="hidden" name="export_end" value="<?php echo esc_attr( $end ); ?>">
+				<button type="submit" name="pl_ad_export_analytics" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff;">Export JSON</button>
+			</form>
+
+			<!-- Clear All Data -->
+			<form method="post" style="display:inline;margin:0;" onsubmit="return confirm('Delete ALL aggregated analytics data? This cannot be undone.');">
+				<?php wp_nonce_field( 'pl_ad_clear_analytics_nonce' ); ?>
+				<button type="submit" name="pl_ad_clear_analytics" class="button" style="background:#d63638;border-color:#d63638;color:#fff;">Clear All Data</button>
+			</form>
 		</div>
 
 		<?php if ( $stats['total_sessions'] === 0 ) : ?>
