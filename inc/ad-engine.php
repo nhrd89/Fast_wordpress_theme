@@ -292,6 +292,11 @@ function pl_ad_settings_page() {
 			<?php endif; ?>
 		</p>
 
+		<div style="margin-bottom:10px;display:flex;gap:8px;">
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-analytics-dashboard' ) ); ?>" class="button button-primary">Analytics Dashboard</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-live-sessions' ) ); ?>" class="button">Live Sessions</a>
+		</div>
+
 		<nav class="nav-tab-wrapper">
 			<a href="?page=pl-ad-engine&tab=global" class="nav-tab <?php echo 'global' === $tab ? 'nav-tab-active' : ''; ?>">Global Controls</a>
 			<a href="?page=pl-ad-engine&tab=codes" class="nav-tab <?php echo 'codes' === $tab ? 'nav-tab-active' : ''; ?>">Ad Codes</a>

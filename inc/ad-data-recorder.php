@@ -169,6 +169,11 @@ function pinlightning_record_ad_data($request) {
     // appears on the admin dashboard (not just heartbeat-tracked ones).
     pinlightning_archive_ad_session_to_live( $session );
 
+    // Aggregate into daily stats for the analytics dashboard.
+    if ( function_exists( 'pl_ad_aggregate_session' ) ) {
+        pl_ad_aggregate_session( $session );
+    }
+
     return new WP_REST_Response(array('ok' => true), 200);
 }
 

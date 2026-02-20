@@ -234,6 +234,12 @@ function pl_live_sessions_archive_stale( $stale_sessions ) {
 		$data['ended_at'] = time();
 		$data['source']   = 'heartbeat';
 		$recent[ $sid ]   = $data;
+
+		// Aggregate heartbeat-only sessions into daily stats (beacon sessions
+		// are already aggregated in ad-data-recorder.php).
+		if ( function_exists( 'pl_ad_aggregate_session' ) ) {
+			pl_ad_aggregate_session( $data );
+		}
 	}
 
 	// Prune recent sessions older than 2 hours, cap at 300 entries.
@@ -352,6 +358,9 @@ function pl_live_sessions_page() {
 			<strong>Recent: <span id="plRecentCount">0</span></strong>
 		</p>
 		<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-analytics-dashboard' ) ); ?>" class="button button-primary">Analytics Dashboard</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
+			<span style="border-left:1px solid #c3c4c7;height:24px"></span>
 			<button type="button" id="plClearLiveSessions" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Data</button>
 			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>
 		</div>

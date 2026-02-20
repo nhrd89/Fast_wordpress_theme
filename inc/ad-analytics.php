@@ -156,13 +156,16 @@ function pl_ad_export_handler() {
 add_action( 'admin_init', 'pl_ad_export_handler' );
 
 /**
- * Register the analytics submenu under the Ad Engine menu.
+ * Register the legacy analytics submenu under the Ad Engine menu.
+ *
+ * The primary analytics view is now in ad-analytics-dashboard.php (aggregated data).
+ * This page is kept for raw session file browsing, export, and data management.
  */
 function pl_ad_analytics_menu() {
 	add_submenu_page(
 		'pl-ad-engine',
-		'Ad Analytics',
-		'Analytics',
+		'Legacy Analytics',
+		'Legacy Analytics',
 		'manage_options',
 		'pl-ad-analytics',
 		'pl_ad_analytics_page'
