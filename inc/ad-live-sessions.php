@@ -128,6 +128,14 @@ function pl_live_sessions_heartbeat( $request ) {
 		'pending_retries'     => intval( $body['pendingRetries'] ?? 0 ),
 		'total_retries'       => intval( $body['totalRetries'] ?? 0 ),
 		'retries_successful'  => intval( $body['retriesSuccessful'] ?? 0 ),
+		// Fill tracking.
+		'total_requested'      => intval( $body['totalRequested'] ?? 0 ),
+		'total_filled'         => intval( $body['totalFilled'] ?? 0 ),
+		'total_empty'          => intval( $body['totalEmpty'] ?? 0 ),
+		'fill_rate'            => intval( $body['fillRate'] ?? 0 ),
+		'anchor_filled'        => ! empty( $body['anchorFilled'] ),
+		'interstitial_filled'  => ! empty( $body['interstitialFilled'] ),
+		'pause_filled'         => ! empty( $body['pauseFilled'] ),
 	);
 
 	// Capture zone detail from heartbeat.
@@ -142,6 +150,8 @@ function pl_live_sessions_heartbeat( $request ) {
 				'viewable'      => intval( $z['viewableImpressions'] ?? 0 ),
 				'max_ratio'     => floatval( $z['maxRatio'] ?? 0 ),
 				'first_view_ms' => intval( $z['timeToFirstView'] ?? 0 ),
+				'filled'        => isset( $z['filled'] ) ? (bool) $z['filled'] : null,
+				'fill_size'     => sanitize_text_field( $z['fillSize'] ?? '' ),
 			);
 		}
 	}
@@ -365,6 +375,7 @@ function pl_live_sessions_page() {
 						<th>Ads</th>
 						<th>Viewable</th>
 						<th>Rate</th>
+						<th>Fill</th>
 						<th>Speed</th>
 						<th>Zones</th>
 						<th>Anchor</th>
@@ -375,7 +386,7 @@ function pl_live_sessions_page() {
 					</tr>
 				</thead>
 				<tbody id="plActiveBody">
-					<tr><td colspan="17" class="pl-empty">Waiting for first heartbeat...</td></tr>
+					<tr><td colspan="18" class="pl-empty">Waiting for first heartbeat...</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -396,6 +407,7 @@ function pl_live_sessions_page() {
 						<th>Ads</th>
 						<th>Viewable</th>
 						<th>Rate</th>
+						<th>Fill</th>
 						<th>Speed</th>
 						<th>Zones</th>
 						<th>Anchor</th>
@@ -406,7 +418,7 @@ function pl_live_sessions_page() {
 					</tr>
 				</thead>
 				<tbody id="plRecentBody">
-					<tr><td colspan="17" class="pl-empty">No recent sessions yet.</td></tr>
+					<tr><td colspan="18" class="pl-empty">No recent sessions yet.</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -490,6 +502,7 @@ function pl_live_sessions_page() {
 				'<td>' + s.active_ads + '</td>' +
 				'<td>' + s.viewable_ads + '</td>' +
 				'<td>' + rate + '%</td>' +
+				'<td>' + (s.total_requested > 0 ? s.total_filled + '/' + s.total_requested + ' (' + s.fill_rate + '%)' : '-') + '</td>' +
 				'<td>' + s.scroll_speed + '</td>' +
 				'<td><code style="font-size:11px">' + (s.zones_active || '-') + '</code></td>' +
 				'<td>' + fmtOverlay(s.anchor_status, s.anchor_impressions ? s.anchor_impressions + '/' + (s.anchor_viewable || 0) : '') + '</td>' +
@@ -501,7 +514,7 @@ function pl_live_sessions_page() {
 
 			// Detail row.
 			var show = expandedSids[s.sid] ? '' : ' style="display:none"';
-			html += '<tr class="pl-detail"' + show + ' data-detail="' + s.sid + '"><td colspan="17">';
+			html += '<tr class="pl-detail"' + show + ' data-detail="' + s.sid + '"><td colspan="18">';
 			html += renderDetail(s, isRecent);
 			html += '</td></tr>';
 
@@ -534,18 +547,21 @@ function pl_live_sessions_page() {
 			// Out-of-page ads.
 			h += '<div>';
 			h += '<h4>Out-of-Page Ads</h4>';
-			h += '<table><tr><th>Format</th><th>Status</th><th>Viewable</th><th>Detail</th></tr>';
+			h += '<table><tr><th>Format</th><th>Status</th><th>Fill</th><th>Viewable</th><th>Detail</th></tr>';
 			var anchorDetail = s.anchor_impressions ? s.anchor_impressions + ' imp, ' + (s.anchor_viewable || 0) + ' viewable' : '-';
 			if (s.anchor_visible_ms) anchorDetail += ', ' + (s.anchor_visible_ms / 1000).toFixed(1) + 's visible';
 			h += '<tr><td>Anchor (320x50)</td><td>' + fmtStatus(s.anchor_status) + ' ' + (s.anchor_status || 'off') + '</td>';
+			h += '<td>' + (s.anchor_filled ? gateIcon(true) : (s.anchor_status === 'off' ? '-' : gateIcon(false))) + '</td>';
 			h += '<td>' + (s.anchor_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
 			h += '<td style="font-size:12px">' + anchorDetail + '</td></tr>';
 			var intDur = s.interstitial_duration_ms ? (s.interstitial_duration_ms / 1000).toFixed(1) + 's' : '-';
 			h += '<tr><td>Interstitial (300x250)</td><td>' + fmtStatus(s.interstitial_status) + ' ' + (s.interstitial_status || 'off') + '</td>';
+			h += '<td>' + (s.interstitial_filled ? gateIcon(true) : (s.interstitial_status === 'off' ? '-' : gateIcon(false))) + '</td>';
 			h += '<td>' + (s.interstitial_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
 			h += '<td style="font-size:12px">Duration: ' + intDur + '</td></tr>';
 			var pauseDur = s.pause_visible_ms ? (s.pause_visible_ms / 1000).toFixed(1) + 's' : '-';
 			h += '<tr><td>Pause (300x250)</td><td>' + fmtStatus(s.pause_status) + ' ' + (s.pause_status || 'off') + '</td>';
+			h += '<td>' + (s.pause_filled ? gateIcon(true) : (s.pause_status === 'off' ? '-' : gateIcon(false))) + '</td>';
 			h += '<td>' + (s.pause_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
 			h += '<td style="font-size:12px">Visible: ' + pauseDur + '</td></tr>';
 			h += '</table>';
@@ -567,12 +583,15 @@ function pl_live_sessions_page() {
 			h += '<div>';
 			h += '<h4>Zone Detail (' + (s.events ? s.events.length : 0) + ' zones)' + (isRecent ? ' — Final' : '') + '</h4>';
 			if (s.events && s.events.length > 0) {
-				h += '<table><tr><th>Zone</th><th>Size</th><th>Depth</th><th>Speed</th><th>Visible</th><th>Viewable</th><th>Max %</th></tr>';
+				h += '<table><tr><th>Zone</th><th>Size</th><th>Fill</th><th>Depth</th><th>Speed</th><th>Visible</th><th>Viewable</th><th>Max %</th></tr>';
 				for (var i = 0; i < s.events.length; i++) {
 					var e = s.events[i];
+					var fillIcon = e.filled === true ? gateIcon(true) : (e.filled === false ? '<span class="pl-gate-fail">&#10007;</span>' : '<span style="color:#646970">?</span>');
+					var fillLabel = e.fill_size ? ' ' + e.fill_size : '';
 					h += '<tr>';
 					h += '<td><code>' + e.zone_id + '</code></td>';
 					h += '<td>' + e.ad_size + '</td>';
+					h += '<td>' + fillIcon + fillLabel + '</td>';
 					h += '<td>' + Math.round(e.injected_at) + '%</td>';
 					h += '<td>' + e.speed_at_inj + '</td>';
 					h += '<td>' + (e.visible_ms / 1000).toFixed(1) + 's</td>';
@@ -592,7 +611,7 @@ function pl_live_sessions_page() {
 
 		function renderTable(tbody, sessions, isRecent, emptyMsg) {
 			if (sessions.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="17" class="pl-empty">' + emptyMsg + '</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="18" class="pl-empty">' + emptyMsg + '</td></tr>';
 				return;
 			}
 			var html = '';

@@ -81,7 +81,19 @@ var state = {
 	pauseShownAt: 0,
 	pauseClosedAt: 0,
 	pauseViewable: 0,
-	pauseTotalVisibleMs: 0
+	pauseTotalVisibleMs: 0,
+
+	// Ad fill tracking (slotRenderEnded).
+	adFills: {},
+	slotDivToZone: {},
+	totalRequested: 0,
+	totalFilled: 0,
+	totalEmpty: 0,
+	anchorSlotRef: null,
+	pauseSlotRef: null,
+	anchorFilled: false,
+	interstitialFilled: false,
+	pauseFilled: false
 };
 
 /* ================================================================
@@ -238,6 +250,7 @@ function loadGPT(callback) {
 		googletag.pubads().enableSingleRequest();
 		googletag.pubads().collapseEmptyDivs(true);
 		googletag.enableServices();
+		googletag.pubads().addEventListener('slotRenderEnded', onSlotRenderEnded);
 		state.gptReady = true;
 		if (cfg.debug) console.log('[PL-Ads] GPT ready');
 		flushGptCallbacks();
@@ -494,6 +507,84 @@ function collapseZone(el, reason) {
 }
 
 /* ================================================================
+ * AD FILL TRACKER
+ *
+ * Listens for GPT's slotRenderEnded event to know if ads actually
+ * rendered or got no-fill. Collapses empty zones to prevent blank
+ * white space. Tracks fill data per zone for analytics.
+ * ================================================================ */
+
+function findZoneByDivId(divId) {
+	return state.slotDivToZone[divId] || null;
+}
+
+function onSlotRenderEnded(event) {
+	var slot = event.slot;
+	var divId = slot.getSlotElementId();
+	var zoneId = findZoneByDivId(divId);
+
+	state.totalRequested++;
+
+	if (zoneId) {
+		var fillData = {
+			filled: !event.isEmpty,
+			size: event.isEmpty ? null : (event.size ? event.size.join('x') : null),
+			advertiserId: event.advertiserId || null,
+			lineItemId: event.lineItemId || null,
+			creativeId: event.creativeId || null
+		};
+		state.adFills[zoneId] = fillData;
+
+		if (event.isEmpty) {
+			state.totalEmpty++;
+			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' (' + divId + ') NO-FILL \u2014 collapsing');
+			collapseEmptyZone(zoneId);
+		} else {
+			state.totalFilled++;
+			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' (' + divId + ') FILLED \u2014 size=' + fillData.size + ' adv=' + fillData.advertiserId);
+		}
+		return;
+	}
+
+	// Out-of-page slots.
+	if (interstitialSlot && slot === interstitialSlot) {
+		state.interstitialFilled = !event.isEmpty;
+		if (!event.isEmpty) state.totalFilled++;
+		else state.totalEmpty++;
+		if (cfg.debug) console.log('[PL-Ads] Fill: interstitial ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+		return;
+	}
+	if (state.anchorSlotRef && slot === state.anchorSlotRef) {
+		if (!event.isEmpty) { state.anchorFilled = true; state.totalFilled++; }
+		else state.totalEmpty++;
+		if (cfg.debug) console.log('[PL-Ads] Fill: anchor ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+		return;
+	}
+	if (state.pauseSlotRef && slot === state.pauseSlotRef) {
+		state.pauseFilled = !event.isEmpty;
+		if (!event.isEmpty) state.totalFilled++;
+		else state.totalEmpty++;
+		if (cfg.debug) console.log('[PL-Ads] Fill: pause ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+		return;
+	}
+
+	if (cfg.debug) console.log('[PL-Ads] Fill: unknown slot ' + divId + ' \u2014 ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+}
+
+function collapseEmptyZone(zoneId) {
+	for (var i = 0; i < state.zones.length; i++) {
+		var zone = state.zones[i];
+		if (zone.id === zoneId) {
+			zone.el.style.cssText = 'height:0;overflow:hidden;margin:0;padding:0';
+			zone.el.setAttribute('data-fill', 'empty');
+			if (state.activeAds > 0) state.activeAds--;
+			if (cfg.debug) console.log('[PL-Ads] Fill: collapsed ' + zoneId + ', activeAds=' + state.activeAds);
+			return;
+		}
+	}
+}
+
+/* ================================================================
  * MODULE 6: DISPLAY AD RENDERER
  *
  * Renders either a real GPT ad or a dummy placeholder box.
@@ -519,6 +610,7 @@ function renderDisplayAd(zone, size) {
 	if (!slotSizeCounter[size]) slotSizeCounter[size] = 0;
 	slotSizeCounter[size]++;
 	var slotId = size + '-' + slotSizeCounter[size];
+	state.slotDivToZone[slotId] = zone.id;
 
 	var adDiv = document.createElement('div');
 	adDiv.id = slotId;
@@ -697,6 +789,7 @@ function showAnchor() {
 			googletag.cmd.push(function() {
 				var slot = googletag.defineOutOfPageSlot(slotPath, googletag.enums.OutOfPageFormat.BOTTOM_ANCHOR);
 				if (slot) {
+					state.anchorSlotRef = slot;
 					slot.addService(googletag.pubads());
 					if (cfg.debug) console.log('[PL-Ads] Anchor slot defined (out-of-page BOTTOM_ANCHOR): ' + slotPath);
 
@@ -769,6 +862,7 @@ function onScrollPause() {
 			googletag.cmd.push(function() {
 				var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-pause');
 				if (slot) {
+					state.pauseSlotRef = slot;
 					slot.setConfig({ contentPause: true });
 					slot.addService(googletag.pubads());
 					googletag.display('pl-gpt-pause');
@@ -980,6 +1074,7 @@ function buildSessionData() {
 		totalViewable += d.viewableImpressions;
 
 		// Keys are camelCase — ad-data-recorder.php converts to snake_case.
+		var fill = state.adFills[d.zoneId];
 		zones.push({
 			zoneId: d.zoneId,
 			adSize: d.adSize,
@@ -989,7 +1084,10 @@ function buildSessionData() {
 			avgRatio: Math.round(avgRatio * 100) / 100,
 			timeToFirstView: d.timeToFirstView,
 			injectedAtDepth: Math.round(d.injectedAtDepth * 10) / 10,
-			scrollSpeedAtInjection: Math.round(d.scrollSpeedAtInjection)
+			scrollSpeedAtInjection: Math.round(d.scrollSpeedAtInjection),
+			filled: fill ? fill.filled : null,
+			fillSize: fill ? fill.size : null,
+			advertiserId: fill ? fill.advertiserId : null
 		});
 	}
 
@@ -1032,6 +1130,14 @@ function buildSessionData() {
 		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
 		pauseViewable: state.pauseViewable,
 		pauseVisibleMs: state.pauseTotalVisibleMs || (state.pauseShownAt && !state.pauseClosedAt ? Date.now() - state.pauseShownAt : 0),
+		// Fill tracking summary.
+		totalRequested: state.totalRequested,
+		totalFilled: state.totalFilled,
+		totalEmpty: state.totalEmpty,
+		fillRate: state.totalRequested > 0 ? Math.round((state.totalFilled / state.totalRequested) * 100) : 0,
+		anchorFilled: state.anchorFilled,
+		interstitialFilled: state.interstitialFilled,
+		pauseFilled: state.pauseFilled,
 		zones: zones
 	};
 }
@@ -1152,6 +1258,7 @@ function sendHeartbeat() {
 	for (var zid in state.viewability) {
 		if (!state.viewability.hasOwnProperty(zid)) continue;
 		var d = state.viewability[zid];
+		var fill = state.adFills[d.zoneId];
 		zoneDetail.push({
 			zoneId: d.zoneId,
 			adSize: d.adSize,
@@ -1160,7 +1267,9 @@ function sendHeartbeat() {
 			totalVisibleMs: d.totalVisibleMs + (d.isVisible ? Date.now() - d.visibleStart : 0),
 			viewableImpressions: d.viewableImpressions,
 			maxRatio: d.maxRatio,
-			timeToFirstView: d.timeToFirstView
+			timeToFirstView: d.timeToFirstView,
+			filled: fill ? fill.filled : null,
+			fillSize: fill ? fill.size : null
 		});
 	}
 
@@ -1211,6 +1320,14 @@ function sendHeartbeat() {
 		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
 		pauseViewable: state.pauseViewable,
 		pauseVisibleMs: state.pauseTotalVisibleMs || (state.pauseShownAt && !state.pauseClosedAt ? Date.now() - state.pauseShownAt : 0),
+		// Fill tracking summary.
+		totalRequested: state.totalRequested,
+		totalFilled: state.totalFilled,
+		totalEmpty: state.totalEmpty,
+		fillRate: state.totalRequested > 0 ? Math.round((state.totalFilled / state.totalRequested) * 100) : 0,
+		anchorFilled: state.anchorFilled,
+		interstitialFilled: state.interstitialFilled,
+		pauseFilled: state.pauseFilled,
 		// Retry stats.
 		pendingRetries: state.pendingRetries,
 		totalRetries: state.totalRetries,
