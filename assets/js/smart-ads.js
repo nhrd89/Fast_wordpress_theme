@@ -94,7 +94,14 @@ var state = {
 	pauseSlotRef: null,
 	anchorFilled: false,
 	interstitialFilled: false,
-	pauseFilled: false
+	pauseFilled: false,
+
+	// Ad click tracking.
+	adClicks: {},
+	totalDisplayClicks: 0,
+	anchorClicks: 0,
+	interstitialClicks: 0,
+	pauseClicks: 0
 };
 
 /* ================================================================
@@ -1089,7 +1096,8 @@ function buildSessionData() {
 			scrollSpeedAtInjection: Math.round(d.scrollSpeedAtInjection),
 			filled: fill ? fill.filled : null,
 			fillSize: fill ? fill.size : null,
-			advertiserId: fill ? fill.advertiserId : null
+			advertiserId: fill ? fill.advertiserId : null,
+			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0
 		});
 	}
 
@@ -1143,6 +1151,11 @@ function buildSessionData() {
 		pauseFilled: state.pauseFilled,
 		referrer: document.referrer || '',
 		language: (navigator.language || '').substring(0, 5),
+		// Click tracking summary.
+		totalDisplayClicks: state.totalDisplayClicks,
+		anchorClicks: state.anchorClicks,
+		interstitialClicks: state.interstitialClicks,
+		pauseClicks: state.pauseClicks,
 		zones: zones
 	};
 }
@@ -1274,7 +1287,8 @@ function sendHeartbeat() {
 			maxRatio: d.maxRatio,
 			timeToFirstView: d.timeToFirstView,
 			filled: fill ? fill.filled : null,
-			fillSize: fill ? fill.size : null
+			fillSize: fill ? fill.size : null,
+			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0
 		});
 	}
 
@@ -1334,6 +1348,11 @@ function sendHeartbeat() {
 		anchorFilled: state.anchorFilled,
 		interstitialFilled: state.interstitialFilled,
 		pauseFilled: state.pauseFilled,
+		// Click tracking summary.
+		totalDisplayClicks: state.totalDisplayClicks,
+		anchorClicks: state.anchorClicks,
+		interstitialClicks: state.interstitialClicks,
+		pauseClicks: state.pauseClicks,
 		// Retry stats.
 		pendingRetries: state.pendingRetries,
 		totalRetries: state.totalRetries,
@@ -1357,6 +1376,77 @@ function sendHeartbeat() {
 }
 
 /* ================================================================
+ * AD CLICK TRACKER
+ *
+ * Detects ad clicks via two methods:
+ * A) iframe focus detection — when user clicks a display ad iframe,
+ *    window blurs and the iframe becomes document.activeElement.
+ * B) visibilitychange — when page becomes hidden while an overlay
+ *    (pause) is showing, likely an ad click navigating away.
+ * ================================================================ */
+
+function recordAdClick(zoneId, format) {
+	if (format === 'display') {
+		if (!state.adClicks[zoneId]) {
+			state.adClicks[zoneId] = { count: 0, timestamps: [] };
+		}
+		state.adClicks[zoneId].count++;
+		state.adClicks[zoneId].timestamps.push(Date.now());
+		state.totalDisplayClicks++;
+	} else if (format === 'anchor') {
+		state.anchorClicks++;
+	} else if (format === 'interstitial') {
+		state.interstitialClicks++;
+	} else if (format === 'pause') {
+		state.pauseClicks++;
+	}
+
+	if (cfg.debug) console.log('[PL-Ads] CLICK detected: ' + zoneId + ' (' + format + ')');
+}
+
+function initClickTracking() {
+	// Method A: detect when an ad iframe steals focus from the page.
+	window.addEventListener('blur', function() {
+		setTimeout(function() {
+			var active = document.activeElement;
+			if (!active || active.tagName !== 'IFRAME') return;
+
+			// Check if iframe is inside a display ad zone.
+			var zone = active.closest('.ad-zone');
+			if (zone) {
+				var zoneId = zone.dataset.zoneId || zone.id;
+				recordAdClick(zoneId, 'display');
+				return;
+			}
+
+			// Check GPT out-of-page containers (anchor/interstitial).
+			// GPT creates fixed-position containers for out-of-page formats.
+			var parent = active.parentElement;
+			while (parent && parent !== document.body) {
+				if (parent.id && parent.id.indexOf('gpt') !== -1 && parent.style.position === 'fixed') {
+					if (parent.style.bottom === '0px') {
+						recordAdClick('anchor', 'anchor');
+					} else {
+						recordAdClick('interstitial', 'interstitial');
+					}
+					return;
+				}
+				parent = parent.parentElement;
+			}
+		}, 50);
+	});
+
+	// Method B: visibilitychange for overlay clicks.
+	// When pause overlay is showing and page becomes hidden, likely an ad click.
+	document.addEventListener('visibilitychange', function() {
+		if (!document.hidden) return;
+		if (pauseShown && state.pauseShownAt && !state.pauseClosedAt) {
+			recordAdClick('pause', 'pause');
+		}
+	});
+}
+
+/* ================================================================
  * INIT — WIRE EVERYTHING UP
  * ================================================================ */
 
@@ -1374,6 +1464,9 @@ function init() {
 
 	// Observe zones — they activate when gate opens + they enter viewport.
 	initZoneObserver();
+
+	// Track ad clicks via iframe focus detection + visibilitychange.
+	initClickTracking();
 
 	// Send data on page unload.
 	document.addEventListener('visibilitychange', function() {

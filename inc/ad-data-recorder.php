@@ -115,6 +115,11 @@ function pinlightning_record_ad_data($request) {
         'zones_activated' => intval($body['zonesActivated'] ?? 0),
         'referrer' => sanitize_text_field($body['referrer'] ?? ''),
         'language' => sanitize_text_field($body['language'] ?? ''),
+        // Click tracking.
+        'total_display_clicks' => intval($body['totalDisplayClicks'] ?? 0),
+        'anchor_clicks' => intval($body['anchorClicks'] ?? 0),
+        'interstitial_clicks' => intval($body['interstitialClicks'] ?? 0),
+        'pause_clicks' => intval($body['pauseClicks'] ?? 0),
         'zones' => array(),
     );
 
@@ -134,6 +139,7 @@ function pinlightning_record_ad_data($request) {
                 'filled' => !empty($zone['filled']),
                 'fill_size' => sanitize_text_field($zone['fillSize'] ?? ''),
                 'advertiser_id' => intval($zone['advertiserId'] ?? 0),
+                'clicks' => intval($zone['clicks'] ?? 0),
             );
         }
     }
@@ -192,6 +198,11 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['interstitial_filled'] = ! empty( $session['interstitial_filled'] ) || ! empty( $existing['interstitial_filled'] );
         $existing['pause_filled']        = ! empty( $session['pause_filled'] ) || ! empty( $existing['pause_filled'] );
         $existing['zones_activated']     = max( $existing['zones_activated'] ?? 0, $session['zones_activated'] ?? 0 );
+        // Click tracking (ad-track has final values).
+        $existing['total_display_clicks'] = max( $existing['total_display_clicks'] ?? 0, $session['total_display_clicks'] ?? 0 );
+        $existing['anchor_clicks']        = max( $existing['anchor_clicks'] ?? 0, $session['anchor_clicks'] ?? 0 );
+        $existing['interstitial_clicks']  = max( $existing['interstitial_clicks'] ?? 0, $session['interstitial_clicks'] ?? 0 );
+        $existing['pause_clicks']         = max( $existing['pause_clicks'] ?? 0, $session['pause_clicks'] ?? 0 );
         // Preserve identity fields — only overwrite if beacon has non-empty values.
         if ( ! empty( $session['referrer'] ) ) {
             $existing['referrer'] = $session['referrer'];
@@ -246,6 +257,11 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'interstitial_filled'  => $session['interstitial_filled'] ?? false,
         'pause_filled'         => $session['pause_filled'] ?? false,
         'zones_activated'      => $session['zones_activated'] ?? 0,
+        // Click tracking.
+        'total_display_clicks' => $session['total_display_clicks'] ?? 0,
+        'anchor_clicks'        => $session['anchor_clicks'] ?? 0,
+        'interstitial_clicks'  => $session['interstitial_clicks'] ?? 0,
+        'pause_clicks'         => $session['pause_clicks'] ?? 0,
         'status'         => 'ended',
         'ended_at'       => time(),
         'source'         => 'ad-track', // Distinguish from heartbeat-sourced entries.
