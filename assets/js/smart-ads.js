@@ -798,6 +798,9 @@ function trackViewability(zone) {
 				if (state.totalRetries < state.maxRetriesPerSession) {
 					state.pendingRetries++;
 					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED (visible ' + data.totalVisibleMs + 'ms) — retry queued (pending=' + state.pendingRetries + ')');
+					// Proactively trigger retry: the next zone may have already
+					// been speed-gated before this missed detection fired.
+					tryRetryNearbyZone();
 				} else {
 					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED (visible ' + data.totalVisibleMs + 'ms) — retry cap reached');
 				}
@@ -817,6 +820,41 @@ function checkViewabilityBudget() {
 		state.budgetExhausted = true;
 		if (cfg.debug) console.log('[PL-Ads] Viewability budget EXHAUSTED: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved (' + Math.round(state.viewableCount / state.resolvedCount * 100) + '%)');
 	}
+}
+
+/**
+ * Proactive retry: find a zone that was collapsed due to speed-gating
+ * and is still in or near the viewport. Reset it and re-try activation.
+ *
+ * Called from missed detection — solves the timing issue where zone B
+ * gets speed-gated BEFORE zone A's missed detection fires.
+ */
+function tryRetryNearbyZone() {
+	if (state.pendingRetries <= 0) return;
+
+	for (var i = 0; i < state.zones.length; i++) {
+		var zone = state.zones[i];
+		// Only consider zones that were collapsed specifically for speed.
+		if (!zone.activated || zone.injected) continue;
+		if (zone.el.getAttribute('data-skip-reason') !== 'speed') continue;
+
+		var rect = zone.el.getBoundingClientRect();
+		// Must be in viewport or within 500px below (still reachable).
+		if (rect.bottom <= 0 || rect.top > window.innerHeight + 500) continue;
+
+		// Reset the collapsed zone for re-evaluation.
+		zone.activated = false;
+		zone.el.classList.remove('pl-ad-collapse', 'pl-ad-dummy');
+		zone.el.removeAttribute('data-skip-reason');
+		zone.el.textContent = '';
+		zone.el.style.cssText = '';
+		if (cfg.debug) console.log('[PL-Ads] Retry: resurrecting speed-skipped zone ' + zone.id + ' for retry activation');
+
+		tryActivateZone(zone.el);
+		return; // One retry per missed detection.
+	}
+
+	if (cfg.debug) console.log('[PL-Ads] Retry: no speed-skipped zones near viewport — retry will apply to next IO trigger');
 }
 
 /* ================================================================

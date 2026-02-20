@@ -97,6 +97,13 @@ function pinlightning_record_ad_data($request) {
         'total_ads_injected' => intval($body['totalAdsInjected'] ?? 0),
         'total_viewable' => intval($body['totalViewable'] ?? 0),
         'viewability_rate' => floatval($body['viewabilityRate'] ?? 0),
+        // Out-of-page format status.
+        'anchor_status' => sanitize_text_field($body['anchorStatus'] ?? 'off'),
+        'interstitial_status' => sanitize_text_field($body['interstitialStatus'] ?? 'off'),
+        'pause_status' => sanitize_text_field($body['pauseStatus'] ?? 'off'),
+        // Retry stats.
+        'retries_used' => intval($body['retriesUsed'] ?? 0),
+        'retries_successful' => intval($body['retriesSuccessful'] ?? 0),
         'zones' => array(),
     );
 
@@ -155,6 +162,13 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['scroll_pattern'] = $session['scroll_pattern'];
         $existing['scroll_pct']     = max( $existing['scroll_pct'] ?? 0, $session['max_scroll_depth_pct'] );
         $existing['time_on_page_s'] = max( $existing['time_on_page_s'] ?? 0, round( $session['time_on_page_ms'] / 1000, 1 ) );
+        // Preserve out-of-page status from heartbeat if ad-track has it; prefer ad-track's final state.
+        $existing['anchor_status']       = ! empty( $session['anchor_status'] ) && $session['anchor_status'] !== 'off' ? $session['anchor_status'] : ( $existing['anchor_status'] ?? 'off' );
+        $existing['interstitial_status'] = ! empty( $session['interstitial_status'] ) && $session['interstitial_status'] !== 'off' ? $session['interstitial_status'] : ( $existing['interstitial_status'] ?? 'off' );
+        $existing['pause_status']        = ! empty( $session['pause_status'] ) && $session['pause_status'] !== 'off' ? $session['pause_status'] : ( $existing['pause_status'] ?? 'off' );
+        // Merge retry stats (ad-track has final values).
+        $existing['total_retries']      = max( $existing['total_retries'] ?? 0, $session['retries_used'] ?? 0 );
+        $existing['retries_successful'] = max( $existing['retries_successful'] ?? 0, $session['retries_successful'] ?? 0 );
         $existing['source']         = 'heartbeat+ad-track';
         $recent[ $js_sid ]          = $existing;
         goto prune_and_save;
@@ -186,6 +200,13 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'referrer'       => '',
         'language'       => '',
         'events'         => $session['zones'],
+        // Out-of-page format status.
+        'anchor_status'       => $session['anchor_status'] ?? 'off',
+        'interstitial_status' => $session['interstitial_status'] ?? 'off',
+        'pause_status'        => $session['pause_status'] ?? 'off',
+        // Retry stats.
+        'total_retries'      => $session['retries_used'] ?? 0,
+        'retries_successful' => $session['retries_successful'] ?? 0,
         'status'         => 'ended',
         'ended_at'       => time(),
         'source'         => 'ad-track', // Distinguish from heartbeat-sourced entries.
