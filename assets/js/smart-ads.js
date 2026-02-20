@@ -41,7 +41,12 @@ var state = {
 	gptReady: false,
 	activeAds: 0,
 	viewableCount: 0,       // zones that got at least 1 viewable impression
-	budgetExhausted: false,  // true when viewability rate drops below 40% after 2+ ads
+	resolvedCount: 0,       // zones fully resolved (viewable OR confirmed missed)
+	budgetExhausted: false,  // true when viewability rate drops below 40% after 2+ resolved
+	pendingRetries: 0,      // zones missed — will retry at next opportunity
+	totalRetries: 0,        // total retry activations used this session
+	retriesSuccessful: 0,   // retries that became viewable
+	maxRetriesPerSession: 4,
 	zones: [],
 	slots: {},
 	viewability: {},
@@ -317,9 +322,9 @@ function tryActivateZone(el) {
 	var zone = getZoneByEl(el);
 	if (!zone || zone.activated) return;
 
-	// --- Viewability budget ---
+	// --- Viewability budget (only count RESOLVED impressions) ---
 	if (state.budgetExhausted) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: viewability budget exhausted (' + state.viewableCount + '/' + state.activeAds + ' viewable)');
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: viewability budget exhausted (' + state.viewableCount + '/' + state.resolvedCount + ' resolved viewable)');
 		collapseZone(el, 'budget');
 		return;
 	}
@@ -334,18 +339,35 @@ function tryActivateZone(el) {
 	var speed = state.scrollSpeed;
 	var isFirst = state.activeAds === 0;
 
-	// --- Speed gate ---
-	// First ad is stricter: must be < 800px/s (high confidence).
-	// Subsequent: must be < 1200px/s.
-	if (isFirst && speed > 800) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: first-ad speed ' + Math.round(speed) + 'px/s > 800');
-		collapseZone(el, 'speed');
-		return;
-	}
-	if (!isFirst && speed > 1200) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: speed ' + Math.round(speed) + 'px/s > 1200');
-		collapseZone(el, 'speed');
-		return;
+	// --- Retry mode: relaxed speed gates ---
+	// If we have pending retries (missed ads), activate this zone with
+	// relaxed thresholds to compensate — but still skip if >2000px/s.
+	var isRetry = state.pendingRetries > 0 && state.totalRetries < state.maxRetriesPerSession;
+
+	if (isRetry) {
+		if (speed > 2000) {
+			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: retry but speed ' + Math.round(speed) + 'px/s > 2000 ceiling');
+			collapseZone(el, 'speed');
+			return;
+		}
+		// Consume a retry.
+		state.pendingRetries--;
+		state.totalRetries++;
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' RETRY activation (pending=' + state.pendingRetries + ', used=' + state.totalRetries + ')');
+	} else {
+		// --- Normal speed gate ---
+		// First ad is stricter: must be < 800px/s (high confidence).
+		// Subsequent: must be < 1200px/s.
+		if (isFirst && speed > 800) {
+			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: first-ad speed ' + Math.round(speed) + 'px/s > 800');
+			collapseZone(el, 'speed');
+			return;
+		}
+		if (!isFirst && speed > 1200) {
+			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: speed ' + Math.round(speed) + 'px/s > 1200');
+			collapseZone(el, 'speed');
+			return;
+		}
 	}
 
 	// Determine size for this device.
@@ -373,8 +395,10 @@ function tryActivateZone(el) {
 
 	// --- ACTIVATE ---
 	var label = speed < 600 ? 'reading' : 'scanning';
+	if (isRetry) label = 'retry';
 	zone.activated = true;
 	zone.activatedSize = size;
+	zone.isRetry = isRetry;
 	state.activeAds++;
 	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + size + ', ' + label + ' ' + Math.round(speed) + 'px/s) \u2014 total: ' + state.activeAds);
 
@@ -500,8 +524,10 @@ function renderDummy(el, size, w, h, zoneId, score) {
 	var displayW = isMobile ? Math.min(w, window.innerWidth - 32) : w;
 	var displayH = displayW < w ? Math.round((displayW / w) * h) : h;
 
+	var zone = getZoneByEl(el);
 	var speed = Math.round(state.scrollSpeed);
 	var label = speed < 600 ? 'reading' : 'scanning';
+	if (zone && zone.isRetry) label = 'RETRY #' + state.totalRetries;
 	var statusText = 'ACTIVATED: ' + speed + 'px/s \u2014 ' + label;
 
 	el.style.width = displayW + 'px';
@@ -706,7 +732,10 @@ function trackViewability(zone) {
 		scrollSpeedAtInjection: state.scrollSpeed,
 		visibleStart: 0,
 		isVisible: false,
-		viewableTimer: null
+		viewableTimer: null,
+		resolved: false, // true once confirmed viewable OR confirmed missed
+		missed: false,   // true if scrolled out without becoming viewable
+		isRetry: !!zone.isRetry
 	};
 	state.viewability[zone.id] = data;
 
@@ -737,12 +766,15 @@ function trackViewability(zone) {
 					// Track first viewable impression per zone for budget.
 					if (data.viewableImpressions === 1) {
 						state.viewableCount++;
-						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE — session: ' + state.viewableCount + '/' + state.activeAds + ' zones viewable');
-						// Check budget: after 2+ ads, if <40% viewable, stop serving.
-						if (state.activeAds >= 2 && state.viewableCount / state.activeAds < 0.4) {
-							state.budgetExhausted = true;
-							if (cfg.debug) console.log('[PL-Ads] Viewability budget EXHAUSTED: ' + state.viewableCount + '/' + state.activeAds + ' (' + Math.round(state.viewableCount / state.activeAds * 100) + '%)');
+						// Mark as resolved (viewable).
+						if (!data.resolved) {
+							data.resolved = true;
+							state.resolvedCount++;
+							// Track successful retry.
+							if (data.isRetry) state.retriesSuccessful++;
 						}
+						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE — session: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved' + (data.isRetry ? ' (retry success)' : ''));
+						checkViewabilityBudget();
 					}
 					if (cfg.debug && data.viewableImpressions > 1) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE IMPRESSION #' + data.viewableImpressions);
 				}, 1000);
@@ -754,12 +786,37 @@ function trackViewability(zone) {
 				clearTimeout(data.viewableTimer);
 				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' hidden (visible ' + data.totalVisibleMs + 'ms total)');
 			}
+
+			// --- Missed detection ---
+			// Zone scrolled completely out (ratio=0) and was visible < 1s total
+			// and never became viewable → mark as "missed", queue retry.
+			if (ratio === 0 && !data.resolved && data.viewableImpressions === 0 && data.firstViewRecorded) {
+				data.resolved = true;
+				data.missed = true;
+				state.resolvedCount++;
+				// Queue a retry if under session cap.
+				if (state.totalRetries < state.maxRetriesPerSession) {
+					state.pendingRetries++;
+					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED (visible ' + data.totalVisibleMs + 'ms) — retry queued (pending=' + state.pendingRetries + ')');
+				} else {
+					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED (visible ' + data.totalVisibleMs + 'ms) — retry cap reached');
+				}
+				checkViewabilityBudget();
+			}
 		}
 	}, {
 		threshold: [0, 0.25, 0.5, 0.75, 1.0]
 	});
 
 	observer.observe(zone.el);
+}
+
+function checkViewabilityBudget() {
+	// Budget check: after 2+ resolved impressions, if <40% viewable → stop.
+	if (state.resolvedCount >= 2 && state.viewableCount / state.resolvedCount < 0.4) {
+		state.budgetExhausted = true;
+		if (cfg.debug) console.log('[PL-Ads] Viewability budget EXHAUSTED: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved (' + Math.round(state.viewableCount / state.resolvedCount * 100) + '%)');
+	}
 }
 
 /* ================================================================
@@ -827,6 +884,11 @@ function buildSessionData() {
 		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
 		viewableZones: state.viewableCount,
 		budgetExhausted: state.budgetExhausted,
+		retriesUsed: state.totalRetries,
+		retriesSuccessful: state.retriesSuccessful,
+		anchorStatus: anchorShown ? 'firing' : 'off',
+		interstitialStatus: interstitialShown ? 'fired' : 'off',
+		pauseStatus: pauseShown ? 'fired' : 'off',
 		zones: zones
 	};
 }
@@ -882,8 +944,12 @@ function debugLog() {
 	console.log('[PL-Ads]', {
 		gate: state.gateOpen,
 		ads: state.activeAds + '/' + cfg.maxAds,
-		viewable: state.viewableCount + '/' + state.activeAds,
+		viewable: state.viewableCount + '/' + state.resolvedCount + ' resolved',
 		budget: state.budgetExhausted ? 'EXHAUSTED' : 'ok',
+		retries: state.pendingRetries + ' pending, ' + state.totalRetries + '/' + state.maxRetriesPerSession + ' used, ' + state.retriesSuccessful + ' ok',
+		anchor: anchorShown ? 'firing' : 'off',
+		interstitial: interstitialShown ? 'fired' : 'off',
+		pause: pauseShown ? 'fired' : 'off',
 		zones: state.zones.length,
 		scroll: Math.round(state.scrollPct) + '%',
 		time: Math.round(state.timeOnPage) + 's',
@@ -989,7 +1055,15 @@ function sendHeartbeat() {
 		zonesActive: activeZoneIds.join(','),
 		referrer: document.referrer || '',
 		language: (navigator.language || '').substring(0, 5),
-		zoneDetail: zoneDetail
+		zoneDetail: zoneDetail,
+		// Out-of-page format status.
+		anchorStatus: anchorShown ? 'firing' : (gateChecks.time ? 'waiting' : 'off'),
+		interstitialStatus: interstitialShown ? 'fired' : (state.gateOpen && state.activeAds >= 2 ? 'waiting' : 'off'),
+		pauseStatus: pauseShown ? 'fired' : (state.gateOpen ? 'waiting' : 'off'),
+		// Retry stats.
+		pendingRetries: state.pendingRetries,
+		totalRetries: state.totalRetries,
+		retriesSuccessful: state.retriesSuccessful
 	};
 
 	var json = JSON.stringify(payload);
