@@ -27,6 +27,7 @@ cfg.gateTimeSec = parseInt(cfg.gateTimeSec, 10) || 5;
 cfg.gateDirChanges = parseInt(cfg.gateDirChanges, 10) || 0;
 cfg.minSpacingPx = parseInt(cfg.minSpacingPx, 10) || 800;
 cfg.pauseMinAds = parseInt(cfg.pauseMinAds, 10) || 2;
+cfg.passbackEnabled = cfg.passbackEnabled === '1' || cfg.passbackEnabled === true;
 
 // Bail if not configured (ad engine disabled or missing config).
 if (!cfg.networkCode && !cfg.dummy) return;
@@ -101,7 +102,17 @@ var state = {
 	totalDisplayClicks: 0,
 	anchorClicks: 0,
 	interstitialClicks: 0,
-	pauseClicks: 0
+	pauseClicks: 0,
+
+	// Newor Media (Waldo) passback state.
+	waldoLoaded: false,
+	waldoLoading: false,
+	waldoTagPool: ['waldo-tag-29686', 'waldo-tag-29688', 'waldo-tag-29690', 'waldo-tag-24348', 'waldo-tag-24350', 'waldo-tag-24352'],
+	waldoTagIndex: 0,
+	waldoAnchorTag: 'waldo-tag-24358',
+	waldoFills: {},
+	waldoTotalRequested: 0,
+	waldoTotalFilled: 0
 };
 
 /* ================================================================
@@ -269,6 +280,41 @@ function flushGptCallbacks() {
 	while (gptCallbacks.length) {
 		gptCallbacks.shift()();
 	}
+}
+
+/* ================================================================
+ * NEWOR MEDIA (WALDO) PASSBACK LOADER
+ *
+ * Loads the Waldo script ONCE on first no-fill. Zero PageSpeed impact
+ * — script never loads if Ad.Plus fills every slot.
+ * ================================================================ */
+
+var waldoCallbacks = [];
+
+function loadWaldoScript(callback) {
+	if (callback) waldoCallbacks.push(callback);
+
+	if (state.waldoLoaded) {
+		while (waldoCallbacks.length) waldoCallbacks.shift()();
+		return;
+	}
+	if (state.waldoLoading) return;
+	state.waldoLoading = true;
+
+	var script = document.createElement('script');
+	script.src = '//cdn.thisiswaldo.com/static/js/24273.js';
+	script.async = true;
+	script.onload = function() {
+		state.waldoLoaded = true;
+		if (cfg.debug) console.log('[PL-Ads] Waldo script loaded (site 24273)');
+		while (waldoCallbacks.length) waldoCallbacks.shift()();
+	};
+	script.onerror = function() {
+		state.waldoLoading = false;
+		if (cfg.debug) console.warn('[PL-Ads] Waldo script failed to load');
+		while (waldoCallbacks.length) waldoCallbacks.shift()();
+	};
+	document.head.appendChild(script);
 }
 
 /* ================================================================
@@ -565,7 +611,11 @@ function onSlotRenderEnded(event) {
 	}
 	if (state.anchorSlotRef && slot === state.anchorSlotRef) {
 		if (!event.isEmpty) { state.anchorFilled = true; state.totalFilled++; }
-		else state.totalEmpty++;
+		else {
+			state.totalEmpty++;
+			// Try Waldo sticky footer as anchor passback.
+			if (cfg.passbackEnabled) tryWaldoAnchorPassback();
+		}
 		if (cfg.debug) console.log('[PL-Ads] Fill: anchor ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
 		return;
 	}
@@ -584,13 +634,101 @@ function collapseEmptyZone(zoneId) {
 	for (var i = 0; i < state.zones.length; i++) {
 		var zone = state.zones[i];
 		if (zone.id === zoneId) {
-			zone.el.style.cssText = 'height:0;overflow:hidden;margin:0;padding:0';
-			zone.el.setAttribute('data-fill', 'empty');
-			if (state.activeAds > 0) state.activeAds--;
-			if (cfg.debug) console.log('[PL-Ads] Fill: collapsed ' + zoneId + ', activeAds=' + state.activeAds);
+			// Try Waldo passback before collapsing.
+			if (cfg.passbackEnabled && state.waldoTagIndex < state.waldoTagPool.length) {
+				tryWaldoPassback(zone);
+				return;
+			}
+			doCollapse(zone);
 			return;
 		}
 	}
+}
+
+function tryWaldoPassback(zone) {
+	var tagId = state.waldoTagPool[state.waldoTagIndex++];
+	state.waldoTotalRequested++;
+	state.waldoFills[zone.id] = { tag: tagId, filled: false, network: 'newor' };
+
+	if (cfg.debug) console.log('[PL-Ads] Passback: trying Waldo ' + tagId + ' for zone ' + zone.id);
+
+	// Hide the original GPT container inside the zone.
+	var gptDiv = zone.el.querySelector('[id]');
+	if (gptDiv) gptDiv.style.display = 'none';
+
+	// Inject the Waldo tag div.
+	var waldoDiv = document.createElement('div');
+	waldoDiv.id = tagId;
+	zone.el.appendChild(waldoDiv);
+	zone.el.setAttribute('data-passback', 'waldo');
+
+	loadWaldoScript(function() {
+		// Give Waldo 3s to fill the tag.
+		setTimeout(function() {
+			checkWaldoFill(zone, waldoDiv, tagId);
+		}, 3000);
+	});
+}
+
+function checkWaldoFill(zone, waldoDiv, tagId) {
+	// Check if Waldo rendered content (iframe or ad content inside the div).
+	var hasContent = waldoDiv.querySelector('iframe') ||
+		waldoDiv.querySelector('ins') ||
+		waldoDiv.querySelector('img') ||
+		waldoDiv.offsetHeight > 10;
+
+	if (hasContent) {
+		state.waldoTotalFilled++;
+		state.waldoFills[zone.id].filled = true;
+		zone.el.setAttribute('data-fill', 'waldo');
+		if (cfg.debug) console.log('[PL-Ads] Passback: Waldo FILLED zone ' + zone.id + ' via ' + tagId + ' (h=' + waldoDiv.offsetHeight + 'px)');
+	} else {
+		// Waldo didn't fill either — collapse the zone.
+		if (cfg.debug) console.log('[PL-Ads] Passback: Waldo NO-FILL for zone ' + zone.id + ' via ' + tagId);
+		waldoDiv.style.display = 'none';
+		doCollapse(zone);
+	}
+}
+
+function doCollapse(zone) {
+	zone.el.style.cssText = 'height:0;overflow:hidden;margin:0;padding:0';
+	zone.el.setAttribute('data-fill', 'empty');
+	if (state.activeAds > 0) state.activeAds--;
+	if (cfg.debug) console.log('[PL-Ads] Fill: collapsed ' + zone.id + ', activeAds=' + state.activeAds);
+}
+
+function tryWaldoAnchorPassback() {
+	state.waldoTotalRequested++;
+	state.waldoFills['anchor'] = { tag: state.waldoAnchorTag, filled: false, network: 'newor' };
+
+	if (cfg.debug) console.log('[PL-Ads] Passback: trying Waldo anchor ' + state.waldoAnchorTag);
+
+	loadWaldoScript(function() {
+		var container = document.createElement('div');
+		container.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;z-index:9998;text-align:center;background:rgba(255,255,255,.95)';
+		var waldoDiv = document.createElement('div');
+		waldoDiv.id = state.waldoAnchorTag;
+		waldoDiv.style.cssText = 'display:inline-block;margin:0 auto';
+		container.appendChild(waldoDiv);
+		document.body.appendChild(container);
+
+		// Check after 3s if Waldo filled the anchor.
+		setTimeout(function() {
+			var hasContent = waldoDiv.querySelector('iframe') ||
+				waldoDiv.querySelector('ins') ||
+				waldoDiv.querySelector('img') ||
+				waldoDiv.offsetHeight > 10;
+			if (hasContent) {
+				state.waldoTotalFilled++;
+				state.waldoFills['anchor'].filled = true;
+				state.anchorFilled = true;
+				if (cfg.debug) console.log('[PL-Ads] Passback: Waldo anchor FILLED (h=' + waldoDiv.offsetHeight + 'px)');
+			} else {
+				container.remove();
+				if (cfg.debug) console.log('[PL-Ads] Passback: Waldo anchor NO-FILL — removed');
+			}
+		}, 3000);
+	});
 }
 
 /* ================================================================
@@ -1097,7 +1235,9 @@ function buildSessionData() {
 			filled: fill ? fill.filled : null,
 			fillSize: fill ? fill.size : null,
 			advertiserId: fill ? fill.advertiserId : null,
-			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0
+			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0,
+			passback: state.waldoFills[d.zoneId] ? state.waldoFills[d.zoneId].filled : false,
+			passbackNetwork: state.waldoFills[d.zoneId] ? state.waldoFills[d.zoneId].network : null
 		});
 	}
 
@@ -1156,6 +1296,10 @@ function buildSessionData() {
 		anchorClicks: state.anchorClicks,
 		interstitialClicks: state.interstitialClicks,
 		pauseClicks: state.pauseClicks,
+		// Waldo passback summary.
+		waldoRequested: state.waldoTotalRequested,
+		waldoFilled: state.waldoTotalFilled,
+		waldoFills: state.waldoFills,
 		zones: zones
 	};
 }
@@ -1288,7 +1432,9 @@ function sendHeartbeat() {
 			timeToFirstView: d.timeToFirstView,
 			filled: fill ? fill.filled : null,
 			fillSize: fill ? fill.size : null,
-			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0
+			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0,
+			passback: state.waldoFills[d.zoneId] ? state.waldoFills[d.zoneId].filled : false,
+			passbackNetwork: state.waldoFills[d.zoneId] ? state.waldoFills[d.zoneId].network : null
 		});
 	}
 
@@ -1353,6 +1499,10 @@ function sendHeartbeat() {
 		anchorClicks: state.anchorClicks,
 		interstitialClicks: state.interstitialClicks,
 		pauseClicks: state.pauseClicks,
+		// Waldo passback summary.
+		waldoRequested: state.waldoTotalRequested,
+		waldoFilled: state.waldoTotalFilled,
+		waldoFills: state.waldoFills,
 		// Retry stats.
 		pendingRetries: state.pendingRetries,
 		totalRetries: state.totalRetries,

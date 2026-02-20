@@ -56,6 +56,9 @@ function pl_ad_defaults() {
 		'fmt_pause'             => true,
 		'pause_min_ads'         => 2,
 
+		// Passback.
+		'passback_enabled'      => false,
+
 		// Network.
 		'network_code'          => '22953639975',
 		'slot_prefix'           => '/21849154601,22953639975/',
@@ -189,6 +192,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'mobile_enabled', 'desktop_enabled',
 		'fmt_interstitial', 'fmt_anchor', 'fmt_300x250',
 		'fmt_970x250', 'fmt_728x90', 'fmt_pause',
+		'passback_enabled',
 	);
 	foreach ( $bools as $key ) {
 		$clean[ $key ] = ! empty( $input[ $key ] );
@@ -236,6 +240,21 @@ function pl_ad_settings_page() {
 		$ads_txt = isset( $_POST['pl_ads_txt_content'] ) ? sanitize_textarea_field( $_POST['pl_ads_txt_content'] ) : '';
 		pl_ad_write_ads_txt( $ads_txt );
 		echo '<div class="notice notice-success is-dismissible"><p>ads.txt saved successfully.</p></div>';
+	}
+
+	// Handle Newor Media ads.txt merge.
+	if ( isset( $_POST['pl_ads_txt_merge_newor'] ) && check_admin_referer( 'pl_ads_txt_nonce' ) ) {
+		$upload_dir = wp_upload_dir();
+		$newor_path = $upload_dir['basedir'] . '/ads.txt';
+		if ( file_exists( $newor_path ) ) {
+			$current    = pl_ad_read_ads_txt();
+			$newor_data = file_get_contents( $newor_path );
+			$merged     = rtrim( $current ) . "\n\n# --- Newor Media (Waldo) ads.txt — merged " . current_time( 'Y-m-d H:i' ) . " ---\n" . $newor_data;
+			pl_ad_write_ads_txt( $merged );
+			echo '<div class="notice notice-success is-dismissible"><p style="color:#6d28d9;font-weight:600">Newor Media ads.txt merged successfully (' . number_format( count( file( $newor_path ) ) ) . ' lines appended).</p></div>';
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p>Newor Media ads.txt not found at <code>' . esc_html( $newor_path ) . '</code>.</p></div>';
+		}
 	}
 
 	$settings = pl_ad_settings();
@@ -408,6 +427,15 @@ function pl_ad_render_global_tab( $s ) {
 				<br><label style="margin-top:4px;display:inline-block">Min display ads before pause: <input type="number" name="pl_ad_settings[pause_min_ads]" value="<?php echo (int) $s['pause_min_ads']; ?>" min="0" max="10" style="width:60px"></label>
 			</td>
 		</tr>
+
+		<tr><th colspan="2"><h2>Passback (Backfill)</h2></th></tr>
+		<tr>
+			<th>Newor Media Passback</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[passback_enabled]" value="1" <?php checked( $s['passback_enabled'] ); ?>> Try Newor Media (Waldo) when Ad.Plus returns no-fill</label>
+				<p class="description">Waldo script loads <strong>only</strong> on first no-fill — zero PageSpeed impact if Ad.Plus fills every slot. Site ID: 24273.</p>
+			</td>
+		</tr>
 	</table>
 	<?php
 }
@@ -472,6 +500,12 @@ function pl_ad_render_ads_txt_tab() {
 	$content = pl_ad_read_ads_txt();
 	$path    = ABSPATH . 'ads.txt';
 	$exists  = file_exists( $path );
+
+	// Check for Newor Media ads.txt merge file.
+	$upload_dir  = wp_upload_dir();
+	$newor_path  = $upload_dir['basedir'] . '/ads.txt';
+	$newor_exists = file_exists( $newor_path );
+	$has_newor    = strpos( $content, 'thisiswaldo.com' ) !== false || strpos( $content, 'newormedia' ) !== false;
 	?>
 	<form method="post">
 		<?php wp_nonce_field( 'pl_ads_txt_nonce' ); ?>
@@ -487,6 +521,16 @@ function pl_ad_render_ads_txt_tab() {
 							Status: <span style="color:#f0b849;font-weight:600;">File does not exist yet</span> (will be created on save)
 						<?php endif; ?>
 					</p>
+					<?php if ( $newor_exists && ! $has_newor ) : ?>
+						<p style="background:#f3e8ff;border:1px solid #6d28d9;border-radius:4px;padding:8px 12px;margin:8px 0">
+							<strong style="color:#6d28d9">Newor Media ads.txt found</strong> at <code><?php echo esc_html( $newor_path ); ?></code>
+							(<?php echo number_format( count( file( $newor_path ) ) ); ?> lines).
+							<br>Click &ldquo;Merge Newor Media ads.txt&rdquo; to append it below the Ad.Plus entries.
+						</p>
+						<input type="submit" name="pl_ads_txt_merge_newor" class="button" style="background:#6d28d9;border-color:#6d28d9;color:#fff;margin-bottom:8px" value="Merge Newor Media ads.txt">
+					<?php elseif ( $has_newor ) : ?>
+						<p style="color:#6d28d9;font-weight:600;margin:4px 0">&#10003; Newor Media entries already present in ads.txt</p>
+					<?php endif; ?>
 					<textarea name="pl_ads_txt_content" rows="15" cols="80" class="large-text code" style="font-family:monospace"><?php echo esc_textarea( $content ); ?></textarea>
 					<p class="description">
 						Standard format: <code>google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0</code>
@@ -793,6 +837,9 @@ function pinlightning_ads_enqueue() {
 		'fmt728x90'       => (bool) $s['fmt_728x90'],
 		'fmtPause'        => (bool) $s['fmt_pause'],
 		'pauseMinAds'     => (int) $s['pause_min_ads'],
+
+		// Passback.
+		'passbackEnabled' => (bool) $s['passback_enabled'],
 
 		// Network / Slots.
 		'networkCode'     => $s['network_code'],

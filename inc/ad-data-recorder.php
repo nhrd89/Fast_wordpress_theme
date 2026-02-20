@@ -120,6 +120,10 @@ function pinlightning_record_ad_data($request) {
         'anchor_clicks' => intval($body['anchorClicks'] ?? 0),
         'interstitial_clicks' => intval($body['interstitialClicks'] ?? 0),
         'pause_clicks' => intval($body['pauseClicks'] ?? 0),
+        // Waldo passback tracking.
+        'waldo_requested' => intval($body['waldoRequested'] ?? 0),
+        'waldo_filled' => intval($body['waldoFilled'] ?? 0),
+        'waldo_fills' => array(),
         'zones' => array(),
     );
 
@@ -140,6 +144,19 @@ function pinlightning_record_ad_data($request) {
                 'fill_size' => sanitize_text_field($zone['fillSize'] ?? ''),
                 'advertiser_id' => intval($zone['advertiserId'] ?? 0),
                 'clicks' => intval($zone['clicks'] ?? 0),
+                'passback' => !empty($zone['passback']),
+                'passback_network' => sanitize_text_field($zone['passbackNetwork'] ?? ''),
+            );
+        }
+    }
+
+    // Waldo passback fills detail.
+    if (!empty($body['waldoFills']) && is_array($body['waldoFills'])) {
+        foreach ($body['waldoFills'] as $wzone_id => $wfill) {
+            $session['waldo_fills'][sanitize_text_field($wzone_id)] = array(
+                'tag' => sanitize_text_field($wfill['tag'] ?? ''),
+                'filled' => !empty($wfill['filled']),
+                'network' => sanitize_text_field($wfill['network'] ?? 'newor'),
             );
         }
     }
@@ -203,6 +220,12 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['anchor_clicks']        = max( $existing['anchor_clicks'] ?? 0, $session['anchor_clicks'] ?? 0 );
         $existing['interstitial_clicks']  = max( $existing['interstitial_clicks'] ?? 0, $session['interstitial_clicks'] ?? 0 );
         $existing['pause_clicks']         = max( $existing['pause_clicks'] ?? 0, $session['pause_clicks'] ?? 0 );
+        // Waldo passback (ad-track has final values).
+        $existing['waldo_requested'] = max( $existing['waldo_requested'] ?? 0, $session['waldo_requested'] ?? 0 );
+        $existing['waldo_filled']    = max( $existing['waldo_filled'] ?? 0, $session['waldo_filled'] ?? 0 );
+        if ( ! empty( $session['waldo_fills'] ) ) {
+            $existing['waldo_fills'] = $session['waldo_fills'];
+        }
         // Preserve identity fields — only overwrite if beacon has non-empty values.
         if ( ! empty( $session['referrer'] ) ) {
             $existing['referrer'] = $session['referrer'];
@@ -262,6 +285,10 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'anchor_clicks'        => $session['anchor_clicks'] ?? 0,
         'interstitial_clicks'  => $session['interstitial_clicks'] ?? 0,
         'pause_clicks'         => $session['pause_clicks'] ?? 0,
+        // Waldo passback.
+        'waldo_requested' => $session['waldo_requested'] ?? 0,
+        'waldo_filled'    => $session['waldo_filled'] ?? 0,
+        'waldo_fills'     => $session['waldo_fills'] ?? array(),
         'status'         => 'ended',
         'ended_at'       => time(),
         'source'         => 'ad-track', // Distinguish from heartbeat-sourced entries.

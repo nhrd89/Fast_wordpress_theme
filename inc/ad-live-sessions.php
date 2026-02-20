@@ -142,6 +142,10 @@ function pl_live_sessions_heartbeat( $request ) {
 		'anchor_filled'        => ! empty( $body['anchorFilled'] ),
 		'interstitial_filled'  => ! empty( $body['interstitialFilled'] ),
 		'pause_filled'         => ! empty( $body['pauseFilled'] ),
+		// Waldo passback tracking.
+		'waldo_requested'      => intval( $body['waldoRequested'] ?? 0 ),
+		'waldo_filled'         => intval( $body['waldoFilled'] ?? 0 ),
+		'waldo_fills'          => array(),
 	);
 
 	// Capture zone detail from heartbeat.
@@ -159,6 +163,19 @@ function pl_live_sessions_heartbeat( $request ) {
 				'filled'        => isset( $z['filled'] ) ? (bool) $z['filled'] : null,
 				'fill_size'     => sanitize_text_field( $z['fillSize'] ?? '' ),
 				'clicks'        => intval( $z['clicks'] ?? 0 ),
+				'passback'      => ! empty( $z['passback'] ),
+				'passback_network' => sanitize_text_field( $z['passbackNetwork'] ?? '' ),
+			);
+		}
+	}
+
+	// Waldo passback fill detail from heartbeat.
+	if ( ! empty( $body['waldoFills'] ) && is_array( $body['waldoFills'] ) ) {
+		foreach ( $body['waldoFills'] as $wzone_id => $wfill ) {
+			$session['waldo_fills'][ sanitize_text_field( $wzone_id ) ] = array(
+				'tag'     => sanitize_text_field( $wfill['tag'] ?? '' ),
+				'filled'  => ! empty( $wfill['filled'] ),
+				'network' => sanitize_text_field( $wfill['network'] ?? 'newor' ),
 			);
 		}
 	}
@@ -511,7 +528,7 @@ function pl_live_sessions_page() {
 				'<td>' + (s.zones_activated || s.active_ads) + '</td>' +
 				'<td>' + s.viewable_ads + '</td>' +
 				'<td>' + rate + '%</td>' +
-				'<td>' + (s.total_requested > 0 ? s.total_filled + '/' + s.total_requested + ' (' + s.fill_rate + '%)' : '-') + '</td>' +
+				'<td>' + (s.total_requested > 0 ? s.total_filled + '/' + s.total_requested + ' (' + s.fill_rate + '%)' + (s.waldo_filled > 0 ? ' <span style="color:#6d28d9;font-weight:700">+' + s.waldo_filled + ' NM</span>' : '') : '-') + '</td>' +
 				'<td>' + (function() { var c = (s.total_display_clicks || 0) + (s.anchor_clicks || 0) + (s.interstitial_clicks || 0) + (s.pause_clicks || 0); return c > 0 ? '<span style="color:#00a32a;font-weight:700">' + c + '</span>' : '0'; })() + '</td>' +
 				'<td>' + s.scroll_speed + '</td>' +
 				'<td><code style="font-size:11px">' + (s.zones_active || '-') + '</code></td>' +
@@ -561,8 +578,11 @@ function pl_live_sessions_page() {
 			h += '<table><tr><th>Format</th><th>Status</th><th>Fill</th><th>Viewable</th><th>Clicks</th><th>Detail</th></tr>';
 			var anchorDetail = s.anchor_impressions ? s.anchor_impressions + ' imp, ' + (s.anchor_viewable || 0) + ' viewable' : '-';
 			if (s.anchor_visible_ms) anchorDetail += ', ' + (s.anchor_visible_ms / 1000).toFixed(1) + 's visible';
+			var anchorPb = s.waldo_fills && s.waldo_fills['anchor'];
+			if (anchorPb) anchorDetail += anchorPb.filled ? ' | NM passback filled' : ' | NM passback no-fill';
 			h += '<tr><td>Anchor (320x50)</td><td>' + fmtStatus(s.anchor_status) + ' ' + (s.anchor_status || 'off') + '</td>';
-			h += '<td>' + (s.anchor_filled ? gateIcon(true) : (s.anchor_status === 'off' ? '-' : gateIcon(false))) + '</td>';
+			var anchorFillCell = s.anchor_filled ? gateIcon(true) : (s.anchor_status === 'off' ? '-' : (anchorPb && anchorPb.filled ? '<span style="color:#6d28d9;font-weight:700">NM</span>' : gateIcon(false)));
+			h += '<td>' + anchorFillCell + '</td>';
 			h += '<td>' + (s.anchor_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
 			h += '<td>' + (s.anchor_clicks > 0 ? '<span style="color:#00a32a;font-weight:700">' + s.anchor_clicks + '</span>' : '0') + '</td>';
 			h += '<td style="font-size:12px">' + anchorDetail + '</td></tr>';
@@ -591,21 +611,38 @@ function pl_live_sessions_page() {
 				h += '<tr><td>Successful</td><td>' + retriesOk + '</td></tr>';
 				h += '</table>';
 			}
+			// Waldo passback summary.
+			if (s.waldo_requested > 0) {
+				h += '<h4 style="margin-top:12px">Newor Media Passback</h4>';
+				h += '<table><tr><th>Metric</th><th>Value</th></tr>';
+				h += '<tr><td>Requested</td><td>' + s.waldo_requested + '</td></tr>';
+				h += '<tr><td>Filled</td><td>' + (s.waldo_filled > 0 ? '<span style="color:#6d28d9;font-weight:700">' + s.waldo_filled + '</span>' : '0') + '</td></tr>';
+				h += '<tr><td>Fill Rate</td><td>' + (s.waldo_requested > 0 ? Math.round((s.waldo_filled / s.waldo_requested) * 100) : 0) + '%</td></tr>';
+				h += '</table>';
+			}
 			h += '</div>';
 
 			// Zone detail.
 			h += '<div>';
 			h += '<h4>Zone Detail (' + (s.events ? s.events.length : 0) + ' zones)' + (isRecent ? ' — Final' : '') + '</h4>';
 			if (s.events && s.events.length > 0) {
-				h += '<table><tr><th>Zone</th><th>Size</th><th>Fill</th><th>Clicks</th><th>Depth</th><th>Speed</th><th>Visible</th><th>Viewable</th><th>Max %</th></tr>';
+				h += '<table><tr><th>Zone</th><th>Size</th><th>Fill</th><th>Passback</th><th>Clicks</th><th>Depth</th><th>Speed</th><th>Visible</th><th>Viewable</th><th>Max %</th></tr>';
 				for (var i = 0; i < s.events.length; i++) {
 					var e = s.events[i];
 					var fillIcon = e.filled === true ? gateIcon(true) : (e.filled === false ? '<span class="pl-gate-fail">&#10007;</span>' : '<span style="color:#646970">?</span>');
 					var fillLabel = e.fill_size ? ' ' + e.fill_size : '';
+					var pbCell = '-';
+					if (e.passback) {
+						pbCell = '<span style="color:#6d28d9;font-weight:700">NM</span>';
+					} else if (e.filled === false && s.waldo_fills && s.waldo_fills[e.zone_id]) {
+						var wf = s.waldo_fills[e.zone_id];
+						pbCell = wf.filled ? '<span style="color:#6d28d9;font-weight:700">NM &#10003;</span>' : '<span style="color:#d63638">NM &#10007;</span>';
+					}
 					h += '<tr>';
 					h += '<td><code>' + e.zone_id + '</code></td>';
 					h += '<td>' + e.ad_size + '</td>';
 					h += '<td>' + fillIcon + fillLabel + '</td>';
+					h += '<td>' + pbCell + '</td>';
 					h += '<td>' + (e.clicks > 0 ? '<span style="color:#00a32a;font-weight:700">' + e.clicks + '</span>' : '0') + '</td>';
 					h += '<td>' + Math.round(e.injected_at) + '%</td>';
 					h += '<td>' + e.speed_at_inj + '</td>';
