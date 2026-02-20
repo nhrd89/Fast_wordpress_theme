@@ -20,6 +20,14 @@
 
 var cfg = window.plAds || {};
 
+// wp_localize_script converts ALL values to strings. Parse numerics now.
+cfg.maxAds = parseInt(cfg.maxAds, 10) || 4;
+cfg.gateScrollPct = parseInt(cfg.gateScrollPct, 10) || 15;
+cfg.gateTimeSec = parseInt(cfg.gateTimeSec, 10) || 5;
+cfg.gateDirChanges = parseInt(cfg.gateDirChanges, 10) || 0;
+cfg.minSpacingPx = parseInt(cfg.minSpacingPx, 10) || 800;
+cfg.pauseMinAds = parseInt(cfg.pauseMinAds, 10) || 2;
+
 // Bail if not configured (ad engine disabled or missing config).
 if (!cfg.networkCode && !cfg.dummy) return;
 
@@ -296,6 +304,14 @@ function initZoneObserver() {
  * they would produce 0% viewability.
  */
 function onGateOpen() {
+	// Don't activate zones if user hasn't scrolled at all.
+	// Gate may have opened on time alone — wait for actual scroll engagement.
+	// The IO will activate zones as the user scrolls.
+	if (state.scrollPct < 1) {
+		if (cfg.debug) console.log('[PL-Ads] onGateOpen: scroll ' + Math.round(state.scrollPct) + '% < 1% — deferring to IO');
+		return;
+	}
+
 	for (var i = 0; i < state.zones.length; i++) {
 		var zone = state.zones[i];
 		if (zone.activated) continue;
@@ -331,7 +347,7 @@ function tryActivateZone(el) {
 
 	// --- Max ads ---
 	if (state.activeAds >= cfg.maxAds) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ')');
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ' [type:' + typeof cfg.maxAds + '])');
 		collapseZone(el, 'max');
 		return;
 	}
@@ -733,7 +749,8 @@ function trackViewability(zone) {
 		ratioSum: 0,
 		ratioCount: 0,
 		timeToFirstView: 0,
-		firstViewRecorded: false,
+		firstViewRecorded: false, // ratio >= 0.5 (IAB viewable threshold)
+		firstSeenRecorded: false, // ratio > 0 (any part entered viewport)
 		injectedAtDepth: state.scrollPct,
 		scrollSpeedAtInjection: state.scrollSpeed,
 		visibleStart: 0,
@@ -745,72 +762,89 @@ function trackViewability(zone) {
 	};
 	state.viewability[zone.id] = data;
 
-	if (!('IntersectionObserver' in window)) return;
+	if (!('IntersectionObserver' in window)) {
+		if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' — IO not supported');
+		return;
+	}
 
 	var observer = new IntersectionObserver(function(entries) {
-		var entry = entries[0];
-		var ratio = entry.intersectionRatio;
+		for (var ei = 0; ei < entries.length; ei++) {
+			var entry = entries[ei];
+			var ratio = entry.intersectionRatio;
 
-		data.ratioSum += ratio;
-		data.ratioCount++;
-		if (ratio > data.maxRatio) data.maxRatio = ratio;
+			data.ratioSum += ratio;
+			data.ratioCount++;
+			if (ratio > data.maxRatio) data.maxRatio = ratio;
 
-		if (ratio >= 0.5) {
-			if (!data.isVisible) {
-				data.isVisible = true;
-				data.visibleStart = Date.now();
-				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VISIBLE (ratio=' + Math.round(ratio * 100) + '%)');
+			// Track first time any part of zone enters viewport.
+			if (ratio > 0 && !data.firstSeenRecorded) {
+				data.firstSeenRecorded = true;
+				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' FIRST SEEN (ratio=' + Math.round(ratio * 100) + '%)');
+			}
 
-				if (!data.firstViewRecorded) {
-					data.firstViewRecorded = true;
-					data.timeToFirstView = Date.now() - state.sessionStart;
-				}
+			if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' IO fired ratio=' + Math.round(ratio * 100) + '% isVisible=' + data.isVisible + ' impressions=' + data.viewableImpressions);
 
-				// 1-second continuous visibility = viewable impression.
-				data.viewableTimer = setTimeout(function() {
-					data.viewableImpressions++;
-					// Track first viewable impression per zone for budget.
-					if (data.viewableImpressions === 1) {
-						state.viewableCount++;
-						// Mark as resolved (viewable).
-						if (!data.resolved) {
-							data.resolved = true;
-							state.resolvedCount++;
-							// Track successful retry.
-							if (data.isRetry) state.retriesSuccessful++;
-						}
-						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE — session: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved' + (data.isRetry ? ' (retry success)' : ''));
-						checkViewabilityBudget();
+			if (ratio >= 0.5) {
+				if (!data.isVisible) {
+					data.isVisible = true;
+					data.visibleStart = Date.now();
+					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VISIBLE >=50% (ratio=' + Math.round(ratio * 100) + '%), starting 1s timer');
+
+					if (!data.firstViewRecorded) {
+						data.firstViewRecorded = true;
+						data.timeToFirstView = Date.now() - state.sessionStart;
 					}
-					if (cfg.debug && data.viewableImpressions > 1) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE IMPRESSION #' + data.viewableImpressions);
-				}, 1000);
-			}
-		} else {
-			if (data.isVisible) {
-				data.totalVisibleMs += Date.now() - data.visibleStart;
-				data.isVisible = false;
-				clearTimeout(data.viewableTimer);
-				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' hidden (visible ' + data.totalVisibleMs + 'ms total)');
-			}
 
-			// --- Missed detection ---
-			// Zone scrolled completely out (ratio=0) and was visible < 1s total
-			// and never became viewable → mark as "missed", queue retry.
-			if (ratio === 0 && !data.resolved && data.viewableImpressions === 0 && data.firstViewRecorded) {
-				data.resolved = true;
-				data.missed = true;
-				state.resolvedCount++;
-				// Queue a retry if under session cap.
-				if (state.totalRetries < state.maxRetriesPerSession) {
-					state.pendingRetries++;
-					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED (visible ' + data.totalVisibleMs + 'ms) — retry queued (pending=' + state.pendingRetries + ')');
-					// Proactively trigger retry: the next zone may have already
-					// been speed-gated before this missed detection fired.
-					tryRetryNearbyZone();
-				} else {
-					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED (visible ' + data.totalVisibleMs + 'ms) — retry cap reached');
+					// 1-second continuous visibility = viewable impression.
+					data.viewableTimer = setTimeout(function() {
+						data.viewableImpressions++;
+						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' 1s timer COMPLETED — marking VIEWABLE (impression #' + data.viewableImpressions + ')');
+						// Track first viewable impression per zone for budget.
+						if (data.viewableImpressions === 1) {
+							state.viewableCount++;
+							// Mark as resolved (viewable).
+							if (!data.resolved) {
+								data.resolved = true;
+								state.resolvedCount++;
+								// Track successful retry.
+								if (data.isRetry) state.retriesSuccessful++;
+							}
+							if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE — session: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved' + (data.isRetry ? ' (retry success)' : ''));
+							checkViewabilityBudget();
+						}
+					}, 1000);
 				}
-				checkViewabilityBudget();
+			} else {
+				if (data.isVisible) {
+					var elapsed = Date.now() - data.visibleStart;
+					data.totalVisibleMs += elapsed;
+					data.isVisible = false;
+					clearTimeout(data.viewableTimer);
+					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' dropped below 50% (ratio=' + Math.round(ratio * 100) + '%), clearing timer (was visible ' + elapsed + 'ms, total ' + data.totalVisibleMs + 'ms)');
+				}
+
+				// --- Missed detection ---
+				// Zone scrolled completely out (ratio=0) and was seen at some point
+				// but never became viewable → mark as "missed", queue retry.
+				// Uses firstSeenRecorded (ratio > 0) not firstViewRecorded (ratio >= 0.5)
+				// because fast scrollers may never reach 50% but the zone WAS in viewport.
+				if (ratio === 0 && !data.resolved && data.viewableImpressions === 0 && data.firstSeenRecorded) {
+					data.resolved = true;
+					data.missed = true;
+					state.resolvedCount++;
+					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED — scrolled out with 0 viewable (visible ' + data.totalVisibleMs + 'ms, maxRatio=' + Math.round(data.maxRatio * 100) + '%)');
+					// Queue a retry if under session cap.
+					if (state.totalRetries < state.maxRetriesPerSession) {
+						state.pendingRetries++;
+						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' retry queued (pending=' + state.pendingRetries + ')');
+						// Proactively trigger retry: the next zone may have already
+						// been speed-gated before this missed detection fired.
+						tryRetryNearbyZone();
+					} else {
+						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' retry cap reached (' + state.totalRetries + '/' + state.maxRetriesPerSession + ')');
+					}
+					checkViewabilityBudget();
+				}
 			}
 		}
 	}, {
@@ -818,6 +852,7 @@ function trackViewability(zone) {
 	});
 
 	observer.observe(zone.el);
+	if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' tracking started, observing element ' + zone.el.className + ' (' + zone.el.offsetWidth + 'x' + zone.el.offsetHeight + 'px)');
 }
 
 function checkViewabilityBudget() {
