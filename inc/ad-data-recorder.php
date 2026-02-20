@@ -104,6 +104,17 @@ function pinlightning_record_ad_data($request) {
         // Retry stats.
         'retries_used' => intval($body['retriesUsed'] ?? 0),
         'retries_successful' => intval($body['retriesSuccessful'] ?? 0),
+        // Fill tracking.
+        'total_requested' => intval($body['totalRequested'] ?? 0),
+        'total_filled' => intval($body['totalFilled'] ?? 0),
+        'total_empty' => intval($body['totalEmpty'] ?? 0),
+        'fill_rate' => intval($body['fillRate'] ?? 0),
+        'anchor_filled' => !empty($body['anchorFilled']),
+        'interstitial_filled' => !empty($body['interstitialFilled']),
+        'pause_filled' => !empty($body['pauseFilled']),
+        'zones_activated' => intval($body['zonesActivated'] ?? 0),
+        'referrer' => sanitize_text_field($body['referrer'] ?? ''),
+        'language' => sanitize_text_field($body['language'] ?? ''),
         'zones' => array(),
     );
 
@@ -120,6 +131,9 @@ function pinlightning_record_ad_data($request) {
                 'time_to_first_view_ms' => intval($zone['timeToFirstView'] ?? 0),
                 'injected_at_depth_pct' => floatval($zone['injectedAtDepth'] ?? 0),
                 'scroll_speed_at_injection' => floatval($zone['scrollSpeedAtInjection'] ?? 0),
+                'filled' => !empty($zone['filled']),
+                'fill_size' => sanitize_text_field($zone['fillSize'] ?? ''),
+                'advertiser_id' => intval($zone['advertiserId'] ?? 0),
             );
         }
     }
@@ -169,6 +183,22 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         // Merge retry stats (ad-track has final values).
         $existing['total_retries']      = max( $existing['total_retries'] ?? 0, $session['retries_used'] ?? 0 );
         $existing['retries_successful'] = max( $existing['retries_successful'] ?? 0, $session['retries_successful'] ?? 0 );
+        // Fill tracking (ad-track has final values).
+        $existing['total_requested']     = max( $existing['total_requested'] ?? 0, $session['total_requested'] ?? 0 );
+        $existing['total_filled']        = max( $existing['total_filled'] ?? 0, $session['total_filled'] ?? 0 );
+        $existing['total_empty']         = max( $existing['total_empty'] ?? 0, $session['total_empty'] ?? 0 );
+        $existing['fill_rate']           = $session['fill_rate'] ?? ( $existing['fill_rate'] ?? 0 );
+        $existing['anchor_filled']       = ! empty( $session['anchor_filled'] ) || ! empty( $existing['anchor_filled'] );
+        $existing['interstitial_filled'] = ! empty( $session['interstitial_filled'] ) || ! empty( $existing['interstitial_filled'] );
+        $existing['pause_filled']        = ! empty( $session['pause_filled'] ) || ! empty( $existing['pause_filled'] );
+        $existing['zones_activated']     = max( $existing['zones_activated'] ?? 0, $session['zones_activated'] ?? 0 );
+        // Preserve identity fields — only overwrite if beacon has non-empty values.
+        if ( ! empty( $session['referrer'] ) ) {
+            $existing['referrer'] = $session['referrer'];
+        }
+        if ( ! empty( $session['language'] ) ) {
+            $existing['language'] = $session['language'];
+        }
         $existing['source']         = 'heartbeat+ad-track';
         $recent[ $js_sid ]          = $existing;
         goto prune_and_save;
@@ -197,8 +227,8 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'active_ads'     => $session['total_ads_injected'],
         'viewable_ads'   => $session['total_viewable'],
         'zones_active'   => implode( ',', array_column( $session['zones'], 'zone_id' ) ),
-        'referrer'       => '',
-        'language'       => '',
+        'referrer'       => $session['referrer'] ?? '',
+        'language'       => $session['language'] ?? '',
         'events'         => $session['zones'],
         // Out-of-page format status.
         'anchor_status'       => $session['anchor_status'] ?? 'off',
@@ -207,6 +237,15 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         // Retry stats.
         'total_retries'      => $session['retries_used'] ?? 0,
         'retries_successful' => $session['retries_successful'] ?? 0,
+        // Fill tracking.
+        'total_requested'      => $session['total_requested'] ?? 0,
+        'total_filled'         => $session['total_filled'] ?? 0,
+        'total_empty'          => $session['total_empty'] ?? 0,
+        'fill_rate'            => $session['fill_rate'] ?? 0,
+        'anchor_filled'        => $session['anchor_filled'] ?? false,
+        'interstitial_filled'  => $session['interstitial_filled'] ?? false,
+        'pause_filled'         => $session['pause_filled'] ?? false,
+        'zones_activated'      => $session['zones_activated'] ?? 0,
         'status'         => 'ended',
         'ended_at'       => time(),
         'source'         => 'ad-track', // Distinguish from heartbeat-sourced entries.

@@ -128,6 +128,7 @@ function pl_live_sessions_heartbeat( $request ) {
 		'pending_retries'     => intval( $body['pendingRetries'] ?? 0 ),
 		'total_retries'       => intval( $body['totalRetries'] ?? 0 ),
 		'retries_successful'  => intval( $body['retriesSuccessful'] ?? 0 ),
+		'zones_activated'     => intval( $body['zonesActivated'] ?? 0 ),
 		// Fill tracking.
 		'total_requested'      => intval( $body['totalRequested'] ?? 0 ),
 		'total_filled'         => intval( $body['totalFilled'] ?? 0 ),
@@ -499,7 +500,7 @@ function pl_live_sessions_page() {
 				'<td>' + Math.round(s.scroll_pct) + '%</td>' +
 				'<td>' + (s.scroll_pattern || '-') + '</td>' +
 				'<td style="white-space:nowrap">' + gateStatus(s) + '</td>' +
-				'<td>' + s.active_ads + '</td>' +
+				'<td>' + (s.zones_activated || s.active_ads) + '</td>' +
 				'<td>' + s.viewable_ads + '</td>' +
 				'<td>' + rate + '%</td>' +
 				'<td>' + (s.total_requested > 0 ? s.total_filled + '/' + s.total_requested + ' (' + s.fill_rate + '%)' : '-') + '</td>' +
@@ -534,6 +535,7 @@ function pl_live_sessions_page() {
 			h += '<tr><td><strong>Gate</strong></td><td>' + (s.gate_open ? '<span class="pl-gate-ok" style="font-weight:700">OPEN</span>' : '<span class="pl-gate-fail">CLOSED</span>') + '</td></tr>';
 			h += '</table>';
 			h += '<p style="font-size:12px;color:#646970;margin-top:8px">';
+			h += 'Ads: ' + s.active_ads + ' active, ' + (s.zones_activated || s.active_ads) + ' injected<br>';
 			h += 'Viewport: ' + s.viewport_w + 'x' + s.viewport_h + '<br>';
 			h += 'Device: ' + s.device + '<br>';
 			h += 'Referrer: ' + (s.referrer || 'direct') + '<br>';

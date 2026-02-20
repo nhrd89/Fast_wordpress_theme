@@ -51,6 +51,7 @@ var state = {
 	gptLoaded: false,
 	gptReady: false,
 	activeAds: 0,
+	zonesActivated: 0,
 	viewableCount: 0,       // zones that got at least 1 viewable impression
 	resolvedCount: 0,       // zones fully resolved (viewable OR confirmed missed)
 	budgetExhausted: false,  // true when viewability rate drops below 40% after 2+ resolved
@@ -444,6 +445,7 @@ function tryActivateZone(el) {
 	zone.activatedSize = size;
 	zone.isRetry = isRetry;
 	state.activeAds++;
+	state.zonesActivated++;
 	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + size + ', ' + label + ' ' + Math.round(speed) + 'px/s) \u2014 total: ' + state.activeAds);
 
 	el.classList.add('pl-ad-active', 'pl-ad-' + size);
@@ -1113,6 +1115,7 @@ function buildSessionData() {
 		gateTime: gateChecks.time,
 		gateDirection: gateChecks.direction,
 		totalAdsInjected: state.activeAds,
+		zonesActivated: state.zonesActivated,
 		totalViewable: totalViewable,
 		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
 		viewableZones: state.viewableCount,
@@ -1138,6 +1141,8 @@ function buildSessionData() {
 		anchorFilled: state.anchorFilled,
 		interstitialFilled: state.interstitialFilled,
 		pauseFilled: state.pauseFilled,
+		referrer: document.referrer || '',
+		language: (navigator.language || '').substring(0, 5),
 		zones: zones
 	};
 }
@@ -1303,6 +1308,7 @@ function sendHeartbeat() {
 		gateDirection: gateChecks.direction,
 		gateOpen: state.gateOpen,
 		activeAds: state.activeAds,
+		zonesActivated: state.zonesActivated,
 		viewableAds: totalViewable,
 		zonesActive: activeZoneIds.join(','),
 		referrer: document.referrer || '',
