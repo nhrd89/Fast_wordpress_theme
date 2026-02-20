@@ -664,6 +664,12 @@ var pauseShown = false;
 function onScrollPause() {
 	if (pauseShown || !cfg.fmtPause || !state.gateOpen) return;
 	if (state.scrollPct < 30) return;
+	// Require minimum display ads served before showing pause banner.
+	var minAds = cfg.pauseMinAds >= 0 ? cfg.pauseMinAds : 2;
+	if (state.activeAds < minAds) {
+		if (cfg.debug) console.log('[PL-Ads] Pause: skipped — only ' + state.activeAds + '/' + minAds + ' display ads served');
+		return;
+	}
 
 	pauseShown = true;
 

@@ -54,6 +54,7 @@ function pl_ad_defaults() {
 		'fmt_970x250'           => true,
 		'fmt_728x90'            => false,
 		'fmt_pause'             => true,
+		'pause_min_ads'         => 2,
 
 		// Network.
 		'network_code'          => '22953639975',
@@ -128,6 +129,12 @@ function pl_ad_migrate_slot_names() {
 		$dirty = true;
 	}
 
+	// Migrate pause_min_ads from 4 to 2 (speed-gated system produces 1-3 ads, not 4).
+	if ( isset( $saved['pause_min_ads'] ) && (int) $saved['pause_min_ads'] === 4 ) {
+		$saved['pause_min_ads'] = 2;
+		$dirty = true;
+	}
+
 	if ( $dirty ) {
 		update_option( 'pl_ad_settings', $saved );
 	}
@@ -196,6 +203,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'min_spacing_px'        => array( 200, 2000 ),
 		'min_paragraphs_before' => array( 0, 20 ),
 		'min_gap_paragraphs'    => array( 1, 20 ),
+		'pause_min_ads'         => array( 0, 10 ),
 	);
 	foreach ( $ints as $key => $range ) {
 		$val = isset( $input[ $key ] ) ? (int) $input[ $key ] : $defaults[ $key ];
@@ -395,7 +403,10 @@ function pl_ad_render_global_tab( $s ) {
 		</tr>
 		<tr>
 			<th>Pause Banner</th>
-			<td><label><input type="checkbox" name="pl_ad_settings[fmt_pause]" value="1" <?php checked( $s['fmt_pause'] ); ?>> Banner shown when user pauses scrolling</label></td>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[fmt_pause]" value="1" <?php checked( $s['fmt_pause'] ); ?>> Banner shown when user pauses scrolling</label>
+				<br><label style="margin-top:4px;display:inline-block">Min display ads before pause: <input type="number" name="pl_ad_settings[pause_min_ads]" value="<?php echo (int) $s['pause_min_ads']; ?>" min="0" max="10" style="width:60px"></label>
+			</td>
 		</tr>
 	</table>
 	<?php
@@ -781,6 +792,7 @@ function pinlightning_ads_enqueue() {
 		'fmt970x250'      => (bool) $s['fmt_970x250'],
 		'fmt728x90'       => (bool) $s['fmt_728x90'],
 		'fmtPause'        => (bool) $s['fmt_pause'],
+		'pauseMinAds'     => (int) $s['pause_min_ads'],
 
 		// Network / Slots.
 		'networkCode'     => $s['network_code'],
