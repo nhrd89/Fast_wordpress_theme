@@ -28,6 +28,11 @@ cfg.gateDirChanges = parseInt(cfg.gateDirChanges, 10) || 0;
 cfg.minSpacingPx = parseInt(cfg.minSpacingPx, 10) || 800;
 cfg.pauseMinAds = parseInt(cfg.pauseMinAds, 10) || 2;
 cfg.passbackEnabled = cfg.passbackEnabled === '1' || cfg.passbackEnabled === true;
+cfg.backfillScriptUrl = cfg.backfillScriptUrl || '';
+cfg.backfillDisplayTags = cfg.backfillDisplayTags || [];
+cfg.backfillAnchorTag = cfg.backfillAnchorTag || '';
+cfg.backfillInterstitialTag = cfg.backfillInterstitialTag || '';
+cfg.backfillCheckDelay = parseInt(cfg.backfillCheckDelay, 10) || 3000;
 
 // Bail if not configured (ad engine disabled or missing config).
 if (!cfg.networkCode && !cfg.dummy) return;
@@ -107,9 +112,9 @@ var state = {
 	// Newor Media (Waldo) passback state.
 	waldoLoaded: false,
 	waldoLoading: false,
-	waldoTagPool: ['waldo-tag-29686', 'waldo-tag-29688', 'waldo-tag-29690', 'waldo-tag-24348', 'waldo-tag-24350', 'waldo-tag-24352'],
+	waldoTagPool: cfg.backfillDisplayTags,
 	waldoTagIndex: 0,
-	waldoAnchorTag: 'waldo-tag-24358',
+	waldoAnchorTag: cfg.backfillAnchorTag,
 	waldoFills: {},
 	waldoTotalRequested: 0,
 	waldoTotalFilled: 0
@@ -299,19 +304,26 @@ function loadWaldoScript(callback) {
 		return;
 	}
 	if (state.waldoLoading) return;
+
+	if (!cfg.backfillScriptUrl) {
+		if (cfg.debug) console.log('[PL-Ads] No backfill script URL configured');
+		while (waldoCallbacks.length) waldoCallbacks.shift()();
+		return;
+	}
+
 	state.waldoLoading = true;
 
 	var script = document.createElement('script');
-	script.src = '//cdn.thisiswaldo.com/static/js/24273.js';
+	script.src = cfg.backfillScriptUrl;
 	script.async = true;
 	script.onload = function() {
 		state.waldoLoaded = true;
-		if (cfg.debug) console.log('[PL-Ads] Waldo script loaded (site 24273)');
+		if (cfg.debug) console.log('[PL-Ads] Backfill script loaded: ' + cfg.backfillScriptUrl);
 		while (waldoCallbacks.length) waldoCallbacks.shift()();
 	};
 	script.onerror = function() {
 		state.waldoLoading = false;
-		if (cfg.debug) console.warn('[PL-Ads] Waldo script failed to load');
+		if (cfg.debug) console.warn('[PL-Ads] Backfill script failed to load');
 		while (waldoCallbacks.length) waldoCallbacks.shift()();
 	};
 	document.head.appendChild(script);
@@ -635,7 +647,7 @@ function collapseEmptyZone(zoneId) {
 		var zone = state.zones[i];
 		if (zone.id === zoneId) {
 			// Try Waldo passback before collapsing.
-			if (cfg.passbackEnabled && state.waldoTagIndex < state.waldoTagPool.length) {
+			if (cfg.passbackEnabled && cfg.backfillScriptUrl && state.waldoTagIndex < state.waldoTagPool.length) {
 				tryWaldoPassback(zone);
 				return;
 			}
@@ -663,10 +675,9 @@ function tryWaldoPassback(zone) {
 	zone.el.setAttribute('data-passback', 'waldo');
 
 	loadWaldoScript(function() {
-		// Give Waldo 3s to fill the tag.
 		setTimeout(function() {
 			checkWaldoFill(zone, waldoDiv, tagId);
-		}, 3000);
+		}, cfg.backfillCheckDelay);
 	});
 }
 
@@ -698,10 +709,12 @@ function doCollapse(zone) {
 }
 
 function tryWaldoAnchorPassback() {
+	if (!cfg.backfillScriptUrl || !state.waldoAnchorTag) return;
+
 	state.waldoTotalRequested++;
 	state.waldoFills['anchor'] = { tag: state.waldoAnchorTag, filled: false, network: 'newor' };
 
-	if (cfg.debug) console.log('[PL-Ads] Passback: trying Waldo anchor ' + state.waldoAnchorTag);
+	if (cfg.debug) console.log('[PL-Ads] Passback: trying backfill anchor ' + state.waldoAnchorTag);
 
 	loadWaldoScript(function() {
 		var container = document.createElement('div');
@@ -712,7 +725,6 @@ function tryWaldoAnchorPassback() {
 		container.appendChild(waldoDiv);
 		document.body.appendChild(container);
 
-		// Check after 3s if Waldo filled the anchor.
 		setTimeout(function() {
 			var hasContent = waldoDiv.querySelector('iframe') ||
 				waldoDiv.querySelector('ins') ||
@@ -722,12 +734,12 @@ function tryWaldoAnchorPassback() {
 				state.waldoTotalFilled++;
 				state.waldoFills['anchor'].filled = true;
 				state.anchorFilled = true;
-				if (cfg.debug) console.log('[PL-Ads] Passback: Waldo anchor FILLED (h=' + waldoDiv.offsetHeight + 'px)');
+				if (cfg.debug) console.log('[PL-Ads] Passback: backfill anchor FILLED (h=' + waldoDiv.offsetHeight + 'px)');
 			} else {
 				container.remove();
-				if (cfg.debug) console.log('[PL-Ads] Passback: Waldo anchor NO-FILL — removed');
+				if (cfg.debug) console.log('[PL-Ads] Passback: backfill anchor NO-FILL — removed');
 			}
-		}, 3000);
+		}, cfg.backfillCheckDelay);
 	});
 }
 

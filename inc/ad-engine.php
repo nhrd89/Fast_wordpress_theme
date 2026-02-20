@@ -70,6 +70,13 @@ function pl_ad_defaults() {
 		'slot_970x250'          => 'Ad.Plus-970x250',
 		'slot_728x90'           => 'Ad.Plus-728x90',
 		'slot_pause'            => 'Ad.Plus-Pause-300x250',
+
+		// Backfill Network (Newor Media / Waldo).
+		'backfill_script_url'       => '//cdn.thisiswaldo.com/static/js/24273.js',
+		'backfill_display_tags'     => "waldo-tag-29686\nwaldo-tag-29688\nwaldo-tag-29690\nwaldo-tag-24348\nwaldo-tag-24350\nwaldo-tag-24352",
+		'backfill_anchor_tag'       => 'waldo-tag-24358',
+		'backfill_interstitial_tag' => '',
+		'backfill_check_delay'      => 3000,
 	);
 }
 
@@ -219,10 +226,20 @@ function pl_ad_sanitize_settings( $input ) {
 		'network_code', 'slot_prefix',
 		'slot_interstitial', 'slot_anchor', 'slot_300x250',
 		'slot_970x250', 'slot_728x90', 'slot_pause',
+		'backfill_script_url', 'backfill_anchor_tag', 'backfill_interstitial_tag',
 	);
 	foreach ( $texts as $key ) {
 		$clean[ $key ] = isset( $input[ $key ] ) ? sanitize_text_field( $input[ $key ] ) : $defaults[ $key ];
 	}
+
+	// Textarea fields.
+	$clean['backfill_display_tags'] = isset( $input['backfill_display_tags'] )
+		? sanitize_textarea_field( $input['backfill_display_tags'] )
+		: $defaults['backfill_display_tags'];
+
+	// Backfill check delay (integer with clamping).
+	$delay = isset( $input['backfill_check_delay'] ) ? (int) $input['backfill_check_delay'] : $defaults['backfill_check_delay'];
+	$clean['backfill_check_delay'] = max( 1000, min( 10000, $delay ) );
 
 	return $clean;
 }
@@ -447,24 +464,28 @@ function pl_ad_render_global_tab( $s ) {
  */
 function pl_ad_render_codes_tab( $s ) {
 	?>
+	<h3>Primary Network (Ad.Plus / Google Ad Manager)</h3>
+	<p class="description">These codes are used for the primary ad auction. Ads load after the engagement gate opens.</p>
+
 	<table class="form-table">
-		<tr><th colspan="2"><h2>Network Configuration</h2></th></tr>
 		<tr>
 			<th>Network Code</th>
 			<td>
 				<input type="text" name="pl_ad_settings[network_code]" value="<?php echo esc_attr( $s['network_code'] ); ?>" class="regular-text">
-				<p class="description">Google Ad Manager network code (e.g. 22953639975).</p>
+				<p class="description">Google Ad Manager network code (e.g. 22953639975)</p>
 			</td>
 		</tr>
 		<tr>
 			<th>Slot Path Prefix</th>
 			<td>
 				<input type="text" name="pl_ad_settings[slot_prefix]" value="<?php echo esc_attr( $s['slot_prefix'] ); ?>" class="regular-text">
-				<p class="description">Full slot path = prefix + slot name (e.g. /21849154601,22953639975/Ad.Plus-300x250).</p>
+				<p class="description">Full slot path = prefix + slot name</p>
 			</td>
 		</tr>
+	</table>
 
-		<tr><th colspan="2"><h2>Ad Unit Slot Names</h2></th></tr>
+	<h4>Ad Unit Slot Names</h4>
+	<table class="form-table">
 		<tr>
 			<th>Interstitial</th>
 			<td><input type="text" name="pl_ad_settings[slot_interstitial]" value="<?php echo esc_attr( $s['slot_interstitial'] ); ?>" class="regular-text"></td>
@@ -488,6 +509,49 @@ function pl_ad_render_codes_tab( $s ) {
 		<tr>
 			<th>Pause Banner</th>
 			<td><input type="text" name="pl_ad_settings[slot_pause]" value="<?php echo esc_attr( $s['slot_pause'] ); ?>" class="regular-text"></td>
+		</tr>
+	</table>
+
+	<hr style="margin: 30px 0;">
+
+	<h3>Backfill Network (Newor Media)</h3>
+	<p class="description">When the primary network doesn't fill a slot, these codes are used as fallback. The backfill script only loads when a no-fill occurs &mdash; zero PageSpeed impact otherwise.</p>
+
+	<table class="form-table">
+		<tr>
+			<th>Backfill Script URL</th>
+			<td>
+				<input type="text" name="pl_ad_settings[backfill_script_url]" value="<?php echo esc_attr( $s['backfill_script_url'] ); ?>" class="regular-text" style="width:400px;">
+				<p class="description">Waldo/Newor script URL. Leave empty to disable backfill script loading.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Display Ad Tags</th>
+			<td>
+				<textarea name="pl_ad_settings[backfill_display_tags]" rows="6" class="large-text code" style="max-width:400px;"><?php echo esc_textarea( $s['backfill_display_tags'] ); ?></textarea>
+				<p class="description">One Waldo tag ID per line (e.g. waldo-tag-29686). Tags are assigned to no-fill zones in order &mdash; first tag goes to first no-fill, second to next, etc. Maximum 6 tags per page.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Anchor/Sticky Footer Tag</th>
+			<td>
+				<input type="text" name="pl_ad_settings[backfill_anchor_tag]" value="<?php echo esc_attr( $s['backfill_anchor_tag'] ); ?>" class="regular-text">
+				<p class="description">Waldo tag for sticky footer backfill when primary anchor doesn't fill. Leave empty to skip anchor backfill.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Interstitial Tag</th>
+			<td>
+				<input type="text" name="pl_ad_settings[backfill_interstitial_tag]" value="<?php echo esc_attr( $s['backfill_interstitial_tag'] ); ?>" class="regular-text">
+				<p class="description">Waldo tag for interstitial backfill. Leave empty to skip interstitial backfill (recommended &mdash; Waldo doesn't support interstitials well).</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Fill Check Delay (ms)</th>
+			<td>
+				<input type="number" name="pl_ad_settings[backfill_check_delay]" value="<?php echo esc_attr( $s['backfill_check_delay'] ); ?>" class="small-text" min="1000" max="10000" step="500">
+				<p class="description">How long to wait for backfill to render before collapsing (default: 3000ms). Lower = faster collapse, higher = more chance to fill.</p>
+			</td>
 		</tr>
 	</table>
 	<?php
@@ -840,6 +904,13 @@ function pinlightning_ads_enqueue() {
 
 		// Passback.
 		'passbackEnabled' => (bool) $s['passback_enabled'],
+
+		// Backfill Network.
+		'backfillScriptUrl'       => $s['backfill_script_url'],
+		'backfillDisplayTags'     => array_values( array_filter( array_map( 'trim', explode( "\n", $s['backfill_display_tags'] ) ) ) ),
+		'backfillAnchorTag'       => $s['backfill_anchor_tag'],
+		'backfillInterstitialTag' => $s['backfill_interstitial_tag'],
+		'backfillCheckDelay'      => (int) $s['backfill_check_delay'],
 
 		// Network / Slots.
 		'networkCode'     => $s['network_code'],
