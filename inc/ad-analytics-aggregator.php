@@ -205,7 +205,8 @@ function pl_ad_aggregate_session( $session ) {
 	$stats['waldo_total_filled']    += intval( $session['waldo_filled'] ?? 0 );
 
 	// --- Per-Zone Stats ---
-	$events = $session['events'] ?? array();
+	// Beacon path stores zone data as 'zones'; heartbeat archive path stores as 'events'.
+	$events = $session['events'] ?? $session['zones'] ?? array();
 	if ( is_string( $events ) ) {
 		$events = json_decode( $events, true ) ?: array();
 	}

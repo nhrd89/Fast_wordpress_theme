@@ -107,6 +107,7 @@ var state = {
 	totalDisplayClicks: 0,
 	anchorClicks: 0,
 	interstitialClicks: 0,
+	interstitialDismissed: 0,
 	pauseClicks: 0,
 
 	// Newor Media (Waldo) passback state.
@@ -609,6 +610,42 @@ function onSlotRenderEnded(event) {
 		} else {
 			state.totalFilled++;
 			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' (' + divId + ') FILLED \u2014 size=' + fillData.size + ' adv=' + fillData.advertiserId);
+
+			// FIX: Re-attach viewability observer after GPT ad render.
+			// GPT's collapseEmptyDivs + iframe injection changes the zone DOM
+			// in a way that causes the original IntersectionObserver to stop
+			// firing callbacks. Unobserve + re-observe forces fresh tracking.
+			var vData = state.viewability[zoneId];
+			if (vData && vData.observer) {
+				var oldEl = vData.observedEl;
+				vData.observer.unobserve(oldEl);
+
+				// Reset tracking state for fresh measurement after render.
+				vData.totalVisibleMs = 0;
+				vData.viewableImpressions = 0;
+				vData.maxRatio = 0;
+				vData.ratioSum = 0;
+				vData.ratioCount = 0;
+				vData.timeToFirstView = 0;
+				vData.firstViewRecorded = false;
+				vData.firstSeenRecorded = false;
+				vData.isVisible = false;
+				vData.visibleStart = 0;
+				clearTimeout(vData.viewableTimer);
+				vData.resolved = false;
+				vData.missed = false;
+
+				// Allow GPT rendering to complete, then re-observe the ad element.
+				(function(vd, did, zid) {
+					setTimeout(function() {
+						var adEl = document.getElementById(did);
+						var target = adEl ? (adEl.querySelector('iframe') || adEl) : oldEl;
+						vd.observer.observe(target);
+						vd.observedEl = target;
+						if (cfg.debug) console.log('[PL-Ads] Viewability: re-attached observer for ' + zid + ' after GPT render (target=' + target.tagName + ')');
+					}, 200);
+				})(vData, divId, zoneId);
+			}
 		}
 		return;
 	}
@@ -639,7 +676,14 @@ function onSlotRenderEnded(event) {
 		return;
 	}
 
-	if (cfg.debug) console.log('[PL-Ads] Fill: unknown slot ' + divId + ' \u2014 ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+	// Unknown slot not mapped to any zone or overlay — likely auto-deployed
+	// by the ad network (e.g., Side-Anchor). Destroy to prevent negative revenue.
+	try {
+		googletag.destroySlots([slot]);
+		if (cfg.debug) console.log('[PL-Ads] Destroyed auto-deployed slot: ' + divId);
+	} catch(e) {
+		if (cfg.debug) console.log('[PL-Ads] Fill: unknown slot ' + divId + ' \u2014 ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+	}
 }
 
 function collapseEmptyZone(zoneId) {
@@ -1160,6 +1204,8 @@ function trackViewability(zone) {
 		threshold: [0, 0.25, 0.5, 0.75, 1.0]
 	});
 
+	data.observer = observer;
+	data.observedEl = zone.el;
 	observer.observe(zone.el);
 	if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' tracking started, observing element ' + zone.el.className + ' (' + zone.el.offsetWidth + 'x' + zone.el.offsetHeight + 'px)');
 }
@@ -1307,6 +1353,7 @@ function buildSessionData() {
 		totalDisplayClicks: state.totalDisplayClicks,
 		anchorClicks: state.anchorClicks,
 		interstitialClicks: state.interstitialClicks,
+		interstitialDismissed: state.interstitialDismissed,
 		pauseClicks: state.pauseClicks,
 		// Waldo passback summary.
 		waldoRequested: state.waldoTotalRequested,
@@ -1510,6 +1557,7 @@ function sendHeartbeat() {
 		totalDisplayClicks: state.totalDisplayClicks,
 		anchorClicks: state.anchorClicks,
 		interstitialClicks: state.interstitialClicks,
+		interstitialDismissed: state.interstitialDismissed,
 		pauseClicks: state.pauseClicks,
 		// Waldo passback summary.
 		waldoRequested: state.waldoTotalRequested,
@@ -1589,7 +1637,10 @@ function initClickTracking() {
 					if (parent.style.bottom === '0px') {
 						recordAdClick('anchor', 'anchor');
 					} else {
-						recordAdClick('interstitial', 'interstitial');
+						// Interstitial iframe focus = overlay dismiss, NOT ad click.
+						// Real ad clicks are detected via visibilitychange (page hidden).
+						state.interstitialDismissed++;
+						if (cfg.debug) console.log('[PL-Ads] Interstitial dismissed (iframe focus)');
 					}
 					return;
 				}
@@ -1599,9 +1650,12 @@ function initClickTracking() {
 	});
 
 	// Method B: visibilitychange for overlay clicks.
-	// When pause overlay is showing and page becomes hidden, likely an ad click.
+	// Page hidden while an overlay is showing = user clicked ad (navigated away).
 	document.addEventListener('visibilitychange', function() {
 		if (!document.hidden) return;
+		if (interstitialShown && state.interstitialShownAt && !state.interstitialClosedAt) {
+			recordAdClick('interstitial', 'interstitial');
+		}
 		if (pauseShown && state.pauseShownAt && !state.pauseClosedAt) {
 			recordAdClick('pause', 'pause');
 		}
