@@ -13,6 +13,227 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/* ================================================================
+ * AD ZONE RENDERERS — v4 Full Monetization
+ *
+ * Three zone types: display (GPT slot), pause (GPT contentPause),
+ * and video (playerPro script, NOT a GPT slot).
+ * ================================================================ */
+
+/**
+ * Render a regular display ad zone.
+ *
+ * @param string $size_str Size like "300x250".
+ * @param string $zone_id  Unique zone identifier.
+ * @return string HTML div.
+ */
+function pl_render_display_zone( $size_str, $zone_id ) {
+	$s = pl_ad_settings();
+	if ( ! $s['enabled'] ) {
+		return '';
+	}
+	$slot = 'Ad.Plus-' . $size_str;
+	$dims = str_replace( 'x', ',', $size_str );
+	return sprintf(
+		'<div class="ad-zone" id="%s" data-zone="%s" data-slot="%s" data-size="%s"></div>',
+		esc_attr( $zone_id ),
+		esc_attr( $zone_id ),
+		esc_attr( $slot ),
+		esc_attr( $dims )
+	);
+}
+
+/**
+ * Render a pause banner zone (GPT contentPause).
+ *
+ * @param string $zone_id Unique zone identifier.
+ * @return string HTML div.
+ */
+function pl_render_pause_zone( $zone_id ) {
+	$s = pl_ad_settings();
+	if ( ! $s['enabled'] ) {
+		return '';
+	}
+	return sprintf(
+		'<div class="ad-zone ad-pause" id="%s" data-zone="%s" data-slot="Ad.Plus-Pause-300x250" data-size="300,250" data-pause="true"></div>',
+		esc_attr( $zone_id ),
+		esc_attr( $zone_id )
+	);
+}
+
+/**
+ * Render an InPage Video zone (playerPro script, NOT a GPT slot).
+ *
+ * @return string HTML with script tags.
+ */
+function pl_render_video_zone() {
+	$s = pl_ad_settings();
+	if ( ! $s['enabled'] ) {
+		return '';
+	}
+	return '<div class="ad-zone ad-video" data-zone="video-1">'
+		. '<script async src="https://cdn.ad.plus/player/adplus.js"></script>'
+		. '<script data-playerPro="current">(function(){'
+		. 'var s=document.querySelector(\'script[data-playerPro="current"]\');'
+		. 's.removeAttribute("data-playerPro");'
+		. '(playerPro=window.playerPro||[]).push({id:"z2I717k6zq5b",after:s,'
+		. 'appParams:{"C_NETWORK_CODE":"22953639975","C_WEBSITE":"cheerlives.com"}});'
+		. '})();</script></div>';
+}
+
+/**
+ * Get the v4 per-item ad config map.
+ *
+ * Keys: item number. Values: array of position => size or 'pause'.
+ * Positions: 'after_img', 'after_p1', 'after_p2'.
+ *
+ * @return array
+ */
+function pl_get_item_ad_config() {
+	return array(
+		1  => array( 'after_img' => '300x250', 'after_p1' => '336x280' ),
+		2  => array( 'after_img' => '300x600', 'after_p2' => '300x250' ),
+		3  => array( 'after_img' => '300x250', 'after_p1' => 'pause' ),
+		4  => array( 'after_img' => '336x280' ),
+		5  => array( 'after_img' => '300x250' ),
+		6  => array( 'after_img' => '300x600', 'after_p2' => 'pause' ),
+		7  => array( 'after_img' => '300x250' ),
+		8  => array( 'after_img' => '250x250' ),
+		9  => array( 'after_img' => '336x280', 'after_p2' => 'pause' ),
+		10 => array( 'after_img' => '300x250' ),
+		11 => array( 'after_img' => '300x600' ),
+		12 => array( 'after_img' => '300x250', 'after_p2' => 'pause' ),
+		13 => array( 'after_img' => '300x100' ),
+		14 => array( 'after_img' => '336x280' ),
+		15 => array( 'after_img' => '300x250' ),
+	);
+}
+
+/**
+ * Inject ad zones into a single listicle item's HTML.
+ *
+ * Parses the item HTML to find images and paragraphs, then inserts
+ * ad zones after the specified elements according to the ad config.
+ *
+ * @param string $html       Item HTML.
+ * @param int    $item_index Item number (1-based).
+ * @return string Modified HTML with ad zones.
+ */
+function pl_inject_item_ads( $html, $item_index ) {
+	$config = pl_get_item_ad_config();
+	if ( ! isset( $config[ $item_index ] ) ) {
+		return $html;
+	}
+
+	$ads = $config[ $item_index ];
+
+	// Insert after_img: find first </figure> or first </div> containing an image.
+	if ( isset( $ads['after_img'] ) ) {
+		$size    = $ads['after_img'];
+		$zone_id = 'item' . $item_index . '-img-' . $size;
+		$zone_html = pl_render_display_zone( $size, $zone_id );
+
+		// Try after </figure> first (WordPress block images).
+		if ( strpos( $html, '</figure>' ) !== false ) {
+			$pos = strpos( $html, '</figure>' );
+			$html = substr( $html, 0, $pos + 9 ) . $zone_html . substr( $html, $pos + 9 );
+		} elseif ( preg_match( '/<\/div>\s*(?=<p)/i', $html, $m, PREG_OFFSET_CAPTURE ) ) {
+			// After the image wrapper div, before first paragraph.
+			$pos = $m[0][1] + strlen( $m[0][0] );
+			$html = substr( $html, 0, $pos ) . $zone_html . substr( $html, $pos );
+		}
+	}
+
+	// Insert after_p1 or after_p2: find Nth </p>.
+	foreach ( array( 'after_p1' => 1, 'after_p2' => 2 ) as $key => $nth ) {
+		if ( ! isset( $ads[ $key ] ) ) {
+			continue;
+		}
+
+		$size = $ads[ $key ];
+		$p_count = 0;
+		$offset = 0;
+
+		while ( ( $pos = strpos( $html, '</p>', $offset ) ) !== false ) {
+			$p_count++;
+			if ( $p_count === $nth ) {
+				$insert_pos = $pos + 4;
+
+				if ( $size === 'pause' ) {
+					$zone_id = 'item' . $item_index . '-p' . $nth . '-pause';
+					$zone_html = pl_render_pause_zone( $zone_id );
+				} else {
+					$zone_id = 'item' . $item_index . '-p' . $nth . '-' . $size;
+					$zone_html = pl_render_display_zone( $size, $zone_id );
+				}
+
+				$html = substr( $html, 0, $insert_pos ) . $zone_html . substr( $html, $insert_pos );
+				break;
+			}
+			$offset = $pos + 4;
+		}
+	}
+
+	return $html;
+}
+
+/**
+ * Inject intro ad zones into pre-item content.
+ *
+ * Intro structure: P1 → P2 → P3 → P4 → P5 (5 paragraphs before items).
+ * Ad map: After P2 = pause, After P3 = video, After P5 = 300x250.
+ *
+ * @param string $intro_html Intro HTML (content before first H2).
+ * @return string Modified HTML with ad zones.
+ */
+function pl_inject_intro_ads( $intro_html ) {
+	$intro_ads = array(
+		2 => array( 'type' => 'pause',   'zone_id' => 'intro-p2-pause' ),
+		3 => array( 'type' => 'video' ),
+		5 => array( 'type' => 'display', 'zone_id' => 'intro-p5-300x250', 'size' => '300x250' ),
+	);
+
+	$p_count = 0;
+	$offset  = 0;
+	$inserts = array(); // position => html (reverse order later).
+
+	while ( ( $pos = strpos( $intro_html, '</p>', $offset ) ) !== false ) {
+		$p_count++;
+		$insert_pos = $pos + 4;
+
+		if ( isset( $intro_ads[ $p_count ] ) ) {
+			$ad = $intro_ads[ $p_count ];
+			$zone_html = '';
+
+			switch ( $ad['type'] ) {
+				case 'pause':
+					$zone_html = pl_render_pause_zone( $ad['zone_id'] );
+					break;
+				case 'video':
+					$zone_html = pl_render_video_zone();
+					break;
+				case 'display':
+					$zone_html = pl_render_display_zone( $ad['size'], $ad['zone_id'] );
+					break;
+			}
+
+			if ( $zone_html ) {
+				$inserts[ $insert_pos ] = $zone_html;
+			}
+		}
+
+		$offset = $pos + 4;
+	}
+
+	// Insert in reverse order so positions don't shift.
+	krsort( $inserts );
+	foreach ( $inserts as $pos => $html ) {
+		$intro_html = substr( $intro_html, 0, $pos ) . $html . substr( $intro_html, $pos );
+	}
+
+	return $intro_html;
+}
+
 /**
  * Main content filter.
  *
@@ -92,20 +313,6 @@ function pl_engagement_filter( $content ) {
 		}
 	}
 
-	// Calculate ad zone positions for between-item injection.
-	// Strategy: place ad zones every ~4 items, starting after item 4.
-	// These go BETWEEN .eb-item divs (complementing the auto-scanner
-	// zones from priority 55 which land INSIDE items).
-	$ad_zone_interval  = 4;
-	$ad_zone_positions = array();
-	$ad_zone_count     = 0;
-
-	if ( function_exists( 'pinlightning_ad_zone' ) ) {
-		for ( $z = $ad_zone_interval; $z < $total_items; $z += $ad_zone_interval ) {
-			$ad_zone_positions[] = $z;
-		}
-	}
-
 	// Process each part (item).
 	$item_index   = 0;
 	$output_parts = array();
@@ -125,25 +332,20 @@ function pl_engagement_filter( $content ) {
 				'blur'        => ( $item_index === $blur_item ),
 			) );
 
+			// v4: Inject ad zones INSIDE each item (after img, after p1/p2).
+			$part = pl_inject_item_ads( $part, $item_index );
+
 			$output_parts[] = $part;
 
 			// Inject engagement break AFTER this item if configured.
 			if ( isset( $break_map[ $item_index ] ) ) {
 				$output_parts[] = $break_map[ $item_index ];
 			}
-
-			// Inject ad zone at strategic between-item positions.
-			if ( in_array( $item_index, $ad_zone_positions, true ) ) {
-				$ad_zone_count++;
-				$desktop_size = ( $ad_zone_count % 2 === 0 ) ? '970x250' : '300x250';
-				$output_parts[] = pinlightning_ad_zone(
-					'eb-mid-' . $ad_zone_count,
-					'300x250',
-					$desktop_size
-				);
-			}
 		} else {
-			// Intro or non-item content — pass through.
+			// Intro or non-item content — inject intro ads.
+			if ( $item_index === 0 ) {
+				$part = pl_inject_intro_ads( $part );
+			}
 			$output_parts[] = $part;
 		}
 	}
@@ -155,8 +357,8 @@ function pl_engagement_filter( $content ) {
 
 	// Ad zone after hero mosaic — premium above-fold position.
 	$after_mosaic_ad = '';
-	if ( $mosaic_html && function_exists( 'pinlightning_ad_zone' ) ) {
-		$after_mosaic_ad = pinlightning_ad_zone( 'eb-after-mosaic', '300x250', '970x250' );
+	if ( $mosaic_html ) {
+		$after_mosaic_ad = pl_render_display_zone( '300x250', 'eb-after-mosaic' );
 	}
 
 	if ( $mosaic_html ) {
@@ -177,9 +379,7 @@ function pl_engagement_filter( $content ) {
 	}
 
 	// Footer ad zone — end-of-content position.
-	if ( function_exists( 'pinlightning_ad_zone' ) ) {
-		$content .= pinlightning_ad_zone( 'eb-footer', '300x250', '728x90' );
-	}
+	$content .= pl_render_display_zone( '300x250', 'eb-footer' );
 
 	// Append: AI tip placeholder + favorites summary.
 	$content .= pl_eb_render_ai_tip();

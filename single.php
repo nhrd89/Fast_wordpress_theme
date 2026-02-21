@@ -117,7 +117,7 @@ while ( have_posts() ) :
 				</div>
 			</header>
 
-			<?php echo pinlightning_ad_zone('post-top', '300x250', '970x250'); ?>
+			<?php echo pl_render_display_zone('300x250', 'post-top'); ?>
 
 			<div class="single-content">
 				<?php
@@ -145,7 +145,7 @@ while ( have_posts() ) :
 		</article>
 	</div>
 
-	<?php echo pinlightning_ad_zone('post-bottom', '300x250', '300x250'); ?>
+	<?php echo pl_render_display_zone('300x250', 'post-bottom'); ?>
 
 	<?php if ( comments_open() || get_comments_number() ) : ?>
 		<details class="comments-toggle">
@@ -184,6 +184,9 @@ while ( have_posts() ) :
 	<?php endif; ?>
 
 	<aside class="sidebar" aria-label="Sidebar">
+		<!-- Sidebar top ad: skyscraper -->
+		<div class="ad-zone sidebar-ad" id="sidebar-160x600" data-zone="sidebar-160x600" data-slot="Ad.Plus-160x600" data-size="160,600"></div>
+
 		<!-- Popular Posts -->
 		<div class="sidebar-widget">
 			<h3 class="sidebar-widget-title">Popular Posts</h3>
@@ -215,6 +218,8 @@ while ( have_posts() ) :
 			?>
 		</div>
 
+		<!-- Sidebar bottom ad: display -->
+		<div class="ad-zone sidebar-ad" id="sidebar-300x250" data-zone="sidebar-300x250" data-slot="Ad.Plus-300x250" data-size="300,250"></div>
 	</aside>
 
 <?php endwhile; ?>
