@@ -902,7 +902,6 @@ require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics-aggregator.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics-dashboard.php';
-require_once PINLIGHTNING_DIR . '/inc/ad-analytics.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-optimizer.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-live-sessions.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
