@@ -76,9 +76,9 @@ pinlightning_preload_lcp_image();
 
 <?php if ( function_exists( 'pl_ad_settings' ) && pl_ad_settings()['enabled'] ) : ?>
 <div class="nav-ad-container">
-	<div class="ad-zone mobile-only" id="nav-320x100" data-zone="nav-320x100" data-slot="Ad.Plus-320x100" data-size="320,100"></div>
-	<div class="ad-zone tablet-only" id="nav-728x90" data-zone="nav-728x90" data-slot="Ad.Plus-728x90" data-size="728,90"></div>
-	<div class="ad-zone desktop-only" id="nav-970x250" data-zone="nav-970x250" data-slot="Ad.Plus-970x250" data-size="970,250"></div>
+	<div class="ad-anchor nav-ad-mobile" data-position="nav-below" data-item="0" data-location="nav"></div>
+	<div class="ad-anchor nav-ad-tablet" data-position="nav-below-tablet" data-item="0" data-location="nav"></div>
+	<div class="ad-anchor nav-ad-desktop" data-position="nav-below-desktop" data-item="0" data-location="nav"></div>
 </div>
 <?php endif; ?>
 

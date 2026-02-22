@@ -117,7 +117,7 @@ while ( have_posts() ) :
 				</div>
 			</header>
 
-			<?php echo pl_render_display_zone('300x250', 'post-top'); ?>
+			<?php echo pl_render_ad_anchor( 'post-top', array( 'location' => 'content' ) ); ?>
 
 			<div class="single-content">
 				<?php
@@ -145,7 +145,7 @@ while ( have_posts() ) :
 		</article>
 	</div>
 
-	<?php echo pl_render_display_zone('300x250', 'post-bottom'); ?>
+	<?php echo pl_render_ad_anchor( 'post-bottom', array( 'location' => 'content' ) ); ?>
 
 	<?php if ( comments_open() || get_comments_number() ) : ?>
 		<details class="comments-toggle">
@@ -184,8 +184,8 @@ while ( have_posts() ) :
 	<?php endif; ?>
 
 	<aside class="sidebar" aria-label="Sidebar">
-		<!-- Sidebar top ad: skyscraper -->
-		<div class="ad-zone sidebar-ad" id="sidebar-160x600" data-zone="sidebar-160x600" data-slot="Ad.Plus-160x600" data-size="160,600"></div>
+		<!-- Sidebar top ad anchor -->
+		<div class="ad-anchor" data-position="sidebar-top" data-item="0" data-location="sidebar-top"></div>
 
 		<!-- Popular Posts -->
 		<div class="sidebar-widget">
@@ -218,8 +218,8 @@ while ( have_posts() ) :
 			?>
 		</div>
 
-		<!-- Sidebar bottom ad: display -->
-		<div class="ad-zone sidebar-ad" id="sidebar-300x250" data-zone="sidebar-300x250" data-slot="Ad.Plus-300x250" data-size="300,250"></div>
+		<!-- Sidebar bottom ad anchor -->
+		<div class="ad-anchor" data-position="sidebar-bottom" data-item="0" data-location="sidebar-bottom"></div>
 	</aside>
 
 <?php endwhile; ?>
