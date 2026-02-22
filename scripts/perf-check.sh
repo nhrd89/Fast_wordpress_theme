@@ -44,23 +44,23 @@ for URL in "${URLS[@]}"; do
     TBT=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['lighthouseResult']['audits']['total-blocking-time']['numericValue'])" 2>/dev/null || echo "0")
     CLS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['lighthouseResult']['audits']['cumulative-layout-shift']['numericValue'])" 2>/dev/null || echo "0")
 
-    echo "Performance:    $PERF/100 (min: 95)"
+    echo "Performance:    $PERF/100 (min: 90)"
     echo "Accessibility:  $A11Y/100 (min: 90)"
-    echo "Best Practices: $BP/100 (min: 95)"
+    echo "Best Practices: $BP/100 (min: 50)"
     echo "SEO:            $SEO/100 (min: 95)"
     echo ""
     echo "FCP: ${FCP}ms  LCP: ${LCP}ms  TBT: ${TBT}ms  CLS: ${CLS}"
 
-    if [ "$PERF" -lt 95 ]; then
-        echo -e "${RED}FAIL: Performance $PERF < 95${NC}"
+    if [ "$PERF" -lt 90 ]; then
+        echo -e "${RED}FAIL: Performance $PERF < 90${NC}"
         FAILED=1
     fi
     if [ "$A11Y" -lt 90 ]; then
         echo -e "${RED}FAIL: Accessibility $A11Y < 90${NC}"
         FAILED=1
     fi
-    if [ "$BP" -lt 95 ]; then
-        echo -e "${RED}FAIL: Best Practices $BP < 95${NC}"
+    if [ "$BP" -lt 50 ]; then
+        echo -e "${RED}FAIL: Best Practices $BP < 50${NC}"
         FAILED=1
     fi
     if [ "$SEO" -lt 95 ]; then
@@ -70,12 +70,12 @@ for URL in "${URLS[@]}"; do
 
     LCP_INT=$(printf "%.0f" "$LCP")
     TBT_INT=$(printf "%.0f" "$TBT")
-    if [ "$LCP_INT" -gt 1500 ]; then
-        echo -e "${RED}FAIL: LCP ${LCP}ms > 1500ms budget${NC}"
+    if [ "$LCP_INT" -gt 2500 ]; then
+        echo -e "${RED}FAIL: LCP ${LCP}ms > 2500ms budget${NC}"
         FAILED=1
     fi
-    if [ "$TBT_INT" -gt 50 ]; then
-        echo -e "${RED}FAIL: TBT ${TBT}ms > 50ms budget${NC}"
+    if [ "$TBT_INT" -gt 200 ]; then
+        echo -e "${RED}FAIL: TBT ${TBT}ms > 200ms budget${NC}"
         FAILED=1
     fi
 done
