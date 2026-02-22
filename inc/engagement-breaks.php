@@ -13,124 +13,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/* ================================================================
- * AD ANCHOR RENDERER — v5 Dynamic Injection
- *
- * Zero-height invisible markers. No ad code, no slot definitions.
- * smart-ads.js dynamically injects ads based on scroll behavior.
- * ================================================================ */
-
-/**
- * Render a lightweight ad anchor marker.
- *
- * Zero-height invisible div that smart-ads.js targets for dynamic
- * ad injection based on real-time scroll behavior.
- *
- * @param string $position_id Unique position identifier.
- * @param array  $context     Optional context: item, location.
- * @return string HTML div.
- */
-function pl_render_ad_anchor( $position_id, $context = array() ) {
-	$s = pl_ad_settings();
-	if ( ! $s['enabled'] ) {
-		return '';
-	}
-	return sprintf(
-		'<div class="ad-anchor" data-position="%s" data-item="%s" data-location="%s"></div>',
-		esc_attr( $position_id ),
-		esc_attr( isset( $context['item'] ) ? $context['item'] : '0' ),
-		esc_attr( isset( $context['location'] ) ? $context['location'] : 'content' )
-	);
-}
-
-/**
- * Inject ad anchors into a single listicle item's HTML.
- *
- * Places two invisible anchor markers per item:
- * 1. After the image (item{N}-after-img)
- * 2. After the last paragraph (item{N}-after-p)
- *
- * smart-ads.js decides at runtime whether to inject an ad at each anchor
- * based on the visitor's scroll behavior.
- *
- * @param string $html       Item HTML.
- * @param int    $item_index Item number (1-based).
- * @return string Modified HTML with anchor markers.
- */
-function pl_inject_item_anchors( $html, $item_index ) {
-	// Anchor after first image.
-	$anchor_img = pl_render_ad_anchor( 'item' . $item_index . '-after-img', array(
-		'item'     => $item_index,
-		'location' => 'after-img',
-	) );
-
-	// Try after </figure> first (WordPress block images).
-	if ( strpos( $html, '</figure>' ) !== false ) {
-		$pos  = strpos( $html, '</figure>' );
-		$html = substr( $html, 0, $pos + 9 ) . $anchor_img . substr( $html, $pos + 9 );
-	} elseif ( preg_match( '/<\/div>\s*(?=<p)/i', $html, $m, PREG_OFFSET_CAPTURE ) ) {
-		$pos  = $m[0][1] + strlen( $m[0][0] );
-		$html = substr( $html, 0, $pos ) . $anchor_img . substr( $html, $pos );
-	}
-
-	// Anchor after last paragraph.
-	$anchor_p = pl_render_ad_anchor( 'item' . $item_index . '-after-p', array(
-		'item'     => $item_index,
-		'location' => 'after-p',
-	) );
-
-	$last_p = strrpos( $html, '</p>' );
-	if ( false !== $last_p ) {
-		$insert_pos = $last_p + 4;
-		$html = substr( $html, 0, $insert_pos ) . $anchor_p . substr( $html, $insert_pos );
-	}
-
-	return $html;
-}
-
-/**
- * Inject intro ad anchors into pre-item content.
- *
- * Intro structure: P1 → P2 → P3 → P4 → P5 (5 paragraphs before items).
- * Anchors placed after P2, P3, P5 — smart-ads.js decides what to inject.
- *
- * @param string $intro_html Intro HTML (content before first H2).
- * @return string Modified HTML with anchor markers.
- */
-function pl_inject_intro_anchors( $intro_html ) {
-	$intro_anchors = array(
-		2 => 'intro-after-p2',
-		3 => 'intro-after-p3',
-		5 => 'intro-after-p5',
-	);
-
-	$p_count = 0;
-	$offset  = 0;
-	$inserts = array();
-
-	while ( ( $pos = strpos( $intro_html, '</p>', $offset ) ) !== false ) {
-		$p_count++;
-		$insert_pos = $pos + 4;
-
-		if ( isset( $intro_anchors[ $p_count ] ) ) {
-			$inserts[ $insert_pos ] = pl_render_ad_anchor( $intro_anchors[ $p_count ], array(
-				'item'     => '0',
-				'location' => 'intro',
-			) );
-		}
-
-		$offset = $pos + 4;
-	}
-
-	// Insert in reverse order so positions don't shift.
-	krsort( $inserts );
-	foreach ( $inserts as $pos => $html ) {
-		$intro_html = substr( $intro_html, 0, $pos ) . $html . substr( $intro_html, $pos );
-	}
-
-	return $intro_html;
-}
-
 /**
  * Main content filter.
  *
@@ -210,6 +92,20 @@ function pl_engagement_filter( $content ) {
 		}
 	}
 
+	// Calculate ad zone positions for between-item injection.
+	// Strategy: place ad zones every ~4 items, starting after item 4.
+	// These go BETWEEN .eb-item divs (complementing the auto-scanner
+	// zones from priority 55 which land INSIDE items).
+	$ad_zone_interval  = 4;
+	$ad_zone_positions = array();
+	$ad_zone_count     = 0;
+
+	if ( function_exists( 'pinlightning_ad_zone' ) ) {
+		for ( $z = $ad_zone_interval; $z < $total_items; $z += $ad_zone_interval ) {
+			$ad_zone_positions[] = $z;
+		}
+	}
+
 	// Process each part (item).
 	$item_index   = 0;
 	$output_parts = array();
@@ -229,20 +125,25 @@ function pl_engagement_filter( $content ) {
 				'blur'        => ( $item_index === $blur_item ),
 			) );
 
-			// v5: Place invisible ad anchors for dynamic injection.
-			$part = pl_inject_item_anchors( $part, $item_index );
-
 			$output_parts[] = $part;
 
 			// Inject engagement break AFTER this item if configured.
 			if ( isset( $break_map[ $item_index ] ) ) {
 				$output_parts[] = $break_map[ $item_index ];
 			}
-		} else {
-			// Intro or non-item content — inject intro anchors.
-			if ( $item_index === 0 ) {
-				$part = pl_inject_intro_anchors( $part );
+
+			// Inject ad zone at strategic between-item positions.
+			if ( in_array( $item_index, $ad_zone_positions, true ) ) {
+				$ad_zone_count++;
+				$desktop_size = ( $ad_zone_count % 2 === 0 ) ? '970x250' : '300x250';
+				$output_parts[] = pinlightning_ad_zone(
+					'eb-mid-' . $ad_zone_count,
+					'300x250',
+					$desktop_size
+				);
 			}
+		} else {
+			// Intro or non-item content — pass through.
 			$output_parts[] = $part;
 		}
 	}
@@ -252,14 +153,14 @@ function pl_engagement_filter( $content ) {
 	// Hero mosaic — insert after first paragraph, or before first H2 as fallback.
 	$mosaic_html = pl_render_hero_mosaic( $raw_content, $total_items, $post_id );
 
-	// Ad anchor after hero mosaic — smart-ads.js decides what to inject.
-	$after_mosaic_anchor = '';
-	if ( $mosaic_html ) {
-		$after_mosaic_anchor = pl_render_ad_anchor( 'after-mosaic', array( 'location' => 'content' ) );
+	// Ad zone after hero mosaic — premium above-fold position.
+	$after_mosaic_ad = '';
+	if ( $mosaic_html && function_exists( 'pinlightning_ad_zone' ) ) {
+		$after_mosaic_ad = pinlightning_ad_zone( 'eb-after-mosaic', '300x250', '970x250' );
 	}
 
 	if ( $mosaic_html ) {
-		$mosaic_block = $mosaic_html . $after_mosaic_anchor;
+		$mosaic_block = $mosaic_html . $after_mosaic_ad;
 		$first_p_end  = strpos( $content, '</p>' );
 		if ( $first_p_end !== false ) {
 			$insert_pos = $first_p_end + 4; // after </p>
@@ -275,8 +176,10 @@ function pl_engagement_filter( $content ) {
 		}
 	}
 
-	// Footer ad anchor — end-of-content position.
-	$content .= pl_render_ad_anchor( 'footer', array( 'location' => 'content' ) );
+	// Footer ad zone — end-of-content position.
+	if ( function_exists( 'pinlightning_ad_zone' ) ) {
+		$content .= pinlightning_ad_zone( 'eb-footer', '300x250', '728x90' );
+	}
 
 	// Append: AI tip placeholder + favorites summary.
 	$content .= pl_eb_render_ai_tip();

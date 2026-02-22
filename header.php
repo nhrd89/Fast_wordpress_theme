@@ -21,10 +21,6 @@ pinlightning_preload_lcp_image();
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<?php wp_head(); ?>
-<style>
-/* CMP popup — force position:fixed to prevent CLS (fixed elements don't shift layout) */
-#qc-cmp2-container,#qc-cmp2-usp,.qc-cmp2-summary-section{position:fixed!important}
-</style>
 </head>
 
 <body <?php body_class(); ?>>
@@ -77,13 +73,5 @@ pinlightning_preload_lcp_image();
 		</nav>
 	</div>
 </header>
-
-<?php if ( function_exists( 'pl_ad_settings' ) && pl_ad_settings()['enabled'] ) : ?>
-<div class="nav-ad-container">
-	<div class="ad-anchor nav-ad-mobile" data-position="nav-below" data-item="0" data-location="nav"></div>
-	<div class="ad-anchor nav-ad-tablet" data-position="nav-below-tablet" data-item="0" data-location="nav"></div>
-	<div class="ad-anchor nav-ad-desktop" data-position="nav-below-desktop" data-item="0" data-location="nav"></div>
-</div>
-<?php endif; ?>
 
 <main id="primary" role="main">
