@@ -979,8 +979,85 @@ function getNextWaldoTag(adSize) {
 }
 
 /* ================================================================
- * MODULE 14: AD FILL TRACKER
+ * MODULE 14: WALDO LAZY LOADER + AD FILL TRACKER
  * ================================================================ */
+
+var waldoScriptLoaded = false;
+var waldoScriptLoading = false;
+var waldoPendingCallbacks = [];
+
+function loadWaldoScript(callback) {
+	if (waldoScriptLoaded) { callback(); return; }
+	if (waldoScriptLoading) {
+		waldoPendingCallbacks.push(callback);
+		return;
+	}
+	waldoScriptLoading = true;
+	console.log('[SmartAds] Waldo: lazy-loading script...');
+	var s = document.createElement('script');
+	s.async = true;
+	s.src = '//cdn.thisiswaldo.com/static/js/24273.js';
+	s.onload = function() {
+		waldoScriptLoaded = true;
+		waldoScriptLoading = false;
+		console.log('[SmartAds] Waldo: script loaded, __waldo:', typeof window.__waldo);
+		callback();
+		for (var i = 0; i < waldoPendingCallbacks.length; i++) {
+			waldoPendingCallbacks[i]();
+		}
+		waldoPendingCallbacks = [];
+	};
+	s.onerror = function() {
+		waldoScriptLoading = false;
+		waldoScriptLoaded = false;
+		console.error('[SmartAds] Waldo: script FAILED to load');
+		callback();
+		for (var i = 0; i < waldoPendingCallbacks.length; i++) {
+			waldoPendingCallbacks[i]();
+		}
+		waldoPendingCallbacks = [];
+	};
+	document.head.appendChild(s);
+}
+
+function collapseAd(adRecord) {
+	adRecord.zoneEl.style.display = 'none';
+	adRecord.anchor.classList.remove('ad-active');
+	adRecord.filled = false;
+	adRecord.discarded = true;
+	if (adRecord._observer) {
+		adRecord._observer.disconnect();
+		adRecord._observer = null;
+	}
+}
+
+function executeWaldoPassback(adRecord, waldoTagId, adSizeStr) {
+	try {
+		adRecord.passback = true;
+		adRecord.passbackNetwork = 'waldo';
+		adRecord.passbackTagId = waldoTagId;
+
+		adRecord.zoneEl.innerHTML = '';
+		var waldoDiv = document.createElement('div');
+		waldoDiv.id = waldoTagId;
+		adRecord.zoneEl.appendChild(waldoDiv);
+
+		if (window.__waldo && typeof window.__waldo.refreshTag === 'function') {
+			window.__waldo.refreshTag(waldoTagId);
+			console.log('[SmartAds] Waldo passback: refreshTag(' + waldoTagId + ') for', adSizeStr, 'at', adRecord.position);
+		} else {
+			console.log('[SmartAds] Waldo passback: __waldo not available after load, tag div placed:', waldoTagId);
+		}
+
+		adRecord.filled = true;
+		state.totalFilled++;
+		state.totalUnfilled--;
+		state.waldoPassbacks++;
+	} catch (e) {
+		console.error('[SmartAds] Waldo passback error:', e);
+		collapseAd(adRecord);
+	}
+}
 
 function onSlotRenderEnded(event) {
 	var slot = event.slot;
@@ -1005,55 +1082,24 @@ function onSlotRenderEnded(event) {
 			state.totalEmpty++;
 			state.totalUnfilled++;
 
-			// Try Waldo passback before collapsing.
-			try {
-				var adSizeStr = matchedAd.size.join('x');
-				var waldoTagId = getNextWaldoTag(adSizeStr);
+			// Try Waldo passback — lazy-load script on first need.
+			var adSizeStr = matchedAd.size.join('x');
+			var waldoTagId = getNextWaldoTag(adSizeStr);
 
-				if (waldoTagId) {
-					matchedAd.passback = true;
-					matchedAd.passbackNetwork = 'waldo';
-					matchedAd.passbackTagId = waldoTagId;
-
-					matchedAd.zoneEl.innerHTML = '';
-					var waldoDiv = document.createElement('div');
-					waldoDiv.id = waldoTagId;
-					matchedAd.zoneEl.appendChild(waldoDiv);
-
-					if (window.__waldo && typeof window.__waldo.refreshTag === 'function') {
-						window.__waldo.refreshTag(waldoTagId);
-						console.log('[SmartAds] Waldo passback: called refreshTag(' + waldoTagId + ') for', adSizeStr, 'at', matchedAd.position);
-					} else {
-						console.log('[SmartAds] Waldo passback: __waldo not ready, tag div placed:', waldoTagId, 'waldo obj:', typeof window.__waldo);
+			if (waldoTagId) {
+				var adRecord = matchedAd;
+				loadWaldoScript(function() {
+					if (!waldoScriptLoaded) {
+						console.log('[SmartAds] Waldo script failed — collapsing', adRecord.zoneId);
+						collapseAd(adRecord);
+						return;
 					}
-
-					matchedAd.filled = true;
-					state.totalFilled++;
-					state.totalUnfilled--;
-					state.waldoPassbacks++;
-				} else {
-					// No Waldo tags left — collapse.
-					matchedAd.zoneEl.style.display = 'none';
-					matchedAd.anchor.classList.remove('ad-active');
-					matchedAd.filled = false;
-					matchedAd.discarded = true;
-					if (matchedAd._observer) {
-						matchedAd._observer.disconnect();
-						matchedAd._observer = null;
-					}
-					console.log('[SmartAds] Fill:', divId, 'NO-FILL — collapsed, no Waldo tags left');
-				}
-			} catch (e) {
-				console.error('[SmartAds] Waldo passback error:', e);
-				// Fall through to collapse.
-				matchedAd.zoneEl.style.display = 'none';
-				matchedAd.anchor.classList.remove('ad-active');
-				matchedAd.filled = false;
-				matchedAd.discarded = true;
-				if (matchedAd._observer) {
-					matchedAd._observer.disconnect();
-					matchedAd._observer = null;
-				}
+					executeWaldoPassback(adRecord, waldoTagId, adSizeStr);
+				});
+			} else {
+				// No Waldo tags left — collapse immediately.
+				collapseAd(matchedAd);
+				console.log('[SmartAds] Fill:', divId, 'NO-FILL — collapsed, no Waldo tags left');
 			}
 		} else {
 			state.totalFilled++;
@@ -1423,12 +1469,6 @@ function init() {
 			state.gptReady = true;
 		};
 		document.head.appendChild(gptScript);
-
-		// Load Waldo (Newor Media) passback script.
-		var waldoScript = document.createElement('script');
-		waldoScript.async = true;
-		waldoScript.src = '//cdn.thisiswaldo.com/static/js/24273.js';
-		document.head.appendChild(waldoScript);
 	}
 
 	// Init overlays (not gated, not scroll-driven).
