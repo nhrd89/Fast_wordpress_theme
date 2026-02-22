@@ -33,13 +33,14 @@ function pl_ad_defaults() {
 		'record_data'           => true,
 
 		// Engagement Gate.
-		'gate_scroll_pct'       => 10,
+		'gate_scroll_pct'       => 8,
 		'gate_time_sec'         => 3,
 		'gate_dir_changes'      => 0,
 
-		// Density Controls.
-		'max_display_ads'       => 12,
-		'min_spacing_px'        => 200,
+		// v5: Dynamic injection — no artificial cap, behavior is the cap.
+		'injection_mode'        => 'dynamic',
+		'max_display_ads'       => 50,
+		'min_spacing_px'        => 400,
 		'min_paragraphs_before' => 2,
 		'min_gap_paragraphs'    => 3,
 
@@ -153,14 +154,13 @@ function pl_ad_migrate_slot_names() {
 		$dirty = true;
 	}
 
-	// V4 migration: force-update density/gate settings from v3 to v4 values.
-	$v4_migrations = array(
-		'max_display_ads' => array( 'old_max' => 10, 'new' => 35 ),
-		'min_spacing_px'  => array( 'old_min' => 400, 'new' => 200 ),
-		'gate_scroll_pct' => array( 'old_min' => 12, 'new' => 10 ),
-		'gate_time_sec'   => array( 'old_min' => 4,  'new' => 3 ),
+	// V5 migration: update density/gate settings for dynamic injection.
+	$v5_migrations = array(
+		'max_display_ads' => array( 'old_max' => 35, 'new' => 50 ),
+		'min_spacing_px'  => array( 'old_max' => 200, 'new' => 400 ),
+		'gate_scroll_pct' => array( 'old_min' => 10, 'new' => 8 ),
 	);
-	foreach ( $v4_migrations as $key => $m ) {
+	foreach ( $v5_migrations as $key => $m ) {
 		if ( isset( $saved[ $key ] ) ) {
 			$val = (int) $saved[ $key ];
 			if ( isset( $m['old_max'] ) && $val <= $m['old_max'] && $val !== $m['new'] ) {
@@ -171,6 +171,12 @@ function pl_ad_migrate_slot_names() {
 				$dirty = true;
 			}
 		}
+	}
+
+	// V5: force injection_mode to 'dynamic' if not set.
+	if ( ! isset( $saved['injection_mode'] ) || $saved['injection_mode'] !== 'dynamic' ) {
+		$saved['injection_mode'] = 'dynamic';
+		$dirty = true;
 	}
 
 	// V4: enable new formats if not yet saved.
@@ -248,7 +254,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'gate_scroll_pct'       => array( 0, 100 ),
 		'gate_time_sec'         => array( 0, 60 ),
 		'gate_dir_changes'      => array( 0, 10 ),
-		'max_display_ads'       => array( 0, 20 ),
+		'max_display_ads'       => array( 0, 50 ),
 		'min_spacing_px'        => array( 200, 2000 ),
 		'min_paragraphs_before' => array( 0, 20 ),
 		'min_gap_paragraphs'    => array( 1, 20 ),
@@ -424,8 +430,8 @@ function pl_ad_render_global_tab( $s ) {
 		<tr>
 			<th>Max Display Ads</th>
 			<td>
-				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="20" class="small-text">
-				<p class="description">Maximum in-content display ads per page (12 default — higher values risk eCPM drop from low viewability).</p>
+				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="50" class="small-text">
+				<p class="description">v5 dynamic injection: behavior is the cap. 50 = unlimited (smart-ads.js decides based on scroll speed). Readers see 10-12, scanners see 3-4.</p>
 			</td>
 		</tr>
 		<tr>
@@ -954,56 +960,22 @@ function pinlightning_ads_enqueue() {
 		'debug'           => (bool) $s['debug_overlay'] || isset( $_GET['pl_debug'] ) || current_user_can( 'manage_options' ),
 		'record'          => (bool) $s['record_data'],
 
-		// Engagement Gate.
-		'gateScrollPct'   => (int) $s['gate_scroll_pct'],
-		'gateTimeSec'     => (int) $s['gate_time_sec'],
-		'gateDirChanges'  => (int) $s['gate_dir_changes'],
-
-		// Density.
-		'maxAds'          => (int) $s['max_display_ads'],
-		'minSpacingPx'    => (int) $s['min_spacing_px'],
+		// v5: Injection mode.
+		'injectionMode'   => $s['injection_mode'],
 
 		// Device.
-		'mobileEnabled'   => (bool) $s['mobile_enabled'],
-		'desktopEnabled'  => (bool) $s['desktop_enabled'],
+		'mobileEnabled'   => $s['mobile_enabled'] ? '1' : '0',
+		'desktopEnabled'  => $s['desktop_enabled'] ? '1' : '0',
 
-		// Formats.
+		// Formats (v5: JS uses these as feature flags).
 		'fmtInterstitial' => (bool) $s['fmt_interstitial'],
 		'fmtAnchor'       => (bool) $s['fmt_anchor'],
 		'fmtTopAnchor'    => (bool) $s['fmt_top_anchor'],
-		'fmt300x250'      => (bool) $s['fmt_300x250'],
-		'fmt970x250'      => (bool) $s['fmt_970x250'],
-		'fmt728x90'       => (bool) $s['fmt_728x90'],
-		'fmt320x100'      => (bool) $s['fmt_320x100'],
-		'fmt160x600'      => (bool) $s['fmt_160x600'],
-		'fmtPause'        => (bool) $s['fmt_pause'],
 		'fmtVideo'        => (bool) $s['fmt_video'],
-		'pauseMinAds'     => (int) $s['pause_min_ads'],
 
-		// Passback.
-		'passbackEnabled' => (bool) $s['passback_enabled'],
-
-		// Backfill Network.
-		'backfillScriptUrl'       => $s['backfill_script_url'],
-		'backfillDisplayTags'     => array_values( array_filter( array_map( 'trim', explode( "\n", $s['backfill_display_tags'] ) ) ) ),
-		'backfillAnchorTag'       => $s['backfill_anchor_tag'],
-		'backfillInterstitialTag' => $s['backfill_interstitial_tag'],
-		'backfillCheckDelay'      => (int) $s['backfill_check_delay'],
-
-		// Network / Slots.
+		// Network.
 		'networkCode'     => $s['network_code'],
 		'slotPrefix'      => $s['slot_prefix'],
-		'slots'           => array(
-			'interstitial' => $s['slot_interstitial'],
-			'anchor'       => $s['slot_anchor'],
-			'topAnchor'    => $s['slot_top_anchor'],
-			'300x250'      => $s['slot_300x250'],
-			'970x250'      => $s['slot_970x250'],
-			'728x90'       => $s['slot_728x90'],
-			'320x100'      => $s['slot_320x100'],
-			'160x600'      => $s['slot_160x600'],
-			'pause'        => $s['slot_pause'],
-		),
 
 		// Context.
 		'recordEndpoint'    => rest_url( 'pinlightning/v1/ad-data' ),
