@@ -33,13 +33,14 @@ function pl_ad_defaults() {
 		'record_data'           => true,
 
 		// Engagement Gate.
-		'gate_scroll_pct'       => 15,
-		'gate_time_sec'         => 5,
+		'gate_scroll_pct'       => 3,
+		'gate_time_sec'         => 2,
 		'gate_dir_changes'      => 0,
 
-		// Density Controls.
-		'max_display_ads'       => 5,
-		'min_spacing_px'        => 800,
+		// v5: Dynamic injection — no artificial cap, behavior is the cap.
+		'injection_mode'        => 'dynamic',
+		'max_display_ads'       => 50,
+		'min_spacing_px'        => 400,
 		'min_paragraphs_before' => 2,
 		'min_gap_paragraphs'    => 3,
 
@@ -50,10 +51,14 @@ function pl_ad_defaults() {
 		// Format Toggles.
 		'fmt_interstitial'      => true,
 		'fmt_anchor'            => true,
+		'fmt_top_anchor'        => true,
 		'fmt_300x250'           => true,
 		'fmt_970x250'           => true,
-		'fmt_728x90'            => false,
+		'fmt_728x90'            => true,
+		'fmt_320x100'           => true,
+		'fmt_160x600'           => true,
 		'fmt_pause'             => true,
+		'fmt_video'             => true,
 		'pause_min_ads'         => 2,
 
 		// Passback.
@@ -66,9 +71,12 @@ function pl_ad_defaults() {
 		// Ad Unit Slot Names.
 		'slot_interstitial'     => 'Ad.Plus-Interstitial',
 		'slot_anchor'           => 'Ad.Plus-Anchor',
+		'slot_top_anchor'       => 'Ad.Plus-AnchorSmall',
 		'slot_300x250'          => 'Ad.Plus-300x250',
 		'slot_970x250'          => 'Ad.Plus-970x250',
 		'slot_728x90'           => 'Ad.Plus-728x90',
+		'slot_320x100'          => 'Ad.Plus-320x100',
+		'slot_160x600'          => 'Ad.Plus-160x600',
 		'slot_pause'            => 'Ad.Plus-Pause-300x250',
 
 		// Backfill Network (Newor Media / Waldo).
@@ -92,11 +100,12 @@ function pl_ad_settings() {
 	}
 	$saved  = get_option( 'pl_ad_settings', array() );
 	$cached = wp_parse_args( $saved, pl_ad_defaults() );
+	$cached['debug_overlay'] = true; // v5: enable console logs for launch monitoring
 	return $cached;
 }
 
 /**
- * One-time migration: replace legacy slot names with Ad.Plus-* in saved DB option.
+ * One-time migration: replace cheerfultalks.com slot names with Ad.Plus-* in saved DB option.
  */
 function pl_ad_migrate_slot_names() {
 	$saved = get_option( 'pl_ad_settings', array() );
@@ -115,7 +124,7 @@ function pl_ad_migrate_slot_names() {
 	);
 
 	foreach ( $map as $key => $new_val ) {
-		if ( isset( $saved[ $key ] ) && strpos( $saved[ $key ], 'Ad.Plus' ) === false ) {
+		if ( isset( $saved[ $key ] ) && strpos( $saved[ $key ], 'cheerfultalks' ) !== false ) {
 			$saved[ $key ] = $new_val;
 			$dirty = true;
 		}
@@ -143,6 +152,40 @@ function pl_ad_migrate_slot_names() {
 	if ( isset( $saved['pause_min_ads'] ) && (int) $saved['pause_min_ads'] === 4 ) {
 		$saved['pause_min_ads'] = 2;
 		$dirty = true;
+	}
+
+	// V5 migration: update density/gate settings for dynamic injection.
+	$v5_migrations = array(
+		'max_display_ads' => array( 'old_max' => 35, 'new' => 50 ),
+		'min_spacing_px'  => array( 'old_max' => 200, 'new' => 400 ),
+		'gate_scroll_pct' => array( 'old_min' => 10, 'new' => 3 ),
+	);
+	foreach ( $v5_migrations as $key => $m ) {
+		if ( isset( $saved[ $key ] ) ) {
+			$val = (int) $saved[ $key ];
+			if ( isset( $m['old_max'] ) && $val <= $m['old_max'] && $val !== $m['new'] ) {
+				$saved[ $key ] = $m['new'];
+				$dirty = true;
+			} elseif ( isset( $m['old_min'] ) && $val >= $m['old_min'] && $val !== $m['new'] ) {
+				$saved[ $key ] = $m['new'];
+				$dirty = true;
+			}
+		}
+	}
+
+	// V5: force injection_mode to 'dynamic' if not set.
+	if ( ! isset( $saved['injection_mode'] ) || $saved['injection_mode'] !== 'dynamic' ) {
+		$saved['injection_mode'] = 'dynamic';
+		$dirty = true;
+	}
+
+	// V4: enable new formats if not yet saved.
+	$v4_new_formats = array( 'fmt_top_anchor', 'fmt_320x100', 'fmt_160x600', 'fmt_video', 'fmt_728x90' );
+	foreach ( $v4_new_formats as $fmt ) {
+		if ( ! isset( $saved[ $fmt ] ) ) {
+			$saved[ $fmt ] = true;
+			$dirty = true;
+		}
 	}
 
 	if ( $dirty ) {
@@ -197,8 +240,9 @@ function pl_ad_sanitize_settings( $input ) {
 	$bools = array(
 		'enabled', 'dummy_mode', 'debug_overlay', 'record_data',
 		'mobile_enabled', 'desktop_enabled',
-		'fmt_interstitial', 'fmt_anchor', 'fmt_300x250',
-		'fmt_970x250', 'fmt_728x90', 'fmt_pause',
+		'fmt_interstitial', 'fmt_anchor', 'fmt_top_anchor', 'fmt_300x250',
+		'fmt_970x250', 'fmt_728x90', 'fmt_320x100', 'fmt_160x600',
+		'fmt_pause', 'fmt_video',
 		'passback_enabled',
 	);
 	foreach ( $bools as $key ) {
@@ -210,7 +254,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'gate_scroll_pct'       => array( 0, 100 ),
 		'gate_time_sec'         => array( 0, 60 ),
 		'gate_dir_changes'      => array( 0, 10 ),
-		'max_display_ads'       => array( 0, 10 ),
+		'max_display_ads'       => array( 0, 50 ),
 		'min_spacing_px'        => array( 200, 2000 ),
 		'min_paragraphs_before' => array( 0, 20 ),
 		'min_gap_paragraphs'    => array( 1, 20 ),
@@ -224,8 +268,8 @@ function pl_ad_sanitize_settings( $input ) {
 	// Text fields.
 	$texts = array(
 		'network_code', 'slot_prefix',
-		'slot_interstitial', 'slot_anchor', 'slot_300x250',
-		'slot_970x250', 'slot_728x90', 'slot_pause',
+		'slot_interstitial', 'slot_anchor', 'slot_top_anchor', 'slot_300x250',
+		'slot_970x250', 'slot_728x90', 'slot_320x100', 'slot_160x600', 'slot_pause',
 		'backfill_script_url', 'backfill_anchor_tag', 'backfill_interstitial_tag',
 	);
 	foreach ( $texts as $key ) {
@@ -386,8 +430,8 @@ function pl_ad_render_global_tab( $s ) {
 		<tr>
 			<th>Max Display Ads</th>
 			<td>
-				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="10" class="small-text">
-				<p class="description">Maximum in-content display ads per page.</p>
+				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="50" class="small-text">
+				<p class="description">v5 dynamic injection: behavior is the cap. 50 = unlimited (smart-ads.js decides based on scroll speed). Readers see 10-12, scanners see 3-4.</p>
 			</td>
 		</tr>
 		<tr>
@@ -432,6 +476,10 @@ function pl_ad_render_global_tab( $s ) {
 			<td><label><input type="checkbox" name="pl_ad_settings[fmt_anchor]" value="1" <?php checked( $s['fmt_anchor'] ); ?>> Sticky banner at bottom of viewport</label></td>
 		</tr>
 		<tr>
+			<th>Top Anchor</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_top_anchor]" value="1" <?php checked( $s['fmt_top_anchor'] ); ?>> Sticky banner at top of viewport</label></td>
+		</tr>
+		<tr>
 			<th>300x250</th>
 			<td><label><input type="checkbox" name="pl_ad_settings[fmt_300x250]" value="1" <?php checked( $s['fmt_300x250'] ); ?>> In-content medium rectangle</label></td>
 		</tr>
@@ -441,7 +489,15 @@ function pl_ad_render_global_tab( $s ) {
 		</tr>
 		<tr>
 			<th>728x90</th>
-			<td><label><input type="checkbox" name="pl_ad_settings[fmt_728x90]" value="1" <?php checked( $s['fmt_728x90'] ); ?>> Leaderboard</label></td>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_728x90]" value="1" <?php checked( $s['fmt_728x90'] ); ?>> Leaderboard (nav zone, tablet)</label></td>
+		</tr>
+		<tr>
+			<th>320x100</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_320x100]" value="1" <?php checked( $s['fmt_320x100'] ); ?>> Large mobile banner (nav zone, mobile)</label></td>
+		</tr>
+		<tr>
+			<th>160x600</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_160x600]" value="1" <?php checked( $s['fmt_160x600'] ); ?>> Skyscraper (sidebar)</label></td>
 		</tr>
 		<tr>
 			<th>Pause Banner</th>
@@ -449,6 +505,10 @@ function pl_ad_render_global_tab( $s ) {
 				<label><input type="checkbox" name="pl_ad_settings[fmt_pause]" value="1" <?php checked( $s['fmt_pause'] ); ?>> Banner shown when user pauses scrolling</label>
 				<br><label style="margin-top:4px;display:inline-block">Min display ads before pause: <input type="number" name="pl_ad_settings[pause_min_ads]" value="<?php echo (int) $s['pause_min_ads']; ?>" min="0" max="10" style="width:60px"></label>
 			</td>
+		</tr>
+		<tr>
+			<th>InPage Video</th>
+			<td><label><input type="checkbox" name="pl_ad_settings[fmt_video]" value="1" <?php checked( $s['fmt_video'] ); ?>> playerPro inpage video (intro section)</label></td>
 		</tr>
 
 		<tr><th colspan="2"><h2>Passback (Backfill)</h2></th></tr>
@@ -497,8 +557,12 @@ function pl_ad_render_codes_tab( $s ) {
 			<td><input type="text" name="pl_ad_settings[slot_interstitial]" value="<?php echo esc_attr( $s['slot_interstitial'] ); ?>" class="regular-text"></td>
 		</tr>
 		<tr>
-			<th>Anchor</th>
+			<th>Anchor (Bottom)</th>
 			<td><input type="text" name="pl_ad_settings[slot_anchor]" value="<?php echo esc_attr( $s['slot_anchor'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>Anchor (Top)</th>
+			<td><input type="text" name="pl_ad_settings[slot_top_anchor]" value="<?php echo esc_attr( $s['slot_top_anchor'] ); ?>" class="regular-text"></td>
 		</tr>
 		<tr>
 			<th>300x250</th>
@@ -511,6 +575,14 @@ function pl_ad_render_codes_tab( $s ) {
 		<tr>
 			<th>728x90</th>
 			<td><input type="text" name="pl_ad_settings[slot_728x90]" value="<?php echo esc_attr( $s['slot_728x90'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>320x100</th>
+			<td><input type="text" name="pl_ad_settings[slot_320x100]" value="<?php echo esc_attr( $s['slot_320x100'] ); ?>" class="regular-text"></td>
+		</tr>
+		<tr>
+			<th>160x600</th>
+			<td><input type="text" name="pl_ad_settings[slot_160x600]" value="<?php echo esc_attr( $s['slot_160x600'] ); ?>" class="regular-text"></td>
 		</tr>
 		<tr>
 			<th>Pause Banner</th>
@@ -838,7 +910,9 @@ function pinlightning_scan_and_inject_zones( $content ) {
 
 	return $output;
 }
-add_filter( 'the_content', 'pinlightning_scan_and_inject_zones', 55 );
+// V4: content scanner disabled — ad injection handled by engagement-breaks.php
+// via pl_inject_item_ads() and pl_inject_intro_ads().
+// add_filter( 'the_content', 'pinlightning_scan_and_inject_zones', 55 );
 
 /* ================================================================
  * 6. MANUAL ZONE HELPER
@@ -871,10 +945,11 @@ function pinlightning_ad_zone( $zone_id, $mobile_size = '300x250', $desktop_size
  * ================================================================ */
 
 /**
- * Output ad engine config as inline global variable.
+ * Inline ad engine config as global variable at wp_footer priority 97.
  *
- * smart-ads.js is loaded post-window.load via pinlightning_postload_scripts().
- * The plAds global must be available before the script executes.
+ * smart-ads.js is loaded post-window.load via pinlightning_postload_scripts()
+ * in functions.php, so the script handle doesn't exist for wp_localize_script.
+ * Instead we output a bare <script>var plAds={...}</script> before the loader.
  */
 function pinlightning_ads_enqueue() {
 	$s = pl_ad_settings();
@@ -889,49 +964,22 @@ function pinlightning_ads_enqueue() {
 		'debug'           => (bool) $s['debug_overlay'] || isset( $_GET['pl_debug'] ) || current_user_can( 'manage_options' ),
 		'record'          => (bool) $s['record_data'],
 
-		// Engagement Gate.
-		'gateScrollPct'   => (int) $s['gate_scroll_pct'],
-		'gateTimeSec'     => (int) $s['gate_time_sec'],
-		'gateDirChanges'  => (int) $s['gate_dir_changes'],
-
-		// Density.
-		'maxAds'          => (int) $s['max_display_ads'],
-		'minSpacingPx'    => (int) $s['min_spacing_px'],
+		// v5: Injection mode.
+		'injectionMode'   => $s['injection_mode'],
 
 		// Device.
-		'mobileEnabled'   => (bool) $s['mobile_enabled'],
-		'desktopEnabled'  => (bool) $s['desktop_enabled'],
+		'mobileEnabled'   => $s['mobile_enabled'] ? '1' : '0',
+		'desktopEnabled'  => $s['desktop_enabled'] ? '1' : '0',
 
-		// Formats.
+		// Formats (v5: JS uses these as feature flags).
 		'fmtInterstitial' => (bool) $s['fmt_interstitial'],
 		'fmtAnchor'       => (bool) $s['fmt_anchor'],
-		'fmt300x250'      => (bool) $s['fmt_300x250'],
-		'fmt970x250'      => (bool) $s['fmt_970x250'],
-		'fmt728x90'       => (bool) $s['fmt_728x90'],
-		'fmtPause'        => (bool) $s['fmt_pause'],
-		'pauseMinAds'     => (int) $s['pause_min_ads'],
+		'fmtTopAnchor'    => (bool) $s['fmt_top_anchor'],
+		'fmtVideo'        => (bool) $s['fmt_video'],
 
-		// Passback.
-		'passbackEnabled' => (bool) $s['passback_enabled'],
-
-		// Backfill Network.
-		'backfillScriptUrl'       => $s['backfill_script_url'],
-		'backfillDisplayTags'     => array_values( array_filter( array_map( 'trim', explode( "\n", $s['backfill_display_tags'] ) ) ) ),
-		'backfillAnchorTag'       => $s['backfill_anchor_tag'],
-		'backfillInterstitialTag' => $s['backfill_interstitial_tag'],
-		'backfillCheckDelay'      => (int) $s['backfill_check_delay'],
-
-		// Network / Slots.
+		// Network.
 		'networkCode'     => $s['network_code'],
 		'slotPrefix'      => $s['slot_prefix'],
-		'slots'           => array(
-			'interstitial' => $s['slot_interstitial'],
-			'anchor'       => $s['slot_anchor'],
-			'300x250'      => $s['slot_300x250'],
-			'970x250'      => $s['slot_970x250'],
-			'728x90'       => $s['slot_728x90'],
-			'pause'        => $s['slot_pause'],
-		),
 
 		// Context.
 		'recordEndpoint'    => rest_url( 'pinlightning/v1/ad-data' ),
@@ -942,7 +990,6 @@ function pinlightning_ads_enqueue() {
 		'postSlug'          => get_post_field( 'post_name', get_the_ID() ),
 	);
 
-	// Output as inline global in footer (before post-load scripts at p100).
 	add_action( 'wp_footer', function() use ( $config ) {
 		echo '<script>var plAds=' . wp_json_encode( $config ) . ';</script>' . "\n";
 	}, 97 );
