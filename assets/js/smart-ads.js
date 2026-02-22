@@ -313,7 +313,7 @@ function injectFirstVisibleAd() {
  * These bypass the engagement gate entirely — they're above the fold
  * and will be seen regardless of scroll behavior.
  *
- * Called via setTimeout(initViewportAds, 1000) from init().
+ * Called via setTimeout(initViewportAds, 2000) from init().
  */
 function initViewportAds() {
 	console.log('[SmartAds] initViewportAds() called');
@@ -338,9 +338,9 @@ function initViewportAds() {
 		if (navDisplay === 'none') continue;
 		var adChoice = selectAdSize(nav);
 		if (adChoice) {
-			console.log('[SmartAds] Injecting nav ad:', adChoice.slot);
 			injectAd(nav, adChoice);
 			state.viewportAdsInjected++;
+			console.log('[SmartAds] Viewport ad injected:', adChoice.slot, 'at', nav.getAttribute('data-position'));
 		}
 	}
 
@@ -355,9 +355,9 @@ function initViewportAds() {
 			if (sb.classList.contains('ad-active')) continue;
 			var sbChoice = selectAdSize(sb);
 			if (sbChoice) {
-				console.log('[SmartAds] Injecting sidebar ad:', sbChoice.slot);
 				injectAd(sb, sbChoice);
 				state.viewportAdsInjected++;
+				console.log('[SmartAds] Viewport ad injected:', sbChoice.slot, 'at', sb.getAttribute('data-position'));
 			}
 		}
 	}
@@ -372,9 +372,9 @@ function initViewportAds() {
 		var rect = anchor.getBoundingClientRect();
 		console.log('[SmartAds] Content[' + c + ']:', anchor.getAttribute('data-position'), 'top=' + Math.round(rect.top), 'inViewport=' + (rect.top > 0 && rect.top < window.innerHeight));
 		if (rect.top > 0 && rect.top < window.innerHeight) {
-			console.log('[SmartAds] Injecting first viewport content ad at:', anchor.getAttribute('data-position'));
 			injectAd(anchor, { size: [300, 250], slot: 'Ad.Plus-300x250' });
 			state.viewportAdsInjected++;
+			console.log('[SmartAds] Viewport ad injected: Ad.Plus-300x250 at', anchor.getAttribute('data-position'));
 			foundViewportAnchor = true;
 			break;
 		}
@@ -1194,8 +1194,8 @@ function init() {
 	// Init overlays (not gated, not scroll-driven).
 	initOverlays();
 
-	// Viewport ads — above-the-fold, bypass gate, 1s after load.
-	setTimeout(initViewportAds, 1000);
+	// Viewport ads — above-the-fold, bypass gate, 2s after load (GPT needs time to init).
+	setTimeout(initViewportAds, 2000);
 
 	// Init pause refresh.
 	initPauseRefresh();
