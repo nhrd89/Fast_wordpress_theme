@@ -116,6 +116,7 @@ function pl_live_sessions_heartbeat( $request ) {
 		'anchor_status'       => sanitize_text_field( $body['anchorStatus'] ?? 'off' ),
 		'interstitial_status' => sanitize_text_field( $body['interstitialStatus'] ?? 'off' ),
 		'pause_status'        => sanitize_text_field( $body['pauseStatus'] ?? 'off' ),
+		'top_anchor_status'   => sanitize_text_field( $body['topAnchorStatus'] ?? 'off' ),
 		// Overlay viewability data.
 		'anchor_impressions'      => intval( $body['anchorImpressions'] ?? 0 ),
 		'anchor_viewable'         => intval( $body['anchorViewable'] ?? 0 ),
@@ -142,6 +143,12 @@ function pl_live_sessions_heartbeat( $request ) {
 		'anchor_filled'        => ! empty( $body['anchorFilled'] ),
 		'interstitial_filled'  => ! empty( $body['interstitialFilled'] ),
 		'pause_filled'         => ! empty( $body['pauseFilled'] ),
+		'top_anchor_filled'    => ! empty( $body['topAnchorFilled'] ),
+		// V4: pause banners + refresh.
+		'pause_banners_shown'     => intval( $body['pauseBannersShown'] ?? 0 ),
+		'pause_banners_continued' => intval( $body['pauseBannersContinued'] ?? 0 ),
+		'refresh_count'           => intval( $body['refreshCount'] ?? 0 ),
+		'refresh_impressions'     => intval( $body['refreshImpressions'] ?? 0 ),
 		// Waldo passback tracking.
 		'waldo_requested'      => intval( $body['waldoRequested'] ?? 0 ),
 		'waldo_filled'         => intval( $body['waldoFilled'] ?? 0 ),
@@ -414,14 +421,16 @@ function pl_live_sessions_page() {
 						<th>Speed</th>
 						<th>Zones</th>
 						<th>Anchor</th>
+						<th>TopAnc</th>
 						<th>Intrstl</th>
 						<th>Pause</th>
+						<th>Refresh</th>
 						<th>Referrer</th>
 						<th>Lang</th>
 					</tr>
 				</thead>
 				<tbody id="plActiveBody">
-					<tr><td colspan="19" class="pl-empty">Waiting for first heartbeat...</td></tr>
+					<tr><td colspan="21" class="pl-empty">Waiting for first heartbeat...</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -447,14 +456,16 @@ function pl_live_sessions_page() {
 						<th>Speed</th>
 						<th>Zones</th>
 						<th>Anchor</th>
+						<th>TopAnc</th>
 						<th>Intrstl</th>
 						<th>Pause</th>
+						<th>Refresh</th>
 						<th>Ended</th>
 						<th>Lang</th>
 					</tr>
 				</thead>
 				<tbody id="plRecentBody">
-					<tr><td colspan="19" class="pl-empty">No recent sessions yet.</td></tr>
+					<tr><td colspan="21" class="pl-empty">No recent sessions yet.</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -527,6 +538,8 @@ function pl_live_sessions_page() {
 
 			var lastCol = isRecent ? fmtAgo(s.age_s) : (s.language || '-');
 
+			var refreshLabel = (s.refresh_count || 0) > 0 ? '<span style="color:#2271b1;font-weight:700">' + s.refresh_count + '</span>/' + (s.refresh_impressions || 0) : '-';
+
 			var html = '<tr class="' + rowClass + '" data-sid="' + s.sid + '">' +
 				'<td><code>' + s.sid + '</code></td>' +
 				'<td title="' + (s.post_title || s.post_slug) + '">' + title + '</td>' +
@@ -543,15 +556,17 @@ function pl_live_sessions_page() {
 				'<td>' + s.scroll_speed + '</td>' +
 				'<td><code style="font-size:11px">' + (s.zones_active || '-') + '</code></td>' +
 				'<td>' + fmtOverlay(s.anchor_status, s.anchor_impressions ? s.anchor_impressions + '/' + (s.anchor_viewable || 0) : '') + '</td>' +
+				'<td>' + fmtOverlay(s.top_anchor_status || 'off') + '</td>' +
 				'<td>' + fmtOverlay(s.interstitial_status, s.interstitial_duration_ms ? (s.interstitial_duration_ms / 1000).toFixed(1) + 's' : '') + '</td>' +
-				'<td>' + fmtOverlay(s.pause_status, s.pause_visible_ms ? (s.pause_visible_ms / 1000).toFixed(1) + 's' : '') + '</td>' +
-				'<td>' + (isRecent ? shortRef(s.referrer) : shortRef(s.referrer)) + '</td>' +
+				'<td>' + fmtOverlay(s.pause_status, (s.pause_banners_shown || 0) > 0 ? s.pause_banners_shown + ' shown' : (s.pause_visible_ms ? (s.pause_visible_ms / 1000).toFixed(1) + 's' : '')) + '</td>' +
+				'<td>' + refreshLabel + '</td>' +
+				'<td>' + shortRef(s.referrer) + '</td>' +
 				'<td>' + lastCol + '</td>' +
 				'</tr>';
 
 			// Detail row.
 			var show = expandedSids[s.sid] ? '' : ' style="display:none"';
-			html += '<tr class="pl-detail"' + show + ' data-detail="' + s.sid + '"><td colspan="19">';
+			html += '<tr class="pl-detail"' + show + ' data-detail="' + s.sid + '"><td colspan="21">';
 			html += renderDetail(s, isRecent);
 			html += '</td></tr>';
 
@@ -602,13 +617,30 @@ function pl_live_sessions_page() {
 			h += '<td>' + (s.interstitial_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
 			h += '<td>' + (s.interstitial_clicks > 0 ? '<span style="color:#00a32a;font-weight:700">' + s.interstitial_clicks + '</span>' : '0') + '</td>';
 			h += '<td style="font-size:12px">Duration: ' + intDur + '</td></tr>';
+			h += '<tr><td>Top Anchor</td><td>' + fmtStatus(s.top_anchor_status || 'off') + ' ' + (s.top_anchor_status || 'off') + '</td>';
+			h += '<td>' + (s.top_anchor_filled ? gateIcon(true) : ((s.top_anchor_status || 'off') === 'off' ? '-' : gateIcon(false))) + '</td>';
+			h += '<td>-</td><td>-</td><td style="font-size:12px">-</td></tr>';
 			var pauseDur = s.pause_visible_ms ? (s.pause_visible_ms / 1000).toFixed(1) + 's' : '-';
-			h += '<tr><td>Pause (300x250)</td><td>' + fmtStatus(s.pause_status) + ' ' + (s.pause_status || 'off') + '</td>';
+			h += '<tr><td>Pause (contentPause)</td><td>' + fmtStatus(s.pause_status) + ' ' + (s.pause_status || 'off') + '</td>';
 			h += '<td>' + (s.pause_filled ? gateIcon(true) : (s.pause_status === 'off' ? '-' : gateIcon(false))) + '</td>';
 			h += '<td>' + (s.pause_viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
 			h += '<td>' + (s.pause_clicks > 0 ? '<span style="color:#00a32a;font-weight:700">' + s.pause_clicks + '</span>' : '0') + '</td>';
 			h += '<td style="font-size:12px">Visible: ' + pauseDur + '</td></tr>';
 			h += '</table>';
+			// V4: Pause banners + refresh summary.
+			if ((s.pause_banners_shown || 0) > 0 || (s.refresh_count || 0) > 0) {
+				h += '<h4 style="margin-top:12px">V4 Monetization</h4>';
+				h += '<table><tr><th>Metric</th><th>Value</th></tr>';
+				if ((s.pause_banners_shown || 0) > 0) {
+					h += '<tr><td>Pause Banners Shown</td><td>' + s.pause_banners_shown + '</td></tr>';
+					h += '<tr><td>Continued Reading</td><td>' + (s.pause_banners_continued || 0) + '</td></tr>';
+				}
+				if ((s.refresh_count || 0) > 0) {
+					h += '<tr><td>Display Refreshes</td><td>' + s.refresh_count + '</td></tr>';
+					h += '<tr><td>Refresh Impressions</td><td>' + (s.refresh_impressions || 0) + '</td></tr>';
+				}
+				h += '</table>';
+			}
 			// Retry stats.
 			var retries = s.total_retries || 0;
 			var retriesOk = s.retries_successful || 0;
@@ -673,7 +705,7 @@ function pl_live_sessions_page() {
 
 		function renderTable(tbody, sessions, isRecent, emptyMsg) {
 			if (sessions.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="19" class="pl-empty">' + emptyMsg + '</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="21" class="pl-empty">' + emptyMsg + '</td></tr>';
 				return;
 			}
 			var html = '';
