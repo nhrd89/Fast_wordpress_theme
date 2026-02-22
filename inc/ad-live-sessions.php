@@ -106,6 +106,7 @@ function pl_live_sessions_heartbeat( $request ) {
 		'dir_changes'      => intval( $body['dirChanges'] ?? 0 ),
 		'gate_open'        => ! empty( $body['gateOpen'] ),
 		// v5: dynamic injection stats.
+		'viewport_ads'     => intval( $body['viewportAdsInjected'] ?? 0 ),
 		'active_ads'       => intval( $body['totalInjected'] ?? $body['activeAds'] ?? 0 ),
 		'viewable_ads'     => intval( $body['totalViewable'] ?? $body['viewableAds'] ?? 0 ),
 		'viewability_rate' => intval( $body['viewabilityRate'] ?? 0 ),

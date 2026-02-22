@@ -100,6 +100,7 @@ function pinlightning_record_ad_data($request) {
         'gate_direction' => true, // v5: no direction gate
         'dir_changes' => intval($body['dirChanges'] ?? 0),
         // v5: dynamic injection stats.
+        'viewport_ads_injected' => intval($body['viewportAdsInjected'] ?? 0),
         'total_ads_injected' => intval($body['totalInjected'] ?? $body['totalAdsInjected'] ?? 0),
         'total_viewable' => intval($body['totalViewable'] ?? 0),
         'viewability_rate' => floatval($body['viewabilityRate'] ?? 0),

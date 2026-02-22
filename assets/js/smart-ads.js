@@ -316,27 +316,46 @@ function injectFirstVisibleAd() {
  * Called via setTimeout(initViewportAds, 1000) from init().
  */
 function initViewportAds() {
+	console.log('[SmartAds] initViewportAds() called');
+	console.log('[SmartAds] dummy:', cfg.dummy, 'googletag:', typeof googletag !== 'undefined', 'cmd:', typeof googletag !== 'undefined' && !!googletag.cmd);
+
+	// Debug: enumerate all anchors in DOM.
+	var allAnchors = document.querySelectorAll('.ad-anchor');
+	console.log('[SmartAds] Total .ad-anchor in DOM:', allAnchors.length);
+	for (var d = 0; d < allAnchors.length; d++) {
+		console.log('[SmartAds]   anchor[' + d + ']:', allAnchors[d].getAttribute('data-position'), 'loc=' + allAnchors[d].getAttribute('data-location'), 'display=' + window.getComputedStyle(allAnchors[d]).display, 'active=' + allAnchors[d].classList.contains('ad-active'));
+	}
+
 	// Nav ad — device-targeted, always inject.
-	var navAnchors = document.querySelectorAll('.ad-anchor[data-location="nav"]');
+	// Fallback: also match data-position starting with "nav" if data-location is missing.
+	var navAnchors = document.querySelectorAll('.ad-anchor[data-location="nav"], .ad-anchor[data-position^="nav-below"]');
+	console.log('[SmartAds] Nav anchors found:', navAnchors.length);
 	for (var i = 0; i < navAnchors.length; i++) {
 		var nav = navAnchors[i];
+		var navDisplay = window.getComputedStyle(nav).display;
+		console.log('[SmartAds] Nav[' + i + ']:', nav.getAttribute('data-position'), 'display=' + navDisplay, 'active=' + nav.classList.contains('ad-active'));
 		if (nav.classList.contains('ad-active')) continue;
-		if (window.getComputedStyle(nav).display === 'none') continue;
+		if (navDisplay === 'none') continue;
 		var adChoice = selectAdSize(nav);
 		if (adChoice) {
+			console.log('[SmartAds] Injecting nav ad:', adChoice.slot);
 			injectAd(nav, adChoice);
 			state.viewportAdsInjected++;
 		}
 	}
 
 	// Sidebar ads — desktop only (>= 1024px).
+	console.log('[SmartAds] isDesktop:', isDesktop, 'innerWidth:', window.innerWidth);
 	if (isDesktop) {
-		var sidebarAnchors = document.querySelectorAll('.ad-anchor[data-location="sidebar-top"], .ad-anchor[data-location="sidebar-bottom"]');
+		var sidebarAnchors = document.querySelectorAll('.ad-anchor[data-location="sidebar-top"], .ad-anchor[data-location="sidebar-bottom"], .ad-anchor[data-position="sidebar-top"], .ad-anchor[data-position="sidebar-bottom"]');
+		console.log('[SmartAds] Sidebar anchors found:', sidebarAnchors.length);
 		for (var s = 0; s < sidebarAnchors.length; s++) {
 			var sb = sidebarAnchors[s];
+			console.log('[SmartAds] Sidebar[' + s + ']:', sb.getAttribute('data-position'), 'active=' + sb.classList.contains('ad-active'));
 			if (sb.classList.contains('ad-active')) continue;
 			var sbChoice = selectAdSize(sb);
 			if (sbChoice) {
+				console.log('[SmartAds] Injecting sidebar ad:', sbChoice.slot);
 				injectAd(sb, sbChoice);
 				state.viewportAdsInjected++;
 			}
@@ -345,18 +364,26 @@ function initViewportAds() {
 
 	// First content anchor currently in viewport — inject 300x250.
 	var contentAnchors = document.querySelectorAll('.ad-anchor:not([data-location="nav"]):not([data-location="sidebar-top"]):not([data-location="sidebar-bottom"])');
+	console.log('[SmartAds] Content anchors found:', contentAnchors.length);
+	var foundViewportAnchor = false;
 	for (var c = 0; c < contentAnchors.length; c++) {
 		var anchor = contentAnchors[c];
 		if (anchor.classList.contains('ad-active')) continue;
 		var rect = anchor.getBoundingClientRect();
+		console.log('[SmartAds] Content[' + c + ']:', anchor.getAttribute('data-position'), 'top=' + Math.round(rect.top), 'inViewport=' + (rect.top > 0 && rect.top < window.innerHeight));
 		if (rect.top > 0 && rect.top < window.innerHeight) {
+			console.log('[SmartAds] Injecting first viewport content ad at:', anchor.getAttribute('data-position'));
 			injectAd(anchor, { size: [300, 250], slot: 'Ad.Plus-300x250' });
 			state.viewportAdsInjected++;
-			break; // Only first one.
+			foundViewportAnchor = true;
+			break;
 		}
+		// Stop scanning once anchors are below viewport.
+		if (rect.top >= window.innerHeight) break;
 	}
+	if (!foundViewportAnchor) console.log('[SmartAds] No content anchor in viewport (innerHeight=' + window.innerHeight + ')');
 
-	if (debug) console.log('[SmartAds] Viewport ads injected:', state.viewportAdsInjected);
+	console.log('[SmartAds] initViewportAds() done — total viewport ads:', state.viewportAdsInjected);
 }
 
 /* ================================================================
