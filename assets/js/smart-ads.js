@@ -1,15 +1,17 @@
 /**
- * PinLightning Smart Ad Engine — Phase 3
+ * PinLightning Smart Ad Engine — v4 Full Monetization
  *
- * Intelligent ad placement engine for Ad.Plus via Google Publisher Tags (GPT).
- * 12 modules: Config, Engagement Gate, GPT Loader, Zone Discovery,
- * Zone Activation, Display Renderer, Interstitial, Anchor, Pause Banner,
- * Viewability Tracker, Data Recorder, Debug Overlay.
+ * Handles 30+ ad zones per page: display, pause banners (contentPause),
+ * inpage video, triple overlay (interstitial, bottom anchor, top anchor),
+ * and pause-triggered display refresh.
+ *
+ * Zone HTML format: <div class="ad-zone" id="{id}" data-zone="{id}"
+ *   data-slot="{Ad.Plus-Size}" data-size="{w,h}" [data-pause="true"]>
  *
  * Zero TBT: IntersectionObserver + requestIdleCallback + passive listeners.
  *
  * @package PinLightning
- * @since   1.0.0
+ * @since   2.0.0
  */
 ;(function() {
 'use strict';
@@ -21,11 +23,11 @@
 var cfg = window.plAds || {};
 
 // wp_localize_script converts ALL values to strings. Parse numerics now.
-cfg.maxAds = parseInt(cfg.maxAds, 10) || 5;
-cfg.gateScrollPct = parseInt(cfg.gateScrollPct, 10) || 15;
-cfg.gateTimeSec = parseInt(cfg.gateTimeSec, 10) || 5;
+cfg.maxAds = parseInt(cfg.maxAds, 10) || 35;
+cfg.gateScrollPct = parseInt(cfg.gateScrollPct, 10) || 10;
+cfg.gateTimeSec = parseInt(cfg.gateTimeSec, 10) || 3;
 cfg.gateDirChanges = parseInt(cfg.gateDirChanges, 10) || 0;
-cfg.minSpacingPx = parseInt(cfg.minSpacingPx, 10) || 800;
+cfg.minSpacingPx = parseInt(cfg.minSpacingPx, 10) || 200;
 cfg.pauseMinAds = parseInt(cfg.pauseMinAds, 10) || 2;
 cfg.passbackEnabled = cfg.passbackEnabled === '1' || cfg.passbackEnabled === true;
 cfg.backfillScriptUrl = cfg.backfillScriptUrl || '';
@@ -42,6 +44,8 @@ if (navigator.webdriver) return;
 if (/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|wget|curl|python-requests|go-http-client|java\/|libwww/i.test(navigator.userAgent)) return;
 if (window.innerWidth === 0 && window.innerHeight === 0) return;
 
+var SLOT_BASE = cfg.slotPrefix || '/21849154601,22953639975/';
+
 var isMobile = window.innerWidth <= 768;
 var isDesktop = !isMobile;
 
@@ -49,58 +53,42 @@ var isDesktop = !isMobile;
 if (isMobile && !cfg.mobileEnabled) return;
 if (isDesktop && !cfg.desktopEnabled) return;
 
-// Track per-size div ID counters for Ad.Plus unique div IDs (300x250-1, 300x250-2, etc.).
-var slotSizeCounter = {};
-
 var state = {
 	gateOpen: false,
 	gptLoaded: false,
 	gptReady: false,
 	activeAds: 0,
 	zonesActivated: 0,
-	viewableCount: 0,       // zones that got at least 1 viewable impression
-	resolvedCount: 0,       // zones fully resolved (viewable OR confirmed missed)
-	budgetExhausted: false,  // true when viewability rate drops below 40% after 2+ resolved
-	pendingRetries: 0,      // zones missed — will retry at next opportunity
-	totalRetries: 0,        // total retry activations used this session
-	retriesSuccessful: 0,   // retries that became viewable
-	maxRetriesPerSession: 4,
-	zones: [],
-	slots: {},
-	viewability: {},
+	viewableCount: 0,
 	scrollPct: 0,
 	timeOnPage: 0,
 	dirChanges: 0,
 	lastScrollY: 0,
 	lastScrollDir: 0,
 	scrollSpeed: 0,
-	pauseTimer: null,
 	sessionStart: Date.now(),
 	dataSent: false,
 
-	// Overlay viewability tracking.
+	// Overlay state.
 	anchorFiredAt: 0,
 	anchorImpressions: 0,
 	anchorViewableImps: 0,
 	interstitialShownAt: 0,
 	interstitialClosedAt: 0,
 	interstitialViewable: 0,
-	pauseShownAt: 0,
-	pauseClosedAt: 0,
-	pauseViewable: 0,
-	pauseTotalVisibleMs: 0,
+	topAnchorFiredAt: 0,
 
-	// Ad fill tracking (slotRenderEnded).
+	// Ad fill tracking.
 	adFills: {},
 	slotDivToZone: {},
 	totalRequested: 0,
 	totalFilled: 0,
 	totalEmpty: 0,
 	anchorSlotRef: null,
-	pauseSlotRef: null,
+	topAnchorSlotRef: null,
 	anchorFilled: false,
+	topAnchorFilled: false,
 	interstitialFilled: false,
-	pauseFilled: false,
 
 	// Ad click tracking.
 	adClicks: {},
@@ -110,6 +98,15 @@ var state = {
 	interstitialDismissed: 0,
 	pauseClicks: 0,
 
+	// Pause banner tracking (GPT contentPause zones).
+	pauseBannersShown: 0,
+	pauseBannersContinued: 0,
+
+	// Refresh tracking.
+	refreshCount: 0,
+	refreshImpressions: 0,
+	lastRefreshTime: {},
+
 	// Newor Media (Waldo) passback state.
 	waldoLoaded: false,
 	waldoLoading: false,
@@ -118,16 +115,24 @@ var state = {
 	waldoAnchorTag: cfg.backfillAnchorTag,
 	waldoFills: {},
 	waldoTotalRequested: 0,
-	waldoTotalFilled: 0
+	waldoTotalFilled: 0,
+
+	// Viewability per zone.
+	viewability: {},
+	zones: [],
+	slots: {}
 };
 
 /* ================================================================
  * MODULE 2: ENGAGEMENT GATE
  *
- * Three signals must all be met before any ads load:
- * 1. Scroll depth >= threshold (proves user is reading)
- * 2. Time on page >= threshold (proves engagement)
- * 3. Direction changes >= threshold (proves active scrolling)
+ * Only gates IN-CONTENT display zones. Overlays, nav ads, and
+ * sidebar ads load independently.
+ *
+ * Relaxed thresholds for v4:
+ * - Scroll: 10% (was 15%)
+ * - Time: 3s (was 5s)
+ * - Direction changes: 0 (was 1)
  * ================================================================ */
 
 var gateChecks = {
@@ -143,30 +148,23 @@ function checkGate() {
 		state.gateOpen = true;
 		if (cfg.debug) console.log('[PL-Ads] Gate OPEN — scroll:' + Math.round(state.scrollPct) + '% time:' + Math.round(state.timeOnPage) + 's dirs:' + state.dirChanges);
 		onGateOpen();
-		showAnchor(); // Anchor is #1 revenue — fire immediately on gate open.
 		return true;
 	}
 	return false;
 }
 
-// Read from engagement.js bridge when available (richer data),
-// fall back to own tracking on non-listicle pages.
 function readBridge() {
 	var b = window.__plEngagement;
 	if (b) {
 		state.scrollPct = b.scrollDepth;
 		state.dirChanges = b.directionChanges;
 		state.scrollSpeed = b.scrollSpeed;
-		// ALWAYS compute own timeOnPage — the bridge only updates on scroll
-		// events, so it stays at ~0 for non-scrolling visitors. This caused
-		// the time gate to never fire for 0%-scroll sessions (BUG 3).
 		state.timeOnPage = (Date.now() - state.sessionStart) / 1000;
 		return true;
 	}
 	return false;
 }
 
-// Scroll listener — throttled at 200ms.
 var scrollTimer = null;
 
 function onScroll() {
@@ -174,29 +172,22 @@ function onScroll() {
 	scrollTimer = setTimeout(function() {
 		scrollTimer = null;
 
-		// Prefer engagement.js bridge data when available.
 		if (!readBridge()) {
-			// Fallback: own tracking for non-listicle pages.
 			var y = window.scrollY || window.pageYOffset;
 			var docHeight = document.documentElement.scrollHeight - window.innerHeight;
 			var pct = docHeight > 0 ? (y / docHeight) * 100 : 0;
 			state.scrollPct = pct;
 
-			// Direction change detection.
 			var dir = y > state.lastScrollY ? 1 : (y < state.lastScrollY ? -1 : 0);
 			if (dir !== 0 && dir !== state.lastScrollDir) {
-				if (state.lastScrollDir !== 0) {
-					state.dirChanges++;
-				}
+				if (state.lastScrollDir !== 0) state.dirChanges++;
 				state.lastScrollDir = dir;
 			}
 
-			// Scroll speed (px/s based on 200ms tick).
 			state.scrollSpeed = Math.abs(y - state.lastScrollY) / 0.2;
 			state.lastScrollY = y;
 		}
 
-		// Check gate thresholds.
 		if (!gateChecks.scroll && state.scrollPct >= cfg.gateScrollPct) {
 			gateChecks.scroll = true;
 			if (cfg.debug) console.log('[PL-Ads] Gate: scroll ' + Math.round(state.scrollPct) + '%');
@@ -207,17 +198,11 @@ function onScroll() {
 		}
 
 		checkGate();
-
-		// Pause detection for pause banner.
-		clearTimeout(state.pauseTimer);
-		state.pauseTimer = setTimeout(onScrollPause, 3000);
 	}, 200);
 }
 
-// Time tracking — 1s interval until threshold met.
 function startTimeTracking() {
 	var interval = setInterval(function() {
-		// Read from bridge if available, else compute own time.
 		if (!readBridge()) {
 			state.timeOnPage = (Date.now() - state.sessionStart) / 1000;
 		}
@@ -225,7 +210,6 @@ function startTimeTracking() {
 			gateChecks.time = true;
 			if (cfg.debug) console.log('[PL-Ads] Gate: time ' + Math.round(state.timeOnPage) + 's');
 			checkGate();
-			showAnchor(); // Anchor fires on time gate alone — no scroll required.
 			clearInterval(interval);
 		}
 	}, 1000);
@@ -233,12 +217,10 @@ function startTimeTracking() {
 
 /* ================================================================
  * MODULE 3: GPT LOADER
- *
- * Lazy-loads GPT only when the first ad zone is ready to render.
- * Falls back to dummy mode on load failure.
  * ================================================================ */
 
 var gptCallbacks = [];
+var interstitialSlot = null;
 
 function loadGPT(callback) {
 	if (callback) gptCallbacks.push(callback);
@@ -248,10 +230,9 @@ function loadGPT(callback) {
 		return;
 	}
 
-	if (state.gptLoaded) return; // Script loading, callbacks queued.
+	if (state.gptLoaded) return;
 	state.gptLoaded = true;
 
-	// Dummy mode: skip GPT entirely.
 	if (cfg.dummy) {
 		state.gptReady = true;
 		flushGptCallbacks();
@@ -272,10 +253,44 @@ function loadGPT(callback) {
 	document.head.appendChild(script);
 
 	googletag.cmd.push(function() {
+		// Define interstitial at GPT init (MUST be before enableServices).
+		if (cfg.fmtInterstitial) {
+			var interSlot = googletag.defineOutOfPageSlot(
+				SLOT_BASE + 'Ad.Plus-Interstitial',
+				googletag.enums.OutOfPageFormat.INTERSTITIAL
+			);
+			if (interSlot) {
+				interstitialSlot = interSlot;
+				interSlot.addService(googletag.pubads());
+				if (cfg.debug) console.log('[PL-Ads] Interstitial defined at GPT init');
+			}
+		}
+
 		googletag.pubads().enableSingleRequest();
 		googletag.pubads().collapseEmptyDivs(true);
 		googletag.enableServices();
 		googletag.pubads().addEventListener('slotRenderEnded', onSlotRenderEnded);
+
+		// Display interstitial after services enabled — GPT triggers natively.
+		if (interstitialSlot) {
+			googletag.display(interstitialSlot);
+
+			// Track when GPT shows/dismisses the interstitial.
+			googletag.pubads().addEventListener('slotVisibilityChanged', function(event) {
+				if (event.slot === interstitialSlot) {
+					if (event.inViewPercentage > 0 && !state.interstitialShownAt) {
+						state.interstitialShownAt = Date.now();
+						if (cfg.debug) console.log('[PL-Ads] Interstitial shown by GPT');
+					}
+					if (event.inViewPercentage === 0 && state.interstitialShownAt && !state.interstitialClosedAt) {
+						state.interstitialClosedAt = Date.now();
+						state.interstitialViewable = (state.interstitialClosedAt - state.interstitialShownAt >= 1000) ? 1 : 0;
+						if (cfg.debug) console.log('[PL-Ads] Interstitial dismissed: ' + (state.interstitialClosedAt - state.interstitialShownAt) + 'ms');
+					}
+				}
+			});
+		}
+
 		state.gptReady = true;
 		if (cfg.debug) console.log('[PL-Ads] GPT ready');
 		flushGptCallbacks();
@@ -290,9 +305,6 @@ function flushGptCallbacks() {
 
 /* ================================================================
  * NEWOR MEDIA (WALDO) PASSBACK LOADER
- *
- * Loads the Waldo script ONCE on first no-fill. Zero PageSpeed impact
- * — script never loads if Ad.Plus fills every slot.
  * ================================================================ */
 
 var waldoCallbacks = [];
@@ -307,7 +319,6 @@ function loadWaldoScript(callback) {
 	if (state.waldoLoading) return;
 
 	if (!cfg.backfillScriptUrl) {
-		if (cfg.debug) console.log('[PL-Ads] No backfill script URL configured');
 		while (waldoCallbacks.length) waldoCallbacks.shift()();
 		return;
 	}
@@ -319,55 +330,55 @@ function loadWaldoScript(callback) {
 	script.async = true;
 	script.onload = function() {
 		state.waldoLoaded = true;
-		if (cfg.debug) console.log('[PL-Ads] Backfill script loaded: ' + cfg.backfillScriptUrl);
+		if (cfg.debug) console.log('[PL-Ads] Backfill script loaded');
 		while (waldoCallbacks.length) waldoCallbacks.shift()();
 	};
 	script.onerror = function() {
 		state.waldoLoading = false;
-		if (cfg.debug) console.warn('[PL-Ads] Backfill script failed to load');
 		while (waldoCallbacks.length) waldoCallbacks.shift()();
 	};
 	document.head.appendChild(script);
 }
 
 /* ================================================================
- * MODULE 4: ZONE DISCOVERY
+ * MODULE 4: v4 ZONE DISCOVERY
  *
- * Finds all .ad-zone elements injected by the PHP content scanner
- * and builds the zone list with per-zone metadata.
+ * Reads data-zone, data-slot, data-size from zone divs.
+ * Three types: display (.ad-zone), pause (.ad-pause), video (.ad-video).
  * ================================================================ */
 
 function discoverZones() {
-	var els = document.querySelectorAll('.ad-zone[data-zone-id]');
+	var els = document.querySelectorAll('.ad-zone[data-zone]');
 	state.zones = [];
 	for (var i = 0; i < els.length; i++) {
+		var el = els[i];
+		// Skip video zones — they use their own playerPro script.
+		if (el.classList.contains('ad-video')) continue;
+
 		state.zones.push({
-			el: els[i],
-			id: els[i].getAttribute('data-zone-id'),
-			sizeMobile: els[i].getAttribute('data-size-mobile') || '300x250',
-			sizeDesktop: els[i].getAttribute('data-size-desktop') || '300x250',
-			score: parseInt(els[i].getAttribute('data-score') || '0', 10),
+			el: el,
+			id: el.getAttribute('data-zone'),
+			slot: el.getAttribute('data-slot') || 'Ad.Plus-300x250',
+			size: el.getAttribute('data-size') || '300,250',
+			isPause: el.getAttribute('data-pause') === 'true',
+			isSidebar: el.classList.contains('sidebar-ad'),
+			isNav: el.id && el.id.indexOf('nav-') === 0,
 			activated: false,
-			injected: false
+			injected: false,
+			gptSlot: null
 		});
 	}
-	if (cfg.debug) console.log('[PL-Ads] Discovered ' + state.zones.length + ' zones');
+	if (cfg.debug) console.log('[PL-Ads] Discovered ' + state.zones.length + ' zones (excl video)');
 }
 
 /* ================================================================
- * MODULE 5: VIEWABILITY-FIRST ZONE ACTIVATION
+ * MODULE 5: v4 ZONE ACTIVATION
  *
- * Strategy: Only inject ads when confident the user will see them.
- *
- * - IO triggers 300px BELOW viewport (forward-looking only)
- * - Zones already scrolled past are NEVER activated (wasted impression)
- * - Speed-gated activation:
- *     < 600px/s  → reading speed, activate immediately
- *     600-1200   → fast scan, downgrade large sizes to 300x250
- *     > 1200     → flying past, SKIP this zone entirely
- *   First ad uses stricter 800px/s threshold.
- * - Viewability budget: after 2+ ads, if <40% viewable → stop serving
- * - Anchor/interstitial/pause unaffected (out-of-page formats)
+ * Strategy change from v3: No speed gating, no viewability budget.
+ * v4 monetizes the FULL article. All zones activate when:
+ *   - Gate is open (for in-content zones)
+ *   - OR zone is nav/sidebar (loads independently)
+ *   - Zone enters viewport via IntersectionObserver
  * ================================================================ */
 
 var zoneObserver = null;
@@ -379,12 +390,23 @@ function initZoneObserver() {
 		for (var i = 0; i < entries.length; i++) {
 			if (!entries[i].isIntersecting) continue;
 			var el = entries[i].target;
-			if (!state.gateOpen) continue; // Zone enters trigger area before gate — leave observed.
+			var zone = getZoneByEl(el);
+			if (!zone) continue;
+
+			// Nav and sidebar zones load without gate.
+			if (zone.isNav || zone.isSidebar) {
+				zoneObserver.unobserve(el);
+				activateZone(zone);
+				continue;
+			}
+
+			// Content zones require gate.
+			if (!state.gateOpen) continue;
 			zoneObserver.unobserve(el);
-			tryActivateZone(el);
+			activateZone(zone);
 		}
 	}, {
-		rootMargin: '0px 0px 300px 0px', // 300px below viewport only.
+		rootMargin: '0px 0px 400px 0px',
 		threshold: 0
 	});
 
@@ -393,132 +415,99 @@ function initZoneObserver() {
 	}
 }
 
-/**
- * Called once when the gate opens. Activates zones currently IN or
- * just below the viewport. Zones already scrolled past are skipped —
- * they would produce 0% viewability.
- */
 function onGateOpen() {
-	// Don't activate zones if user hasn't scrolled at all.
-	// Gate may have opened on time alone — wait for actual scroll engagement.
-	// The IO will activate zones as the user scrolls.
-	if (state.scrollPct < 1) {
-		if (cfg.debug) console.log('[PL-Ads] onGateOpen: scroll ' + Math.round(state.scrollPct) + '% < 1% — deferring to IO');
-		return;
-	}
-
+	// Activate content zones currently in or below viewport.
 	for (var i = 0; i < state.zones.length; i++) {
 		var zone = state.zones[i];
 		if (zone.activated) continue;
+		if (zone.isNav || zone.isSidebar) continue; // Already handled.
+
 		var rect = zone.el.getBoundingClientRect();
-		// In viewport or within 300px below. NOT above viewport (rect.bottom <= 0).
-		if (rect.bottom > 0 && rect.top < window.innerHeight + 300) {
+		if (rect.bottom > 0 && rect.top < window.innerHeight + 400) {
 			if (zoneObserver) zoneObserver.unobserve(zone.el);
-			tryActivateZone(zone.el);
-		} else if (rect.bottom <= 0) {
-			// Zone is above viewport — user already scrolled past it.
-			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: already scrolled past (above viewport)');
-			if (zoneObserver) zoneObserver.unobserve(zone.el);
-			collapseZone(zone.el, 'scrolled-past');
+			activateZone(zone);
 		}
 	}
+
+	// Start pause-triggered refresh.
+	initPauseRefresh();
 }
 
-/**
- * Speed-gated, budget-aware zone activation.
- * Decides whether to activate, downgrade, or skip based on real-time
- * scroll speed and session viewability rate.
- */
-function tryActivateZone(el) {
-	var zone = getZoneByEl(el);
-	if (!zone || zone.activated) return;
-
-	// --- Viewability budget (only count RESOLVED impressions) ---
-	if (state.budgetExhausted) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: viewability budget exhausted (' + state.viewableCount + '/' + state.resolvedCount + ' resolved viewable)');
-		collapseZone(el, 'budget');
-		return;
-	}
-
-	// --- Max ads ---
+function activateZone(zone) {
+	if (zone.activated) return;
 	if (state.activeAds >= cfg.maxAds) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ' [type:' + typeof cfg.maxAds + '])');
-		collapseZone(el, 'max');
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ')');
 		return;
 	}
 
-	var speed = state.scrollSpeed;
-	var isFirst = state.activeAds === 0;
-
-	// --- Retry mode: relaxed speed gates ---
-	// If we have pending retries (missed ads), activate this zone with
-	// relaxed thresholds to compensate — but still skip if >2000px/s.
-	var isRetry = state.pendingRetries > 0 && state.totalRetries < state.maxRetriesPerSession;
-
-	if (isRetry) {
-		if (speed > 2000) {
-			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: retry but speed ' + Math.round(speed) + 'px/s > 2000 ceiling');
-			collapseZone(el, 'speed');
-			return;
-		}
-		// Consume a retry.
-		state.pendingRetries--;
-		state.totalRetries++;
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' RETRY activation (pending=' + state.pendingRetries + ', used=' + state.totalRetries + ')');
-	} else {
-		// --- Normal speed gate ---
-		// First ad is stricter: must be < 800px/s (high confidence).
-		// Subsequent: must be < 1200px/s.
-		if (isFirst && speed > 800) {
-			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: first-ad speed ' + Math.round(speed) + 'px/s > 800');
-			collapseZone(el, 'speed');
-			return;
-		}
-		if (!isFirst && speed > 1200) {
-			if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: speed ' + Math.round(speed) + 'px/s > 1200');
-			collapseZone(el, 'speed');
-			return;
-		}
-	}
-
-	// Determine size for this device.
-	var size = isMobile ? zone.sizeMobile : zone.sizeDesktop;
-
-	// --- Speed-based size downgrade ---
-	// 600-1200px/s: fast scanner — downgrade large desktop formats
-	// to 300x250 (smaller = faster to view, higher viewability).
-	if (speed >= 600 && (size === '970x250' || size === '728x90')) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' downgrade: ' + size + ' \u2192 300x250 (speed ' + Math.round(speed) + 'px/s)');
-		size = '300x250';
-	}
-
-	// Standard checks.
-	if (!isFormatEnabled(size)) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: format ' + size + ' disabled');
-		collapseZone(el, 'format');
-		return;
-	}
-	if (!checkSpacing(el)) {
-		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: spacing < ' + cfg.minSpacingPx + 'px');
-		collapseZone(el, 'spacing');
-		return;
-	}
-
-	// --- ACTIVATE ---
-	var label = speed < 600 ? 'reading' : 'scanning';
-	if (isRetry) label = 'retry';
 	zone.activated = true;
-	zone.activatedSize = size;
-	zone.isRetry = isRetry;
 	state.activeAds++;
 	state.zonesActivated++;
-	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + size + ', ' + label + ' ' + Math.round(speed) + 'px/s) \u2014 total: ' + state.activeAds);
 
-	el.classList.add('pl-ad-active', 'pl-ad-' + size);
+	var dims = zone.size.split(',').map(Number);
+	var w = dims[0] || 300;
+	var h = dims[1] || 250;
+	var sizeStr = w + 'x' + h;
+
+	if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' ACTIVATED (' + zone.slot + ' ' + sizeStr + (zone.isPause ? ' PAUSE' : '') + ') — total: ' + state.activeAds);
 
 	loadGPT(function() {
-		renderDisplayAd(zone, size);
+		renderZone(zone, w, h, sizeStr);
 	});
+}
+
+function renderZone(zone, w, h, sizeStr) {
+	if (zone.injected) return;
+	zone.injected = true;
+
+	var el = zone.el;
+
+	if (cfg.dummy) {
+		renderDummy(el, sizeStr, w, h, zone.id, zone.isPause);
+		trackViewability(zone, sizeStr);
+		return;
+	}
+
+	// Create GPT div inside zone.
+	var divId = zone.id;
+	state.slotDivToZone[divId] = zone.id;
+
+	var adDiv = document.createElement('div');
+	adDiv.id = divId;
+	adDiv.style.width = w + 'px';
+	adDiv.style.height = h + 'px';
+	adDiv.style.margin = '0 auto';
+	el.appendChild(adDiv);
+
+	var slotPath = SLOT_BASE + zone.slot;
+
+	googletag.cmd.push(function() {
+		var slot = googletag.defineSlot(slotPath, [w, h], divId);
+		if (slot) {
+			if (zone.isPause) {
+				slot.setConfig({ contentPause: true });
+			}
+			slot.addService(googletag.pubads());
+			googletag.display(divId);
+			zone.gptSlot = slot;
+			state.slots[zone.id] = slot;
+			if (cfg.debug) console.log('[PL-Ads] Slot: ' + slotPath + ' (' + sizeStr + ')' + (zone.isPause ? ' [contentPause]' : ''));
+		}
+	});
+
+	el.setAttribute('data-activated', 'true');
+	trackViewability(zone, sizeStr);
+}
+
+function renderDummy(el, sizeStr, w, h, zoneId, isPause) {
+	var displayW = isMobile ? Math.min(w, window.innerWidth - 32) : w;
+	var displayH = displayW < w ? Math.round((displayW / w) * h) : h;
+	var bg = isPause ? '#fce4ec' : '#e8eaf6';
+	var label = zoneId + ' (' + sizeStr + ')' + (isPause ? ' PAUSE' : '');
+
+	el.style.cssText = 'width:' + displayW + 'px;height:' + displayH + 'px;max-width:100%;background:' + bg + ';border:2px dashed rgba(0,0,0,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:10px;font-weight:700;color:rgba(0,0,0,.4);margin:8px auto;text-align:center;line-height:1.3;padding:4px';
+	el.textContent = label;
+	el.setAttribute('data-activated', 'true');
 }
 
 function getZoneByEl(el) {
@@ -528,68 +517,21 @@ function getZoneByEl(el) {
 	return null;
 }
 
-function checkSpacing(el) {
-	var rect = el.getBoundingClientRect();
-	var myTop = rect.top + (window.scrollY || window.pageYOffset);
-
-	var activeZones = document.querySelectorAll('.ad-zone.pl-ad-active');
-	for (var i = 0; i < activeZones.length; i++) {
-		if (activeZones[i] === el) continue;
-		var otherRect = activeZones[i].getBoundingClientRect();
-		var otherTop = otherRect.top + (window.scrollY || window.pageYOffset);
-		if (Math.abs(myTop - otherTop) < cfg.minSpacingPx) {
-			return false;
-		}
+function getZoneById(id) {
+	for (var i = 0; i < state.zones.length; i++) {
+		if (state.zones[i].id === id) return state.zones[i];
 	}
-	return true;
-}
-
-function isFormatEnabled(size) {
-	if (size === '300x250') return cfg.fmt300x250;
-	if (size === '970x250') return cfg.fmt970x250;
-	if (size === '728x90') return cfg.fmt728x90;
-	return true;
-}
-
-function collapseZone(el, reason) {
-	el.classList.add('pl-ad-collapse');
-	if (reason) el.setAttribute('data-skip-reason', reason);
-	var zone = getZoneByEl(el);
-	if (zone) zone.activated = true; // Prevent re-processing.
-
-	// In dummy mode, show why the zone was skipped.
-	if (cfg.dummy && reason) {
-		var speed = Math.round(state.scrollSpeed);
-		var msg = 'SKIPPED';
-		if (reason === 'speed') msg = 'SKIPPED: speed ' + speed + 'px/s > threshold';
-		else if (reason === 'budget') msg = 'SKIPPED: viewability budget exhausted';
-		else if (reason === 'scrolled-past') msg = 'SKIPPED: already scrolled past';
-		else if (reason === 'max') msg = 'SKIPPED: max ads reached';
-		else if (reason === 'spacing') msg = 'SKIPPED: too close to another ad';
-		else if (reason === 'format') msg = 'SKIPPED: format disabled';
-
-		el.classList.add('pl-ad-dummy');
-		el.style.cssText = 'width:300px;height:40px;max-width:100%;background:#ffebee;border:2px dashed #ef5350;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:11px;font-weight:700;color:#c62828;margin:8px auto';
-		el.textContent = msg;
-	}
+	return null;
 }
 
 /* ================================================================
- * AD FILL TRACKER
- *
- * Listens for GPT's slotRenderEnded event to know if ads actually
- * rendered or got no-fill. Collapses empty zones to prevent blank
- * white space. Tracks fill data per zone for analytics.
+ * AD FILL TRACKER — slotRenderEnded
  * ================================================================ */
-
-function findZoneByDivId(divId) {
-	return state.slotDivToZone[divId] || null;
-}
 
 function onSlotRenderEnded(event) {
 	var slot = event.slot;
 	var divId = slot.getSlotElementId();
-	var zoneId = findZoneByDivId(divId);
+	var zoneId = state.slotDivToZone[divId];
 
 	state.totalRequested++;
 
@@ -597,54 +539,45 @@ function onSlotRenderEnded(event) {
 		var fillData = {
 			filled: !event.isEmpty,
 			size: event.isEmpty ? null : (event.size ? event.size.join('x') : null),
-			advertiserId: event.advertiserId || null,
-			lineItemId: event.lineItemId || null,
-			creativeId: event.creativeId || null
+			advertiserId: event.advertiserId || null
 		};
 		state.adFills[zoneId] = fillData;
 
+		var zone = getZoneById(zoneId);
+
 		if (event.isEmpty) {
 			state.totalEmpty++;
-			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' (' + divId + ') NO-FILL \u2014 collapsing');
+			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' NO-FILL — collapsing');
 			collapseEmptyZone(zoneId);
 		} else {
 			state.totalFilled++;
-			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' (' + divId + ') FILLED \u2014 size=' + fillData.size + ' adv=' + fillData.advertiserId);
+			if (cfg.debug) console.log('[PL-Ads] Fill: ' + zoneId + ' FILLED — size=' + fillData.size);
 
-			// FIX: Re-attach viewability observer after GPT ad render.
-			// GPT's collapseEmptyDivs + iframe injection changes the zone DOM
-			// in a way that causes the original IntersectionObserver to stop
-			// firing callbacks. Unobserve + re-observe forces fresh tracking.
+			// Track pause banner shown.
+			if (zone && zone.isPause) {
+				state.pauseBannersShown++;
+			}
+
+			// Re-attach viewability observer after GPT render.
 			var vData = state.viewability[zoneId];
 			if (vData && vData.observer) {
 				var oldEl = vData.observedEl;
 				vData.observer.unobserve(oldEl);
-
-				// Reset tracking state for fresh measurement after render.
 				vData.totalVisibleMs = 0;
 				vData.viewableImpressions = 0;
 				vData.maxRatio = 0;
-				vData.ratioSum = 0;
-				vData.ratioCount = 0;
-				vData.timeToFirstView = 0;
-				vData.firstViewRecorded = false;
-				vData.firstSeenRecorded = false;
 				vData.isVisible = false;
 				vData.visibleStart = 0;
 				clearTimeout(vData.viewableTimer);
-				vData.resolved = false;
-				vData.missed = false;
 
-				// Allow GPT rendering to complete, then re-observe the ad element.
-				(function(vd, did, zid) {
+				(function(vd, did) {
 					setTimeout(function() {
 						var adEl = document.getElementById(did);
 						var target = adEl ? (adEl.querySelector('iframe') || adEl) : oldEl;
 						vd.observer.observe(target);
 						vd.observedEl = target;
-						if (cfg.debug) console.log('[PL-Ads] Viewability: re-attached observer for ' + zid + ' after GPT render (target=' + target.tagName + ')');
 					}, 200);
-				})(vData, divId, zoneId);
+				})(vData, divId);
 			}
 		}
 		return;
@@ -662,43 +595,32 @@ function onSlotRenderEnded(event) {
 		if (!event.isEmpty) { state.anchorFilled = true; state.totalFilled++; }
 		else {
 			state.totalEmpty++;
-			// Try Waldo sticky footer as anchor passback.
 			if (cfg.passbackEnabled) tryWaldoAnchorPassback();
 		}
-		if (cfg.debug) console.log('[PL-Ads] Fill: anchor ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+		if (cfg.debug) console.log('[PL-Ads] Fill: bottom anchor ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
 		return;
 	}
-	if (state.pauseSlotRef && slot === state.pauseSlotRef) {
-		state.pauseFilled = !event.isEmpty;
-		if (!event.isEmpty) state.totalFilled++;
+	if (state.topAnchorSlotRef && slot === state.topAnchorSlotRef) {
+		if (!event.isEmpty) { state.topAnchorFilled = true; state.totalFilled++; }
 		else state.totalEmpty++;
-		if (cfg.debug) console.log('[PL-Ads] Fill: pause ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
+		if (cfg.debug) console.log('[PL-Ads] Fill: top anchor ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
 		return;
 	}
 
-	// Unknown slot not mapped to any zone or overlay — likely auto-deployed
-	// by the ad network (e.g., Side-Anchor). Destroy to prevent negative revenue.
-	try {
-		googletag.destroySlots([slot]);
-		if (cfg.debug) console.log('[PL-Ads] Destroyed auto-deployed slot: ' + divId);
-	} catch(e) {
-		if (cfg.debug) console.log('[PL-Ads] Fill: unknown slot ' + divId + ' \u2014 ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
-	}
+	// Unknown slots — do NOT destroy (top anchor or other legitimate formats).
+	if (cfg.debug) console.log('[PL-Ads] Fill: unknown slot ' + divId + ' — ' + (event.isEmpty ? 'NO-FILL' : 'FILLED'));
 }
 
 function collapseEmptyZone(zoneId) {
-	for (var i = 0; i < state.zones.length; i++) {
-		var zone = state.zones[i];
-		if (zone.id === zoneId) {
-			// Try Waldo passback before collapsing.
-			if (cfg.passbackEnabled && cfg.backfillScriptUrl && state.waldoTagIndex < state.waldoTagPool.length) {
-				tryWaldoPassback(zone);
-				return;
-			}
-			doCollapse(zone);
-			return;
-		}
+	var zone = getZoneById(zoneId);
+	if (!zone) return;
+
+	// Try Waldo passback before collapsing.
+	if (cfg.passbackEnabled && cfg.backfillScriptUrl && state.waldoTagIndex < state.waldoTagPool.length) {
+		tryWaldoPassback(zone);
+		return;
 	}
+	doCollapse(zone);
 }
 
 function tryWaldoPassback(zone) {
@@ -706,50 +628,38 @@ function tryWaldoPassback(zone) {
 	state.waldoTotalRequested++;
 	state.waldoFills[zone.id] = { tag: tagId, filled: false, network: 'newor' };
 
-	if (cfg.debug) console.log('[PL-Ads] Passback: trying Waldo ' + tagId + ' for zone ' + zone.id);
+	if (cfg.debug) console.log('[PL-Ads] Passback: trying Waldo ' + tagId + ' for ' + zone.id);
 
-	// Hide the original GPT container inside the zone.
 	var gptDiv = zone.el.querySelector('[id]');
 	if (gptDiv) gptDiv.style.display = 'none';
 
-	// Inject the Waldo tag div.
 	var waldoDiv = document.createElement('div');
 	waldoDiv.id = tagId;
 	zone.el.appendChild(waldoDiv);
-	zone.el.setAttribute('data-passback', 'waldo');
 
 	loadWaldoScript(function() {
 		setTimeout(function() {
-			checkWaldoFill(zone, waldoDiv, tagId);
+			var hasContent = waldoDiv.querySelector('iframe') ||
+				waldoDiv.querySelector('ins') ||
+				waldoDiv.querySelector('img') ||
+				waldoDiv.offsetHeight > 10;
+
+			if (hasContent) {
+				state.waldoTotalFilled++;
+				state.waldoFills[zone.id].filled = true;
+				if (cfg.debug) console.log('[PL-Ads] Passback: Waldo FILLED ' + zone.id);
+			} else {
+				waldoDiv.style.display = 'none';
+				doCollapse(zone);
+			}
 		}, cfg.backfillCheckDelay);
 	});
 }
 
-function checkWaldoFill(zone, waldoDiv, tagId) {
-	// Check if Waldo rendered content (iframe or ad content inside the div).
-	var hasContent = waldoDiv.querySelector('iframe') ||
-		waldoDiv.querySelector('ins') ||
-		waldoDiv.querySelector('img') ||
-		waldoDiv.offsetHeight > 10;
-
-	if (hasContent) {
-		state.waldoTotalFilled++;
-		state.waldoFills[zone.id].filled = true;
-		zone.el.setAttribute('data-fill', 'waldo');
-		if (cfg.debug) console.log('[PL-Ads] Passback: Waldo FILLED zone ' + zone.id + ' via ' + tagId + ' (h=' + waldoDiv.offsetHeight + 'px)');
-	} else {
-		// Waldo didn't fill either — collapse the zone.
-		if (cfg.debug) console.log('[PL-Ads] Passback: Waldo NO-FILL for zone ' + zone.id + ' via ' + tagId);
-		waldoDiv.style.display = 'none';
-		doCollapse(zone);
-	}
-}
-
 function doCollapse(zone) {
 	zone.el.style.cssText = 'height:0;overflow:hidden;margin:0;padding:0';
-	zone.el.setAttribute('data-fill', 'empty');
 	if (state.activeAds > 0) state.activeAds--;
-	if (cfg.debug) console.log('[PL-Ads] Fill: collapsed ' + zone.id + ', activeAds=' + state.activeAds);
+	if (cfg.debug) console.log('[PL-Ads] Collapsed ' + zone.id);
 }
 
 function tryWaldoAnchorPassback() {
@@ -757,8 +667,6 @@ function tryWaldoAnchorPassback() {
 
 	state.waldoTotalRequested++;
 	state.waldoFills['anchor'] = { tag: state.waldoAnchorTag, filled: false, network: 'newor' };
-
-	if (cfg.debug) console.log('[PL-Ads] Passback: trying backfill anchor ' + state.waldoAnchorTag);
 
 	loadWaldoScript(function() {
 		var container = document.createElement('div');
@@ -772,431 +680,170 @@ function tryWaldoAnchorPassback() {
 		setTimeout(function() {
 			var hasContent = waldoDiv.querySelector('iframe') ||
 				waldoDiv.querySelector('ins') ||
-				waldoDiv.querySelector('img') ||
 				waldoDiv.offsetHeight > 10;
 			if (hasContent) {
 				state.waldoTotalFilled++;
 				state.waldoFills['anchor'].filled = true;
 				state.anchorFilled = true;
-				if (cfg.debug) console.log('[PL-Ads] Passback: backfill anchor FILLED (h=' + waldoDiv.offsetHeight + 'px)');
 			} else {
 				container.remove();
-				if (cfg.debug) console.log('[PL-Ads] Passback: backfill anchor NO-FILL — removed');
 			}
 		}, cfg.backfillCheckDelay);
 	});
 }
 
 /* ================================================================
- * MODULE 6: DISPLAY AD RENDERER
+ * MODULE 6: OVERLAYS — Load Independently of Gate
  *
- * Renders either a real GPT ad or a dummy placeholder box.
- * Sets up viewability tracking after render.
- * ================================================================ */
-
-function renderDisplayAd(zone, size) {
-	if (zone.injected) return;
-	zone.injected = true;
-
-	var el = zone.el;
-	var parts = size.split('x');
-	var w = parseInt(parts[0], 10);
-	var h = parseInt(parts[1], 10);
-
-	if (cfg.dummy) {
-		renderDummy(el, size, w, h, zone.id, zone.score);
-		trackViewability(zone);
-		return;
-	}
-
-	// Create GPT ad container with Ad.Plus-required div IDs (300x250-1, 300x250-2, etc.).
-	if (!slotSizeCounter[size]) slotSizeCounter[size] = 0;
-	slotSizeCounter[size]++;
-	var slotId = size + '-' + slotSizeCounter[size];
-	state.slotDivToZone[slotId] = zone.id;
-
-	var adDiv = document.createElement('div');
-	adDiv.id = slotId;
-	adDiv.style.width = w + 'px';
-	adDiv.style.height = h + 'px';
-	adDiv.style.margin = '0 auto';
-	el.appendChild(adDiv);
-
-	// Define and display GPT slot.
-	var slotName = cfg.slots[size] || cfg.slots['300x250'];
-	var slotPath = cfg.slotPrefix + slotName;
-
-	googletag.cmd.push(function() {
-		var slot = googletag.defineSlot(slotPath, [w, h], slotId);
-		if (slot) {
-			slot.addService(googletag.pubads());
-			googletag.display(slotId);
-			state.slots[zone.id] = slot;
-			if (cfg.debug) console.log('[PL-Ads] Slot: ' + slotPath + ' (' + size + ')');
-		}
-	});
-
-	el.setAttribute('data-injected', 'true');
-	el.setAttribute('aria-hidden', 'false');
-
-	trackViewability(zone);
-
-	if (cfg.debug) {
-		addDebugInfo(el, zone.id, size, zone.score);
-	}
-}
-
-function renderDummy(el, size, w, h, zoneId, score) {
-	el.classList.add('pl-ad-dummy');
-
-	// Responsive: cap width on mobile.
-	var displayW = isMobile ? Math.min(w, window.innerWidth - 32) : w;
-	var displayH = displayW < w ? Math.round((displayW / w) * h) : h;
-
-	var zone = getZoneByEl(el);
-	var speed = Math.round(state.scrollSpeed);
-	var label = speed < 600 ? 'reading' : 'scanning';
-	if (zone && zone.isRetry) label = 'RETRY #' + state.totalRetries;
-	var statusText = 'ACTIVATED: ' + speed + 'px/s \u2014 ' + label;
-
-	el.style.width = displayW + 'px';
-	el.style.height = displayH + 'px';
-	el.style.maxWidth = '100%';
-	el.innerHTML = '<span style="font-size:11px;line-height:1.3">' + size + '<br>' + statusText + '</span>';
-	el.setAttribute('data-injected', 'true');
-
-	if (cfg.debug) {
-		addDebugInfo(el, zoneId, size, score);
-		console.log('[PL-Ads] Dummy: ' + zoneId + ' (' + size + ') ' + statusText);
-	}
-}
-
-/* ================================================================
- * MODULE 7: INTERSTITIAL
- *
- * Full-screen overlay ad. Triggers after 2+ display ads have loaded.
- * Auto-closes after 15 seconds. User can dismiss with close button.
- * ================================================================ */
-
-var interstitialShown = false;
-var interstitialSlot = null;
-
-function showInterstitial() {
-	if (interstitialShown || !cfg.fmtInterstitial || !state.gateOpen) return;
-	interstitialShown = true;
-
-	// Ensure shared GPT instance is loaded before rendering.
-	loadGPT(function() {
-		state.interstitialShownAt = Date.now();
-
-		if (cfg.dummy) {
-			// Dummy mode: custom overlay with close button + auto-close.
-			var overlay = document.createElement('div');
-			overlay.className = 'pl-ad-interstitial pl-ad-active';
-
-			var inner = document.createElement('div');
-			inner.className = 'pl-ad-interstitial-inner';
-
-			var onInterstitialClose = function() {
-				if (!state.interstitialClosedAt) {
-					state.interstitialClosedAt = Date.now();
-					state.interstitialViewable = (state.interstitialClosedAt - state.interstitialShownAt >= 1000) ? 1 : 0;
-					if (cfg.debug) console.log('[PL-Ads] Interstitial closed: ' + (state.interstitialClosedAt - state.interstitialShownAt) + 'ms, viewable=' + state.interstitialViewable);
-				}
-				overlay.classList.remove('pl-ad-active');
-				setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 300);
-			};
-
-			var closeBtn = createCloseBtn(onInterstitialClose);
-			inner.appendChild(closeBtn);
-			inner.appendChild(createDummyBlock('Interstitial 300x250', 300, 250, '#e8f5e9'));
-
-			overlay.appendChild(inner);
-			document.body.appendChild(overlay);
-
-			setTimeout(function() {
-				if (overlay.parentNode) onInterstitialClose();
-			}, 15000);
-		} else {
-			// Real GPT interstitial — GPT manages the overlay, close button, and timing.
-			var slotPath = cfg.slotPrefix + cfg.slots.interstitial;
-			googletag.cmd.push(function() {
-				var slot = googletag.defineOutOfPageSlot(slotPath, googletag.enums.OutOfPageFormat.INTERSTITIAL);
-				if (slot) {
-					interstitialSlot = slot;
-					slot.addService(googletag.pubads());
-
-					// Track when GPT dismisses the interstitial.
-					googletag.pubads().addEventListener('slotVisibilityChanged', function(event) {
-						if (event.slot === interstitialSlot && event.inViewPercentage === 0 && state.interstitialShownAt && !state.interstitialClosedAt) {
-							state.interstitialClosedAt = Date.now();
-							state.interstitialViewable = (state.interstitialClosedAt - state.interstitialShownAt >= 1000) ? 1 : 0;
-							if (cfg.debug) console.log('[PL-Ads] Interstitial dismissed by GPT: ' + (state.interstitialClosedAt - state.interstitialShownAt) + 'ms, viewable=' + state.interstitialViewable);
-						}
-					});
-
-					if (cfg.debug) console.log('[PL-Ads] Interstitial slot defined (out-of-page): ' + slotPath);
-				}
-			});
-		}
-
-		if (cfg.debug) console.log('[PL-Ads] Interstitial shown');
-	});
-}
-
-/* ================================================================
- * MODULE 8: ANCHOR (BOTTOM STICKY)
- *
- * #1 revenue format ($18.52/wk). Fires on TIME gate only — no scroll
- * required. Users on page 5+ seconds without scrolling are real humans
- * (e.g., Pinterest users reading the hero area). Anchor at viewport
- * bottom generates revenue from these sessions.
+ * H1: Interstitial — defined at GPT init (above), GPT triggers natively
+ * H2: Bottom Anchor — 2s delay, 30s refresh
+ * H3: Top Anchor — 2s delay, 30s refresh
  * ================================================================ */
 
 var anchorShown = false;
+var topAnchorShown = false;
 
-function showAnchor() {
-	if (anchorShown || !cfg.fmtAnchor || !gateChecks.time) return;
+function showBottomAnchor() {
+	if (anchorShown || !cfg.fmtAnchor) return;
 	anchorShown = true;
 
-	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
 		state.anchorFiredAt = Date.now();
 		state.anchorImpressions = 1;
-		// Anchor is sticky and always in viewport — viewable after 1s.
 		setTimeout(function() { state.anchorViewableImps = 1; }, 1000);
 
 		if (cfg.dummy) {
-			// Dummy mode: custom sticky bottom bar with close button.
 			var anchor = document.createElement('div');
-			anchor.className = 'pl-ad-anchor pl-ad-active';
-
-			var closeBtn = createCloseBtn(function() {
-				anchor.classList.remove('pl-ad-active');
-				setTimeout(function() { if (anchor.parentNode) anchor.remove(); }, 300);
-			});
-			anchor.appendChild(closeBtn);
-			anchor.appendChild(createDummyBlock('Anchor 320x50', 320, 50, '#fff3e0'));
-
+			anchor.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;z-index:9999;text-align:center;background:#fff3e0;border-top:2px dashed #ff9800;padding:8px;font-family:monospace;font-size:11px;font-weight:700;color:#e65100';
+			anchor.textContent = 'BOTTOM ANCHOR — Ad.Plus-Anchor (320x50)';
 			document.body.appendChild(anchor);
-
-			// Dummy mode: simulate 30s refresh for impression counting.
-			setInterval(function() {
-				state.anchorImpressions++;
-				state.anchorViewableImps++;
-				if (cfg.debug) console.log('[PL-Ads] Anchor dummy refresh: impressions=' + state.anchorImpressions);
-			}, 30000);
+			setInterval(function() { state.anchorImpressions++; state.anchorViewableImps++; }, 30000);
 		} else {
-			// Real GPT anchor — GPT manages the sticky bottom placement and dismiss.
-			var slotPath = cfg.slotPrefix + cfg.slots.anchor;
 			googletag.cmd.push(function() {
-				var slot = googletag.defineOutOfPageSlot(slotPath, googletag.enums.OutOfPageFormat.BOTTOM_ANCHOR);
+				var slot = googletag.defineOutOfPageSlot(
+					SLOT_BASE + 'Ad.Plus-Anchor',
+					googletag.enums.OutOfPageFormat.BOTTOM_ANCHOR
+				);
 				if (slot) {
 					state.anchorSlotRef = slot;
 					slot.addService(googletag.pubads());
-					if (cfg.debug) console.log('[PL-Ads] Anchor slot defined (out-of-page BOTTOM_ANCHOR): ' + slotPath);
+					googletag.display(slot);
+					if (cfg.debug) console.log('[PL-Ads] Bottom anchor defined');
 
-					// 30-second refresh interval per Ad.Plus requirements.
 					setInterval(function() {
 						googletag.pubads().refresh([slot]);
 						state.anchorImpressions++;
 						state.anchorViewableImps++;
-						if (cfg.debug) console.log('[PL-Ads] Anchor refreshed (30s interval): impressions=' + state.anchorImpressions);
 					}, 30000);
 				}
 			});
 		}
-
-		if (cfg.debug) console.log('[PL-Ads] Anchor shown');
+		if (cfg.debug) console.log('[PL-Ads] Bottom anchor shown');
 	});
 }
 
-/* ================================================================
- * MODULE 9: PAUSE BANNER
- *
- * Centered overlay shown when user pauses scrolling for 3+ seconds
- * past 30% scroll depth. Auto-closes after 10 seconds.
- * ================================================================ */
+function showTopAnchor() {
+	if (topAnchorShown) return;
+	topAnchorShown = true;
 
-var pauseShown = false;
-
-function onScrollPause() {
-	if (pauseShown || !cfg.fmtPause || !state.gateOpen) return;
-	if (state.scrollPct < 30) return;
-	// Require minimum display ads served before showing pause banner.
-	var minAds = cfg.pauseMinAds >= 0 ? cfg.pauseMinAds : 2;
-	if (state.activeAds < minAds) {
-		if (cfg.debug) console.log('[PL-Ads] Pause: skipped — only ' + state.activeAds + '/' + minAds + ' display ads served');
-		return;
-	}
-
-	pauseShown = true;
-
-	// Ensure shared GPT instance is loaded before rendering.
 	loadGPT(function() {
-		state.pauseShownAt = Date.now();
-
-		var pause = document.createElement('div');
-		pause.className = 'pl-ad-pause pl-ad-active';
-
-		var onPauseClose = function() {
-			if (!state.pauseClosedAt) {
-				state.pauseClosedAt = Date.now();
-				state.pauseTotalVisibleMs = state.pauseClosedAt - state.pauseShownAt;
-				state.pauseViewable = (state.pauseTotalVisibleMs >= 1000) ? 1 : 0;
-				if (cfg.debug) console.log('[PL-Ads] Pause closed: ' + state.pauseTotalVisibleMs + 'ms, viewable=' + state.pauseViewable);
-			}
-			pause.classList.remove('pl-ad-active');
-			setTimeout(function() { if (pause.parentNode) pause.remove(); }, 300);
-		};
-
-		var closeBtn = createCloseBtn(onPauseClose);
-		pause.appendChild(closeBtn);
+		state.topAnchorFiredAt = Date.now();
 
 		if (cfg.dummy) {
-			pause.appendChild(createDummyBlock('Pause 300x250', 300, 250, '#fce4ec'));
+			var anchor = document.createElement('div');
+			anchor.style.cssText = 'position:fixed;top:0;left:0;width:100%;z-index:9999;text-align:center;background:#e8f5e9;border-bottom:2px dashed #4caf50;padding:8px;font-family:monospace;font-size:11px;font-weight:700;color:#1b5e20';
+			anchor.textContent = 'TOP ANCHOR — Ad.Plus-Anchor-Small';
+			document.body.appendChild(anchor);
 		} else {
-			var adDiv = document.createElement('div');
-			adDiv.id = 'pl-gpt-pause';
-			adDiv.style.cssText = 'width:300px;height:250px;max-width:100%;margin:0 auto';
-			pause.appendChild(adDiv);
-
-			var slotPath = cfg.slotPrefix + cfg.slots.pause;
 			googletag.cmd.push(function() {
-				var slot = googletag.defineSlot(slotPath, [300, 250], 'pl-gpt-pause');
+				var slot = googletag.defineOutOfPageSlot(
+					SLOT_BASE + 'Ad.Plus-Anchor-Small',
+					googletag.enums.OutOfPageFormat.TOP_ANCHOR
+				);
 				if (slot) {
-					state.pauseSlotRef = slot;
-					slot.setConfig({ contentPause: true });
+					state.topAnchorSlotRef = slot;
 					slot.addService(googletag.pubads());
-					googletag.display('pl-gpt-pause');
-					if (cfg.debug) console.log('[PL-Ads] Pause slot defined with contentPause config: ' + slotPath);
+					googletag.display(slot);
+					if (cfg.debug) console.log('[PL-Ads] Top anchor defined');
+
+					setInterval(function() {
+						googletag.pubads().refresh([slot]);
+					}, 30000);
 				}
 			});
 		}
-
-		document.body.appendChild(pause);
-
-		// Auto-close after 10s.
-		setTimeout(function() {
-			if (pause.parentNode) onPauseClose();
-		}, 10000);
-
-		if (cfg.debug) console.log('[PL-Ads] Pause banner shown');
+		if (cfg.debug) console.log('[PL-Ads] Top anchor shown');
 	});
 }
 
+// Fire overlays after 2s delay (NOT gated).
+function initOverlays() {
+	setTimeout(function() {
+		showBottomAnchor();
+		showTopAnchor();
+	}, 2000);
+}
+
 /* ================================================================
- * MODULE 10: VIEWABILITY TRACKER
+ * MODULE 7: VIEWABILITY TRACKER
  *
- * IAB standard: 50% of pixels visible for 1 continuous second
- * = 1 viewable impression. Tracks per-zone.
+ * IAB standard: 50% of pixels visible for 1 continuous second.
  * ================================================================ */
 
-function trackViewability(zone) {
+function trackViewability(zone, sizeStr) {
 	var data = {
 		zoneId: zone.id,
-		adSize: zone.activatedSize || (isMobile ? zone.sizeMobile : zone.sizeDesktop),
+		adSize: sizeStr,
 		totalVisibleMs: 0,
 		viewableImpressions: 0,
 		maxRatio: 0,
-		ratioSum: 0,
-		ratioCount: 0,
 		timeToFirstView: 0,
-		firstViewRecorded: false, // ratio >= 0.5 (IAB viewable threshold)
-		firstSeenRecorded: false, // ratio > 0 (any part entered viewport)
+		firstViewRecorded: false,
 		injectedAtDepth: state.scrollPct,
 		scrollSpeedAtInjection: state.scrollSpeed,
 		visibleStart: 0,
 		isVisible: false,
-		viewableTimer: null,
-		resolved: false, // true once confirmed viewable OR confirmed missed
-		missed: false,   // true if scrolled out without becoming viewable
-		isRetry: !!zone.isRetry
+		viewableTimer: null
 	};
 	state.viewability[zone.id] = data;
 
-	if (!('IntersectionObserver' in window)) {
-		if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' — IO not supported');
-		return;
-	}
+	if (!('IntersectionObserver' in window)) return;
 
 	var observer = new IntersectionObserver(function(entries) {
 		for (var ei = 0; ei < entries.length; ei++) {
 			var entry = entries[ei];
 			var ratio = entry.intersectionRatio;
 
-			data.ratioSum += ratio;
-			data.ratioCount++;
 			if (ratio > data.maxRatio) data.maxRatio = ratio;
 
-			// Track first time any part of zone enters viewport.
-			if (ratio > 0 && !data.firstSeenRecorded) {
-				data.firstSeenRecorded = true;
-				if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' FIRST SEEN (ratio=' + Math.round(ratio * 100) + '%)');
-			}
-
-			if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' IO fired ratio=' + Math.round(ratio * 100) + '% isVisible=' + data.isVisible + ' impressions=' + data.viewableImpressions);
+			// Store current ratio on element for pause-refresh to read.
+			zone.el._viewRatio = ratio;
 
 			if (ratio >= 0.5) {
 				if (!data.isVisible) {
 					data.isVisible = true;
 					data.visibleStart = Date.now();
-					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VISIBLE >=50% (ratio=' + Math.round(ratio * 100) + '%), starting 1s timer');
 
 					if (!data.firstViewRecorded) {
 						data.firstViewRecorded = true;
 						data.timeToFirstView = Date.now() - state.sessionStart;
 					}
 
-					// 1-second continuous visibility = viewable impression.
 					data.viewableTimer = setTimeout(function() {
 						data.viewableImpressions++;
-						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' 1s timer COMPLETED — marking VIEWABLE (impression #' + data.viewableImpressions + ')');
-						// Track first viewable impression per zone for budget.
 						if (data.viewableImpressions === 1) {
 							state.viewableCount++;
-							// Mark as resolved (viewable).
-							if (!data.resolved) {
-								data.resolved = true;
-								state.resolvedCount++;
-								// Track successful retry.
-								if (data.isRetry) state.retriesSuccessful++;
-							}
-							if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' VIEWABLE — session: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved' + (data.isRetry ? ' (retry success)' : ''));
-							checkViewabilityBudget();
+						}
+						if (!zone.el._viewLogged) {
+							zone.el._viewLogged = true;
 						}
 					}, 1000);
 				}
 			} else {
 				if (data.isVisible) {
-					var elapsed = Date.now() - data.visibleStart;
-					data.totalVisibleMs += elapsed;
+					data.totalVisibleMs += Date.now() - data.visibleStart;
 					data.isVisible = false;
 					clearTimeout(data.viewableTimer);
-					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' dropped below 50% (ratio=' + Math.round(ratio * 100) + '%), clearing timer (was visible ' + elapsed + 'ms, total ' + data.totalVisibleMs + 'ms)');
-				}
-
-				// --- Missed detection ---
-				// Zone scrolled completely out (ratio=0) and was seen at some point
-				// but never became viewable → mark as "missed", queue retry.
-				// Uses firstSeenRecorded (ratio > 0) not firstViewRecorded (ratio >= 0.5)
-				// because fast scrollers may never reach 50% but the zone WAS in viewport.
-				if (ratio === 0 && !data.resolved && data.viewableImpressions === 0 && data.firstSeenRecorded) {
-					data.resolved = true;
-					data.missed = true;
-					state.resolvedCount++;
-					if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' MISSED — scrolled out with 0 viewable (visible ' + data.totalVisibleMs + 'ms, maxRatio=' + Math.round(data.maxRatio * 100) + '%)');
-					// Queue a retry if under session cap.
-					if (state.totalRetries < state.maxRetriesPerSession) {
-						state.pendingRetries++;
-						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' retry queued (pending=' + state.pendingRetries + ')');
-						// Proactively trigger retry: the next zone may have already
-						// been speed-gated before this missed detection fired.
-						tryRetryNearbyZone();
-					} else {
-						if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' retry cap reached (' + state.totalRetries + '/' + state.maxRetriesPerSession + ')');
-					}
-					checkViewabilityBudget();
 				}
 			}
 		}
@@ -1207,58 +854,61 @@ function trackViewability(zone) {
 	data.observer = observer;
 	data.observedEl = zone.el;
 	observer.observe(zone.el);
-	if (cfg.debug) console.log('[PL-Ads] Viewability: ' + data.zoneId + ' tracking started, observing element ' + zone.el.className + ' (' + zone.el.offsetWidth + 'x' + zone.el.offsetHeight + 'px)');
-}
-
-function checkViewabilityBudget() {
-	// Budget check: after 2+ resolved impressions, if <40% viewable → stop.
-	if (state.resolvedCount >= 2 && state.viewableCount / state.resolvedCount < 0.4) {
-		state.budgetExhausted = true;
-		if (cfg.debug) console.log('[PL-Ads] Viewability budget EXHAUSTED: ' + state.viewableCount + '/' + state.resolvedCount + ' resolved (' + Math.round(state.viewableCount / state.resolvedCount * 100) + '%)');
-	}
-}
-
-/**
- * Proactive retry: find a zone that was collapsed due to speed-gating
- * and is still in or near the viewport. Reset it and re-try activation.
- *
- * Called from missed detection — solves the timing issue where zone B
- * gets speed-gated BEFORE zone A's missed detection fires.
- */
-function tryRetryNearbyZone() {
-	if (state.pendingRetries <= 0) return;
-
-	for (var i = 0; i < state.zones.length; i++) {
-		var zone = state.zones[i];
-		// Only consider zones that were collapsed specifically for speed.
-		if (!zone.activated || zone.injected) continue;
-		if (zone.el.getAttribute('data-skip-reason') !== 'speed') continue;
-
-		var rect = zone.el.getBoundingClientRect();
-		// Must be in viewport or within 500px below (still reachable).
-		if (rect.bottom <= 0 || rect.top > window.innerHeight + 500) continue;
-
-		// Reset the collapsed zone for re-evaluation.
-		zone.activated = false;
-		zone.el.classList.remove('pl-ad-collapse', 'pl-ad-dummy');
-		zone.el.removeAttribute('data-skip-reason');
-		zone.el.textContent = '';
-		zone.el.style.cssText = '';
-		if (cfg.debug) console.log('[PL-Ads] Retry: resurrecting speed-skipped zone ' + zone.id + ' for retry activation');
-
-		tryActivateZone(zone.el);
-		return; // One retry per missed detection.
-	}
-
-	if (cfg.debug) console.log('[PL-Ads] Retry: no speed-skipped zones near viewport — retry will apply to next IO trigger');
 }
 
 /* ================================================================
- * MODULE 11: DATA RECORDER
+ * MODULE 8: PAUSE-TRIGGERED DISPLAY REFRESH
  *
- * Sends viewability session data to REST endpoint on page unload.
- * Uses navigator.sendBeacon for reliability, XHR as fallback.
+ * When user pauses scrolling for 5+ seconds, refresh the most
+ * viewable display ad. 30s cooldown per zone, 20 max per session.
  * ================================================================ */
+
+var PAUSE_THRESHOLD = 5000;
+var REFRESH_COOLDOWN = 30000;
+var MAX_REFRESHES = 20;
+var scrollPauseTimer = null;
+
+function initPauseRefresh() {
+	window.addEventListener('scroll', function() {
+		clearTimeout(scrollPauseTimer);
+		scrollPauseTimer = setTimeout(onPauseRefresh, PAUSE_THRESHOLD);
+	}, { passive: true });
+}
+
+function onPauseRefresh() {
+	if (state.refreshCount >= MAX_REFRESHES) return;
+
+	var best = null;
+	var bestRatio = 0;
+	for (var i = 0; i < state.zones.length; i++) {
+		var z = state.zones[i];
+		if (!z.activated || !z.injected || z.isPause || !z.gptSlot) continue;
+		var ratio = z.el._viewRatio || 0;
+		if (ratio >= 0.5 && ratio > bestRatio) {
+			bestRatio = ratio;
+			best = z;
+		}
+	}
+
+	if (!best) return;
+
+	var now = Date.now();
+	if (state.lastRefreshTime[best.id] && now - state.lastRefreshTime[best.id] < REFRESH_COOLDOWN) return;
+
+	googletag.pubads().refresh([best.gptSlot]);
+	state.lastRefreshTime[best.id] = now;
+	state.refreshCount++;
+	state.refreshImpressions++;
+	if (cfg.debug) console.log('[PL-Ads] Refresh #' + state.refreshCount + ': ' + best.id + ' (viewRatio=' + Math.round(bestRatio * 100) + '%)');
+
+	scrollPauseTimer = setTimeout(onPauseRefresh, REFRESH_COOLDOWN);
+}
+
+/* ================================================================
+ * MODULE 9: DATA RECORDER
+ * ================================================================ */
+
+var sessionId = Math.random().toString(36).substring(2, 10) + Date.now().toString(36).slice(-4);
 
 function buildSessionData() {
 	var zones = [];
@@ -1268,17 +918,14 @@ function buildSessionData() {
 		if (!state.viewability.hasOwnProperty(zid)) continue;
 		var d = state.viewability[zid];
 
-		// Close open visibility window.
 		if (d.isVisible) {
 			d.totalVisibleMs += Date.now() - d.visibleStart;
 			d.isVisible = false;
 			clearTimeout(d.viewableTimer);
 		}
 
-		var avgRatio = d.ratioCount > 0 ? d.ratioSum / d.ratioCount : 0;
 		totalViewable += d.viewableImpressions;
 
-		// Keys are camelCase — ad-data-recorder.php converts to snake_case.
 		var fill = state.adFills[d.zoneId];
 		zones.push({
 			zoneId: d.zoneId,
@@ -1286,13 +933,11 @@ function buildSessionData() {
 			totalVisibleMs: d.totalVisibleMs,
 			viewableImpressions: d.viewableImpressions,
 			maxRatio: Math.round(d.maxRatio * 100) / 100,
-			avgRatio: Math.round(avgRatio * 100) / 100,
 			timeToFirstView: d.timeToFirstView,
 			injectedAtDepth: Math.round(d.injectedAtDepth * 10) / 10,
 			scrollSpeedAtInjection: Math.round(d.scrollSpeedAtInjection),
 			filled: fill ? fill.filled : null,
 			fillSize: fill ? fill.size : null,
-			advertiserId: fill ? fill.advertiserId : null,
 			clicks: state.adClicks[d.zoneId] ? state.adClicks[d.zoneId].count : 0,
 			passback: state.waldoFills[d.zoneId] ? state.waldoFills[d.zoneId].filled : false,
 			passbackNetwork: state.waldoFills[d.zoneId] ? state.waldoFills[d.zoneId].network : null
@@ -1301,7 +946,6 @@ function buildSessionData() {
 
 	var b = window.__plEngagement;
 
-	// Keys are camelCase — ad-data-recorder.php converts to snake_case for storage.
 	return {
 		session: true,
 		sid: sessionId,
@@ -1325,37 +969,39 @@ function buildSessionData() {
 		totalViewable: totalViewable,
 		viewabilityRate: state.activeAds > 0 ? Math.round((totalViewable / state.activeAds) * 100) / 100 : 0,
 		viewableZones: state.viewableCount,
-		budgetExhausted: state.budgetExhausted,
-		retriesUsed: state.totalRetries,
-		retriesSuccessful: state.retriesSuccessful,
 		anchorStatus: anchorShown ? 'firing' : 'off',
-		interstitialStatus: interstitialShown ? 'fired' : 'off',
-		pauseStatus: pauseShown ? 'fired' : 'off',
-		// Overlay viewability data.
+		topAnchorStatus: topAnchorShown ? 'firing' : 'off',
+		interstitialStatus: state.interstitialShownAt ? 'fired' : 'off',
+		pauseStatus: state.pauseBannersShown > 0 ? 'fired' : 'off',
+		// Overlay viewability.
 		anchorImpressions: state.anchorImpressions,
 		anchorViewable: state.anchorViewableImps,
 		anchorVisibleMs: state.anchorFiredAt ? Date.now() - state.anchorFiredAt : 0,
 		interstitialViewable: state.interstitialViewable,
 		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
-		pauseViewable: state.pauseViewable,
-		pauseVisibleMs: state.pauseTotalVisibleMs || (state.pauseShownAt && !state.pauseClosedAt ? Date.now() - state.pauseShownAt : 0),
-		// Fill tracking summary.
+		// Fill tracking.
 		totalRequested: state.totalRequested,
 		totalFilled: state.totalFilled,
 		totalEmpty: state.totalEmpty,
 		fillRate: state.totalRequested > 0 ? Math.round((state.totalFilled / state.totalRequested) * 100) : 0,
 		anchorFilled: state.anchorFilled,
+		topAnchorFilled: state.topAnchorFilled,
 		interstitialFilled: state.interstitialFilled,
-		pauseFilled: state.pauseFilled,
 		referrer: document.referrer || '',
 		language: (navigator.language || '').substring(0, 5),
-		// Click tracking summary.
+		// Clicks.
 		totalDisplayClicks: state.totalDisplayClicks,
 		anchorClicks: state.anchorClicks,
 		interstitialClicks: state.interstitialClicks,
 		interstitialDismissed: state.interstitialDismissed,
 		pauseClicks: state.pauseClicks,
-		// Waldo passback summary.
+		// Pause banners.
+		pauseBannersShown: state.pauseBannersShown,
+		pauseBannersContinued: state.pauseBannersContinued,
+		// Refresh.
+		refreshCount: state.refreshCount,
+		refreshImpressions: state.refreshImpressions,
+		// Waldo passback.
 		waldoRequested: state.waldoTotalRequested,
 		waldoFilled: state.waldoTotalFilled,
 		waldoFills: state.waldoFills,
@@ -1364,7 +1010,6 @@ function buildSessionData() {
 }
 
 function classifyPattern() {
-	// Prefer engagement.js bridge classification when available.
 	var b = window.__plEngagement;
 	if (b && b.pattern) return b.pattern;
 	var t = (Date.now() - state.sessionStart) / 1000;
@@ -1375,7 +1020,6 @@ function classifyPattern() {
 
 function sendData() {
 	if (!cfg.record || state.dataSent) return;
-	// Record if gate opened OR user spent 2+ seconds (captures full funnel).
 	var elapsed = (Date.now() - state.sessionStart) / 1000;
 	if (!state.gateOpen && elapsed < 2) return;
 	state.dataSent = true;
@@ -1397,66 +1041,9 @@ function sendData() {
 }
 
 /* ================================================================
- * MODULE 12: DEBUG OVERLAY
- *
- * Shows zone ID, size, and score as a small label on each ad.
- * Logs periodic state dumps to console.
+ * MODULE 10: LIVE MONITOR HEARTBEAT
  * ================================================================ */
 
-function addDebugInfo(el, zoneId, size, score) {
-	var info = document.createElement('span');
-	info.className = 'pl-ad-debug';
-	info.textContent = zoneId + ' | ' + size + ' | s:' + score;
-	el.appendChild(info);
-}
-
-function debugLog() {
-	console.log('[PL-Ads]', {
-		gate: state.gateOpen,
-		ads: state.activeAds + '/' + cfg.maxAds,
-		viewable: state.viewableCount + '/' + state.resolvedCount + ' resolved',
-		budget: state.budgetExhausted ? 'EXHAUSTED' : 'ok',
-		retries: state.pendingRetries + ' pending, ' + state.totalRetries + '/' + state.maxRetriesPerSession + ' used, ' + state.retriesSuccessful + ' ok',
-		anchor: anchorShown ? 'firing' : 'off',
-		interstitial: interstitialShown ? 'fired' : 'off',
-		pause: pauseShown ? 'fired' : 'off',
-		zones: state.zones.length,
-		scroll: Math.round(state.scrollPct) + '%',
-		time: Math.round(state.timeOnPage) + 's',
-		dirs: state.dirChanges,
-		speed: Math.round(state.scrollSpeed)
-	});
-}
-
-/* ================================================================
- * SHARED HELPERS
- * ================================================================ */
-
-function createCloseBtn(onClick) {
-	var btn = document.createElement('button');
-	btn.className = 'pl-ad-close';
-	btn.textContent = '\u00d7';
-	btn.setAttribute('aria-label', 'Close ad');
-	btn.addEventListener('click', onClick);
-	return btn;
-}
-
-function createDummyBlock(label, w, h, bg) {
-	var el = document.createElement('div');
-	el.style.cssText = 'width:' + w + 'px;height:' + h + 'px;max-width:100%;background:' + bg + ';border:2px dashed rgba(0,0,0,.12);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:12px;font-weight:700;color:rgba(0,0,0,.35)';
-	el.textContent = label;
-	return el;
-}
-
-/* ================================================================
- * MODULE 13: LIVE MONITOR HEARTBEAT
- *
- * Sends lightweight heartbeat to admin Live Sessions dashboard.
- * ZERO frontend impact: only activates when plAds.liveMonitor is true,
- * uses requestIdleCallback + sendBeacon, silently stops on failure.
- * ================================================================ */
-
-var sessionId = Math.random().toString(36).substring(2, 10) + Date.now().toString(36).slice(-4);
 var heartbeatActive = false;
 var heartbeatFails = 0;
 
@@ -1465,7 +1052,7 @@ function startHeartbeat() {
 	heartbeatActive = true;
 
 	setInterval(function() {
-		if (heartbeatFails >= 3) return; // Stop after 3 failures.
+		if (heartbeatFails >= 3) return;
 		if ('requestIdleCallback' in window) {
 			requestIdleCallback(sendHeartbeat, { timeout: 2000 });
 		} else {
@@ -1509,7 +1096,6 @@ function sendHeartbeat() {
 		}
 	}
 
-	var b = window.__plEngagement;
 	var payload = {
 		sid: sessionId,
 		postId: cfg.postId,
@@ -1533,40 +1119,34 @@ function sendHeartbeat() {
 		referrer: document.referrer || '',
 		language: (navigator.language || '').substring(0, 5),
 		zoneDetail: zoneDetail,
-		// Out-of-page format status.
-		anchorStatus: anchorShown ? 'firing' : (gateChecks.time ? 'waiting' : 'off'),
-		interstitialStatus: interstitialShown ? 'fired' : (state.gateOpen && state.activeAds >= 2 ? 'waiting' : 'off'),
-		pauseStatus: pauseShown ? 'fired' : (state.gateOpen ? 'waiting' : 'off'),
-		// Overlay viewability data.
+		anchorStatus: anchorShown ? 'firing' : 'off',
+		topAnchorStatus: topAnchorShown ? 'firing' : 'off',
+		interstitialStatus: state.interstitialShownAt ? 'fired' : 'off',
+		pauseStatus: state.pauseBannersShown > 0 ? 'fired' : 'off',
 		anchorImpressions: state.anchorImpressions,
 		anchorViewable: state.anchorViewableImps,
 		anchorVisibleMs: state.anchorFiredAt ? Date.now() - state.anchorFiredAt : 0,
 		interstitialViewable: state.interstitialViewable,
 		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
-		pauseViewable: state.pauseViewable,
-		pauseVisibleMs: state.pauseTotalVisibleMs || (state.pauseShownAt && !state.pauseClosedAt ? Date.now() - state.pauseShownAt : 0),
-		// Fill tracking summary.
 		totalRequested: state.totalRequested,
 		totalFilled: state.totalFilled,
 		totalEmpty: state.totalEmpty,
 		fillRate: state.totalRequested > 0 ? Math.round((state.totalFilled / state.totalRequested) * 100) : 0,
 		anchorFilled: state.anchorFilled,
+		topAnchorFilled: state.topAnchorFilled,
 		interstitialFilled: state.interstitialFilled,
-		pauseFilled: state.pauseFilled,
-		// Click tracking summary.
 		totalDisplayClicks: state.totalDisplayClicks,
 		anchorClicks: state.anchorClicks,
 		interstitialClicks: state.interstitialClicks,
 		interstitialDismissed: state.interstitialDismissed,
 		pauseClicks: state.pauseClicks,
-		// Waldo passback summary.
+		pauseBannersShown: state.pauseBannersShown,
+		pauseBannersContinued: state.pauseBannersContinued,
+		refreshCount: state.refreshCount,
+		refreshImpressions: state.refreshImpressions,
 		waldoRequested: state.waldoTotalRequested,
 		waldoFilled: state.waldoTotalFilled,
-		waldoFills: state.waldoFills,
-		// Retry stats.
-		pendingRetries: state.pendingRetries,
-		totalRetries: state.totalRetries,
-		retriesSuccessful: state.retriesSuccessful
+		waldoFills: state.waldoFills
 	};
 
 	var json = JSON.stringify(payload);
@@ -1587,12 +1167,6 @@ function sendHeartbeat() {
 
 /* ================================================================
  * AD CLICK TRACKER
- *
- * Detects ad clicks via two methods:
- * A) iframe focus detection — when user clicks a display ad iframe,
- *    window blurs and the iframe becomes document.activeElement.
- * B) visibilitychange — when page becomes hidden while an overlay
- *    (pause) is showing, likely an ad click navigating away.
  * ================================================================ */
 
 function recordAdClick(zoneId, format) {
@@ -1610,37 +1184,29 @@ function recordAdClick(zoneId, format) {
 	} else if (format === 'pause') {
 		state.pauseClicks++;
 	}
-
-	if (cfg.debug) console.log('[PL-Ads] CLICK detected: ' + zoneId + ' (' + format + ')');
+	if (cfg.debug) console.log('[PL-Ads] CLICK: ' + zoneId + ' (' + format + ')');
 }
 
 function initClickTracking() {
-	// Method A: detect when an ad iframe steals focus from the page.
 	window.addEventListener('blur', function() {
 		setTimeout(function() {
 			var active = document.activeElement;
 			if (!active || active.tagName !== 'IFRAME') return;
 
-			// Check if iframe is inside a display ad zone.
 			var zone = active.closest('.ad-zone');
 			if (zone) {
-				var zoneId = zone.dataset.zoneId || zone.id;
+				var zoneId = zone.dataset.zone || zone.id;
 				recordAdClick(zoneId, 'display');
 				return;
 			}
 
-			// Check GPT out-of-page containers (anchor/interstitial).
-			// GPT creates fixed-position containers for out-of-page formats.
 			var parent = active.parentElement;
 			while (parent && parent !== document.body) {
 				if (parent.id && parent.id.indexOf('gpt') !== -1 && parent.style.position === 'fixed') {
 					if (parent.style.bottom === '0px') {
 						recordAdClick('anchor', 'anchor');
 					} else {
-						// Interstitial iframe focus = overlay dismiss, NOT ad click.
-						// Real ad clicks are detected via visibilitychange (page hidden).
 						state.interstitialDismissed++;
-						if (cfg.debug) console.log('[PL-Ads] Interstitial dismissed (iframe focus)');
 					}
 					return;
 				}
@@ -1649,28 +1215,23 @@ function initClickTracking() {
 		}, 50);
 	});
 
-	// Method B: visibilitychange for overlay clicks.
-	// Page hidden while an overlay is showing = user clicked ad (navigated away).
 	document.addEventListener('visibilitychange', function() {
 		if (!document.hidden) return;
-		if (interstitialShown && state.interstitialShownAt && !state.interstitialClosedAt) {
+		if (state.interstitialShownAt && !state.interstitialClosedAt) {
 			recordAdClick('interstitial', 'interstitial');
-		}
-		if (pauseShown && state.pauseShownAt && !state.pauseClosedAt) {
-			recordAdClick('pause', 'pause');
 		}
 	});
 }
 
 /* ================================================================
- * INIT — WIRE EVERYTHING UP
+ * INIT
  * ================================================================ */
 
 function init() {
 	discoverZones();
 
-	if (state.zones.length === 0 && !cfg.fmtInterstitial && !cfg.fmtAnchor && !cfg.fmtPause) {
-		if (cfg.debug) console.log('[PL-Ads] No zones or overlay formats — exiting');
+	if (state.zones.length === 0 && !cfg.fmtInterstitial && !cfg.fmtAnchor) {
+		if (cfg.debug) console.log('[PL-Ads] No zones or overlays — exiting');
 		return;
 	}
 
@@ -1678,10 +1239,13 @@ function init() {
 	window.addEventListener('scroll', onScroll, { passive: true });
 	startTimeTracking();
 
-	// Observe zones — they activate when gate opens + they enter viewport.
+	// Observe zones — nav/sidebar activate immediately, content waits for gate.
 	initZoneObserver();
 
-	// Track ad clicks via iframe focus detection + visibilitychange.
+	// Overlays load independently after 2s delay.
+	initOverlays();
+
+	// Click tracking.
 	initClickTracking();
 
 	// Send data on page unload.
@@ -1690,42 +1254,31 @@ function init() {
 	});
 	window.addEventListener('pagehide', sendData);
 
-	// Live monitor heartbeat (only if admin is watching).
+	// Live monitor heartbeat.
 	startHeartbeat();
 
-	// Periodic check for overlay formats after gate opens.
-	var fmtInterval = setInterval(function() {
-		if (!state.gateOpen) return;
-
-		// Anchor: fires immediately from checkGate(), but retry here
-		// in case gate opened before init wired up the interval.
-		if (!anchorShown) {
-			showAnchor();
-		}
-
-		// Interstitial: after 2+ display ads have loaded.
-		if (!interstitialShown && state.activeAds >= 2) {
-			showInterstitial();
-		}
-
-		// Stop polling once all overlay formats are shown or disabled.
-		var allDone = (anchorShown || !cfg.fmtAnchor) &&
-		              (interstitialShown || !cfg.fmtInterstitial) &&
-		              (pauseShown || !cfg.fmtPause);
-		if (allDone) {
-			clearInterval(fmtInterval);
-		}
-	}, 2000);
-
 	if (cfg.debug) {
-		console.log('[PL-Ads] Init', {
+		console.log('[PL-Ads] v4 Init', {
 			dummy: cfg.dummy,
 			maxAds: cfg.maxAds,
 			gate: cfg.gateScrollPct + '% / ' + cfg.gateTimeSec + 's / ' + cfg.gateDirChanges + 'dirs',
 			zones: state.zones.length,
 			device: isMobile ? 'mobile' : 'desktop'
 		});
-		setInterval(debugLog, 5000);
+		setInterval(function() {
+			console.log('[PL-Ads]', {
+				gate: state.gateOpen,
+				ads: state.activeAds + '/' + cfg.maxAds,
+				viewable: state.viewableCount,
+				anchor: anchorShown ? 'firing' : 'off',
+				topAnchor: topAnchorShown ? 'firing' : 'off',
+				interstitial: state.interstitialShownAt ? 'fired' : 'off',
+				pauseBanners: state.pauseBannersShown,
+				refreshes: state.refreshCount,
+				scroll: Math.round(state.scrollPct) + '%',
+				time: Math.round(state.timeOnPage) + 's'
+			});
+		}, 5000);
 	}
 }
 
