@@ -246,8 +246,8 @@ function selectAdSize(anchorEl) {
 function checkGate() {
 	if (state.gateOpen) return;
 
-	var scrollOk = state.maxScrollPct >= 8;
-	var timeOk = state.timeOnPage >= 3;
+	var scrollOk = state.maxScrollPct >= 3;
+	var timeOk = state.timeOnPage >= 2;
 
 	// Path A: scroll + time (normal scrolling visitor).
 	if (scrollOk && timeOk) {
@@ -256,8 +256,8 @@ function checkGate() {
 	}
 
 	// Path B: time-only (engaged non-scroller — e.g. Pinterest visitor reading intro).
-	// 8s on page with <1% scroll = clearly reading but not scrolling.
-	if (state.timeOnPage >= 8 && state.maxScrollPct < 1) {
+	// 4s on page with <1% scroll = clearly reading but not scrolling.
+	if (state.timeOnPage >= 4 && state.maxScrollPct < 1) {
 		openGate(true);
 	}
 }

@@ -33,8 +33,8 @@ function pl_ad_defaults() {
 		'record_data'           => true,
 
 		// Engagement Gate.
-		'gate_scroll_pct'       => 8,
-		'gate_time_sec'         => 3,
+		'gate_scroll_pct'       => 3,
+		'gate_time_sec'         => 2,
 		'gate_dir_changes'      => 0,
 
 		// v5: Dynamic injection — no artificial cap, behavior is the cap.
@@ -158,7 +158,7 @@ function pl_ad_migrate_slot_names() {
 	$v5_migrations = array(
 		'max_display_ads' => array( 'old_max' => 35, 'new' => 50 ),
 		'min_spacing_px'  => array( 'old_max' => 200, 'new' => 400 ),
-		'gate_scroll_pct' => array( 'old_min' => 10, 'new' => 8 ),
+		'gate_scroll_pct' => array( 'old_min' => 10, 'new' => 3 ),
 	);
 	foreach ( $v5_migrations as $key => $m ) {
 		if ( isset( $saved[ $key ] ) ) {
