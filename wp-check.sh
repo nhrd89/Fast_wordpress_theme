@@ -47,7 +47,7 @@ for var in SITE_URL WP_USER WP_APP_PASSWORD; do
 done
 
 # ── Defaults ──
-DEFAULT_TEST_URL="https://cheerfultalks.com/wanderweave2/capture-the-aesthetic-15-beautiful-mountain-landscapes-for-photography/"
+DEFAULT_TEST_URL="https://cheerlives.com/discover-22-fabulous-pink-nail-styles-youll-love/"
 TEST_URL="${2:-$DEFAULT_TEST_URL}"
 COMMAND="${1:-}"
 

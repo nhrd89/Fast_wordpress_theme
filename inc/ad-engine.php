@@ -96,7 +96,7 @@ function pl_ad_settings() {
 }
 
 /**
- * One-time migration: replace cheerfultalks.com slot names with Ad.Plus-* in saved DB option.
+ * One-time migration: replace legacy slot names with Ad.Plus-* in saved DB option.
  */
 function pl_ad_migrate_slot_names() {
 	$saved = get_option( 'pl_ad_settings', array() );
@@ -115,7 +115,7 @@ function pl_ad_migrate_slot_names() {
 	);
 
 	foreach ( $map as $key => $new_val ) {
-		if ( isset( $saved[ $key ] ) && strpos( $saved[ $key ], 'cheerfultalks' ) !== false ) {
+		if ( isset( $saved[ $key ] ) && strpos( $saved[ $key ], 'Ad.Plus' ) === false ) {
 			$saved[ $key ] = $new_val;
 			$dirty = true;
 		}

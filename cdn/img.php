@@ -5,10 +5,10 @@
  * Deploy to: myquickurl.com/public_html/img.php
  *
  * URL format:
- *   img.php?src=cheerfultalks.com/path/image.webp&w=720&q=80
+ *   img.php?src=cheerlives.com/path/image.webp&w=720&q=80
  *
  * Clean URL (via .htaccess):
- *   /img/cheerfultalks.com/path/image.webp?w=720&q=80
+ *   /img/cheerlives.com/path/image.webp?w=720&q=80
  *
  * Source resolution order:
  *   1. Local file: public_html/{src}
@@ -31,7 +31,7 @@ define( 'IMG_ALLOWED_EXTENSIONS', array( 'jpg', 'jpeg', 'png', 'webp', 'gif' ) )
 define( 'IMG_MIRROR_TTL', 7 * 24 * 3600 ); // 7 days before re-fetch.
 
 // Domains allowed for remote proxy fetching.
-$PROXY_DOMAINS = array( 'cheerfultalks.com' );
+$PROXY_DOMAINS = array( 'cheerlives.com' );
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -221,7 +221,7 @@ $output_mime = ext_to_mime( $output_ext );
 // ── Cache path ─────────────────────────────────────────────────
 
 $filename    = pathinfo( $src, PATHINFO_FILENAME );
-$cache_subdir = dirname( $src ); // e.g. cheerfultalks.com/folder
+$cache_subdir = dirname( $src ); // e.g. cheerlives.com/folder
 $size_key    = $w . 'x' . $h;
 $cache_name  = $filename . '.' . $output_ext;
 $cache_path  = IMG_CACHE_DIR . $cache_subdir . '/' . $size_key . '/' . $cache_name;

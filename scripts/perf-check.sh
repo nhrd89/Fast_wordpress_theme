@@ -16,7 +16,7 @@ echo "  PinLightning Performance Budget Check"
 echo "========================================="
 
 URLS=(
-    "https://cheerfultalks.com/chic-comfort-19-outfits-to-rock-your-linen-pants/"
+    "https://cheerlives.com/discover-22-fabulous-pink-nail-styles-youll-love/"
 )
 
 FAILED=0

@@ -11,12 +11,11 @@
 - **Triggers:** push to `main` or `claude/setup-pinlightning-theme-5lwUG`
 - **Build:** `npm install` → `npm run build` (lightningcss + terser)
 - **Deploy method:** rsync over SSH (sshpass) to Hostinger
-- **Two sites deployed in sequence:**
-  1. **cheerfultalks.com** — primary site
-  2. **cheerlives.com** — secondary site
+- **Site deployed:**
+  1. **cheerlives.com** — production site
 - **Post-deploy:**
   - Flush cache via `POST /wp-json/pinlightning/v1/flush-cache` with `X-Cache-Secret` header
-  - PageSpeed Insights API (mobile + desktop) for both sites
+  - PageSpeed Insights API (mobile + desktop) for cheerlives.com
   - Screenshots saved as artifacts (30-day retention)
   - Active plugin lists captured via WP REST API
   - Performance budget check via `scripts/perf-check.sh`
