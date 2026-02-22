@@ -114,6 +114,7 @@ var state = {
 	totalFilled: 0,
 	totalEmpty: 0,
 	totalUnfilled: 0,
+	viewportAdsInjected: 0,
 
 	// Pause refresh.
 	scrollPauseTimer: null,
@@ -273,8 +274,7 @@ function openGate(timeOnly) {
 		state.anchors.push(allAnchors[i]);
 	}
 
-	// Activate nav and sidebar ads immediately.
-	activateStaticAds();
+	// Nav + sidebar already handled by initViewportAds() at 1s — no activateStaticAds() call.
 
 	if (debug) console.log('[SmartAds] Gate OPEN via ' + (timeOnly ? 'TIME-ONLY (non-scroller)' : 'scroll+time') + '. Content anchors:', state.anchors.length);
 
@@ -305,29 +305,58 @@ function injectFirstVisibleAd() {
 }
 
 /* ================================================================
- * MODULE 7: STATIC ADS (Nav + Sidebar)
+ * MODULE 7: VIEWPORT ADS — Above-the-Fold, Bypass Gate
  * ================================================================ */
 
-function activateStaticAds() {
-	var statics = document.querySelectorAll('.ad-anchor[data-location="nav"], .ad-anchor[data-location="sidebar-top"], .ad-anchor[data-location="sidebar-bottom"]');
-	for (var i = 0; i < statics.length; i++) {
-		var anchor = statics[i];
-		var loc = anchor.getAttribute('data-location') || '';
-
-		// Skip sidebar ads on non-desktop (sidebar is hidden/zero-width below 1024px).
-		if (window.innerWidth < 1024 && loc.indexOf('sidebar') === 0) continue;
-
-		// Skip CSS-hidden nav anchors (device targeting).
-		if (window.getComputedStyle(anchor).display === 'none') continue;
-
-		var adChoice = selectAdSize(anchor);
+/**
+ * Inject ads visible in the initial viewport at 1s after load.
+ * These bypass the engagement gate entirely — they're above the fold
+ * and will be seen regardless of scroll behavior.
+ *
+ * Called via setTimeout(initViewportAds, 1000) from init().
+ */
+function initViewportAds() {
+	// Nav ad — device-targeted, always inject.
+	var navAnchors = document.querySelectorAll('.ad-anchor[data-location="nav"]');
+	for (var i = 0; i < navAnchors.length; i++) {
+		var nav = navAnchors[i];
+		if (nav.classList.contains('ad-active')) continue;
+		if (window.getComputedStyle(nav).display === 'none') continue;
+		var adChoice = selectAdSize(nav);
 		if (adChoice) {
-			injectAd(anchor, adChoice);
-			// Remove from content anchors list.
-			var idx = state.anchors.indexOf(anchor);
-			if (idx > -1) state.anchors.splice(idx, 1);
+			injectAd(nav, adChoice);
+			state.viewportAdsInjected++;
 		}
 	}
+
+	// Sidebar ads — desktop only (>= 1024px).
+	if (isDesktop) {
+		var sidebarAnchors = document.querySelectorAll('.ad-anchor[data-location="sidebar-top"], .ad-anchor[data-location="sidebar-bottom"]');
+		for (var s = 0; s < sidebarAnchors.length; s++) {
+			var sb = sidebarAnchors[s];
+			if (sb.classList.contains('ad-active')) continue;
+			var sbChoice = selectAdSize(sb);
+			if (sbChoice) {
+				injectAd(sb, sbChoice);
+				state.viewportAdsInjected++;
+			}
+		}
+	}
+
+	// First content anchor currently in viewport — inject 300x250.
+	var contentAnchors = document.querySelectorAll('.ad-anchor:not([data-location="nav"]):not([data-location="sidebar-top"]):not([data-location="sidebar-bottom"])');
+	for (var c = 0; c < contentAnchors.length; c++) {
+		var anchor = contentAnchors[c];
+		if (anchor.classList.contains('ad-active')) continue;
+		var rect = anchor.getBoundingClientRect();
+		if (rect.top > 0 && rect.top < window.innerHeight) {
+			injectAd(anchor, { size: [300, 250], slot: 'Ad.Plus-300x250' });
+			state.viewportAdsInjected++;
+			break; // Only first one.
+		}
+	}
+
+	if (debug) console.log('[SmartAds] Viewport ads injected:', state.viewportAdsInjected);
 }
 
 /* ================================================================
@@ -336,10 +365,16 @@ function activateStaticAds() {
 
 function evaluateInjection() {
 	if (!state.gateOpen) return;
-	if (state.nextAnchorIndex >= state.anchors.length) return;
+	if (state.nextAnchorIndex >= state.anchors.length) {
+		if (debug) console.log('[SmartAds] eval: no anchors remaining');
+		return;
+	}
 
 	// Fast-scanners get zero in-content ads — 0% viewability at high speed.
-	if (state.pattern === 'fast-scanner') return;
+	if (state.pattern === 'fast-scanner') {
+		if (debug) console.log('[SmartAds] eval: SKIP — fast-scanner pattern');
+		return;
+	}
 
 	var now = Date.now();
 
@@ -349,18 +384,28 @@ function evaluateInjection() {
 		var timeSinceInjection = now - lastAd.injectedAt;
 
 		if (!lastAd.viewable && timeSinceInjection < VIEWABILITY_WAIT_MS) {
+			if (debug) console.log('[SmartAds] eval: SKIP — waiting viewability (' + Math.round((VIEWABILITY_WAIT_MS - timeSinceInjection) / 1000) + 's left)');
 			return;
 		}
 	}
 
 	// Condition 2: Minimum time between injections.
-	if (now - state.lastInjectionTime < MIN_TIME_BETWEEN_ADS_MS) return;
+	if (now - state.lastInjectionTime < MIN_TIME_BETWEEN_ADS_MS) {
+		if (debug) console.log('[SmartAds] eval: SKIP — cooldown (' + Math.round((MIN_TIME_BETWEEN_ADS_MS - (now - state.lastInjectionTime)) / 1000) + 's left)');
+		return;
+	}
 
 	// Condition 3: Minimum distance.
-	if (Math.abs(window.scrollY - state.lastInjectionY) < MIN_DISTANCE_PX) return;
+	if (Math.abs(window.scrollY - state.lastInjectionY) < MIN_DISTANCE_PX) {
+		if (debug) console.log('[SmartAds] eval: SKIP — too close (' + Math.round(Math.abs(window.scrollY - state.lastInjectionY)) + '/' + MIN_DISTANCE_PX + 'px)');
+		return;
+	}
 
 	// Condition 4: Speed check.
-	if (state.scrollSpeed > MAX_SPEED_FOR_INJECT) return;
+	if (state.scrollSpeed > MAX_SPEED_FOR_INJECT) {
+		if (debug) console.log('[SmartAds] eval: SKIP — speed ' + state.scrollSpeed + 'px/s > ' + MAX_SPEED_FOR_INJECT);
+		return;
+	}
 
 	// Condition 5: Find the right anchor.
 	var viewportBottom = window.scrollY + window.innerHeight;
@@ -369,6 +414,13 @@ function evaluateInjection() {
 	var targetAnchor = null;
 	for (var i = state.nextAnchorIndex; i < state.anchors.length; i++) {
 		var anchor = state.anchors[i];
+
+		// Skip anchors already activated by initViewportAds or previous injection.
+		if (anchor.classList.contains('ad-active')) {
+			state.nextAnchorIndex = i + 1;
+			continue;
+		}
+
 		var anchorY = anchor.getBoundingClientRect().top + window.scrollY;
 
 		// Skip anchors we've already passed significantly.
@@ -388,7 +440,10 @@ function evaluateInjection() {
 		if (anchorY > targetY) break;
 	}
 
-	if (!targetAnchor) return;
+	if (!targetAnchor) {
+		if (debug) console.log('[SmartAds] eval: SKIP — no anchor in range (scrollY=' + Math.round(window.scrollY) + ', targetY=' + Math.round(targetY) + ')');
+		return;
+	}
 
 	// Check for pause banner position.
 	if (checkPauseBannerInjection(targetAnchor)) {
@@ -398,9 +453,13 @@ function evaluateInjection() {
 
 	// Condition 6: Select size based on behavior.
 	var adChoice = selectAdSize(targetAnchor);
-	if (!adChoice) return;
+	if (!adChoice) {
+		if (debug) console.log('[SmartAds] eval: SKIP — no ad size for speed ' + state.scrollSpeed + 'px/s');
+		return;
+	}
 
 	// ALL CONDITIONS MET — INJECT.
+	if (debug) console.log('[SmartAds] eval: INJECT at', targetAnchor.getAttribute('data-position'), adChoice.slot);
 	injectAd(targetAnchor, adChoice);
 }
 
@@ -662,7 +721,7 @@ function initOverlays() {
 				top.textContent = 'TOP ANCHOR \u2014 Ad.Plus-Anchor-Small';
 				document.body.appendChild(top);
 			}
-		}, 2000);
+		}, 1000);
 		return;
 	}
 
@@ -707,7 +766,7 @@ function initOverlays() {
 		if (debug) console.log('[SmartAds] GPT ready, overlays initialized');
 	});
 
-	// Bottom Anchor — 2s delay.
+	// Bottom Anchor — 1s delay.
 	setTimeout(function() {
 		if (!cfg.fmtAnchor) return;
 		anchorShown = true;
@@ -732,9 +791,9 @@ function initOverlays() {
 			}
 		});
 		if (debug) console.log('[SmartAds] Bottom anchor shown');
-	}, 2000);
+	}, 1000);
 
-	// Top Anchor — 2s delay.
+	// Top Anchor — 1s delay.
 	setTimeout(function() {
 		if (!cfg.fmtTopAnchor) return;
 		topAnchorShown = true;
@@ -755,7 +814,7 @@ function initOverlays() {
 			}
 		});
 		if (debug) console.log('[SmartAds] Top anchor shown');
-	}, 2000);
+	}, 1000);
 }
 
 /* ================================================================
@@ -979,6 +1038,7 @@ function buildSessionReport() {
 		gateOpen: state.gateOpen,
 
 		// Ad injection stats.
+		viewportAdsInjected: state.viewportAdsInjected,
 		totalInjected: state.totalInjected,
 		totalViewable: state.totalViewable,
 		// Viewability = viewable / filled (not viewable / injected).
@@ -1104,6 +1164,9 @@ function init() {
 
 	// Init overlays (not gated, not scroll-driven).
 	initOverlays();
+
+	// Viewport ads — above-the-fold, bypass gate, 1s after load.
+	setTimeout(initViewportAds, 1000);
 
 	// Init pause refresh.
 	initPauseRefresh();
