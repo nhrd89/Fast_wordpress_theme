@@ -99,6 +99,7 @@ function pl_ad_settings() {
 	}
 	$saved  = get_option( 'pl_ad_settings', array() );
 	$cached = wp_parse_args( $saved, pl_ad_defaults() );
+	$cached['dummy_mode'] = true; // EMERGENCY: force dummy until viewability fixed
 	return $cached;
 }
 
