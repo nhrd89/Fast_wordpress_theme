@@ -63,6 +63,8 @@ function pl_ad_empty_day_stats() {
 		'anchor_total_impressions'   => 0,
 		'anchor_total_viewable'      => 0,
 		'anchor_total_visible_ms'    => 0,
+		'top_anchor_fired'           => 0,
+		'top_anchor_filled'          => 0,
 		'interstitial_fired'         => 0,
 		'interstitial_viewable'      => 0,
 		'interstitial_filled'        => 0,
@@ -71,6 +73,12 @@ function pl_ad_empty_day_stats() {
 		'pause_viewable'             => 0,
 		'pause_filled'               => 0,
 		'pause_total_visible_ms'     => 0,
+
+		// V4: pause banners (contentPause) + refresh.
+		'total_pause_banners_shown'     => 0,
+		'total_pause_banners_continued' => 0,
+		'total_refresh_count'           => 0,
+		'total_refresh_impressions'     => 0,
 
 		// Passback.
 		'waldo_total_requested' => 0,
@@ -199,6 +207,20 @@ function pl_ad_aggregate_session( $session ) {
 			$stats['pause_filled']++;
 		}
 	}
+
+	// V4: Top Anchor.
+	if ( ( $session['top_anchor_status'] ?? '' ) !== 'off' ) {
+		$stats['top_anchor_fired']++;
+		if ( ! empty( $session['top_anchor_filled'] ) ) {
+			$stats['top_anchor_filled']++;
+		}
+	}
+
+	// V4: Pause banners (contentPause) + refresh.
+	$stats['total_pause_banners_shown']     += intval( $session['pause_banners_shown'] ?? 0 );
+	$stats['total_pause_banners_continued'] += intval( $session['pause_banners_continued'] ?? 0 );
+	$stats['total_refresh_count']           += intval( $session['refresh_count'] ?? 0 );
+	$stats['total_refresh_impressions']     += intval( $session['refresh_impressions'] ?? 0 );
 
 	// --- Passback (Newor Media) ---
 	$stats['waldo_total_requested'] += intval( $session['waldo_requested'] ?? 0 );

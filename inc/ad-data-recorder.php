@@ -101,6 +101,7 @@ function pinlightning_record_ad_data($request) {
         'anchor_status' => sanitize_text_field($body['anchorStatus'] ?? 'off'),
         'interstitial_status' => sanitize_text_field($body['interstitialStatus'] ?? 'off'),
         'pause_status' => sanitize_text_field($body['pauseStatus'] ?? 'off'),
+        'top_anchor_status' => sanitize_text_field($body['topAnchorStatus'] ?? 'off'),
         // Retry stats.
         'retries_used' => intval($body['retriesUsed'] ?? 0),
         'retries_successful' => intval($body['retriesSuccessful'] ?? 0),
@@ -112,7 +113,13 @@ function pinlightning_record_ad_data($request) {
         'anchor_filled' => !empty($body['anchorFilled']),
         'interstitial_filled' => !empty($body['interstitialFilled']),
         'pause_filled' => !empty($body['pauseFilled']),
+        'top_anchor_filled' => !empty($body['topAnchorFilled']),
         'zones_activated' => intval($body['zonesActivated'] ?? 0),
+        // V4: pause banners + refresh.
+        'pause_banners_shown' => intval($body['pauseBannersShown'] ?? 0),
+        'pause_banners_continued' => intval($body['pauseBannersContinued'] ?? 0),
+        'refresh_count' => intval($body['refreshCount'] ?? 0),
+        'refresh_impressions' => intval($body['refreshImpressions'] ?? 0),
         'referrer' => sanitize_text_field($body['referrer'] ?? ''),
         'language' => sanitize_text_field($body['language'] ?? ''),
         // Click tracking.
@@ -208,6 +215,7 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['anchor_status']       = ! empty( $session['anchor_status'] ) && $session['anchor_status'] !== 'off' ? $session['anchor_status'] : ( $existing['anchor_status'] ?? 'off' );
         $existing['interstitial_status'] = ! empty( $session['interstitial_status'] ) && $session['interstitial_status'] !== 'off' ? $session['interstitial_status'] : ( $existing['interstitial_status'] ?? 'off' );
         $existing['pause_status']        = ! empty( $session['pause_status'] ) && $session['pause_status'] !== 'off' ? $session['pause_status'] : ( $existing['pause_status'] ?? 'off' );
+        $existing['top_anchor_status']   = ! empty( $session['top_anchor_status'] ) && $session['top_anchor_status'] !== 'off' ? $session['top_anchor_status'] : ( $existing['top_anchor_status'] ?? 'off' );
         // Merge retry stats (ad-track has final values).
         $existing['total_retries']      = max( $existing['total_retries'] ?? 0, $session['retries_used'] ?? 0 );
         $existing['retries_successful'] = max( $existing['retries_successful'] ?? 0, $session['retries_successful'] ?? 0 );
@@ -219,7 +227,13 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['anchor_filled']       = ! empty( $session['anchor_filled'] ) || ! empty( $existing['anchor_filled'] );
         $existing['interstitial_filled'] = ! empty( $session['interstitial_filled'] ) || ! empty( $existing['interstitial_filled'] );
         $existing['pause_filled']        = ! empty( $session['pause_filled'] ) || ! empty( $existing['pause_filled'] );
+        $existing['top_anchor_filled']   = ! empty( $session['top_anchor_filled'] ) || ! empty( $existing['top_anchor_filled'] );
         $existing['zones_activated']     = max( $existing['zones_activated'] ?? 0, $session['zones_activated'] ?? 0 );
+        // V4: pause banners + refresh (ad-track has final values).
+        $existing['pause_banners_shown']     = max( $existing['pause_banners_shown'] ?? 0, $session['pause_banners_shown'] ?? 0 );
+        $existing['pause_banners_continued'] = max( $existing['pause_banners_continued'] ?? 0, $session['pause_banners_continued'] ?? 0 );
+        $existing['refresh_count']           = max( $existing['refresh_count'] ?? 0, $session['refresh_count'] ?? 0 );
+        $existing['refresh_impressions']     = max( $existing['refresh_impressions'] ?? 0, $session['refresh_impressions'] ?? 0 );
         // Click tracking (ad-track has final values).
         $existing['total_display_clicks'] = max( $existing['total_display_clicks'] ?? 0, $session['total_display_clicks'] ?? 0 );
         $existing['anchor_clicks']        = max( $existing['anchor_clicks'] ?? 0, $session['anchor_clicks'] ?? 0 );
@@ -273,6 +287,7 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'anchor_status'       => $session['anchor_status'] ?? 'off',
         'interstitial_status' => $session['interstitial_status'] ?? 'off',
         'pause_status'        => $session['pause_status'] ?? 'off',
+        'top_anchor_status'   => $session['top_anchor_status'] ?? 'off',
         // Retry stats.
         'total_retries'      => $session['retries_used'] ?? 0,
         'retries_successful' => $session['retries_successful'] ?? 0,
@@ -284,7 +299,13 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'anchor_filled'        => $session['anchor_filled'] ?? false,
         'interstitial_filled'  => $session['interstitial_filled'] ?? false,
         'pause_filled'         => $session['pause_filled'] ?? false,
+        'top_anchor_filled'    => $session['top_anchor_filled'] ?? false,
         'zones_activated'      => $session['zones_activated'] ?? 0,
+        // V4: pause banners + refresh.
+        'pause_banners_shown'     => $session['pause_banners_shown'] ?? 0,
+        'pause_banners_continued' => $session['pause_banners_continued'] ?? 0,
+        'refresh_count'           => $session['refresh_count'] ?? 0,
+        'refresh_impressions'     => $session['refresh_impressions'] ?? 0,
         // Click tracking.
         'total_display_clicks' => $session['total_display_clicks'] ?? 0,
         'anchor_clicks'        => $session['anchor_clicks'] ?? 0,
