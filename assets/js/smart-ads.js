@@ -82,6 +82,7 @@ var state = {
 	// Gate.
 	gateOpen: false,
 	gateOpenTime: 0,
+	gateViaTimeOnly: false,
 
 	// Visitor classification.
 	pattern: 'unknown',
@@ -246,22 +247,60 @@ function checkGate() {
 	var scrollOk = state.maxScrollPct >= 8;
 	var timeOk = state.timeOnPage >= 3;
 
+	// Path A: scroll + time (normal scrolling visitor).
 	if (scrollOk && timeOk) {
-		state.gateOpen = true;
-		state.gateOpenTime = Date.now();
-
-		// Discover all content anchors in DOM order.
-		var allAnchors = document.querySelectorAll('.ad-anchor:not([data-location="nav"]):not([data-location="sidebar-top"]):not([data-location="sidebar-bottom"])');
-		state.anchors = [];
-		for (var i = 0; i < allAnchors.length; i++) {
-			state.anchors.push(allAnchors[i]);
-		}
-
-		// Activate nav and sidebar ads immediately.
-		activateStaticAds();
-
-		if (debug) console.log('[SmartAds] Gate OPEN. Content anchors:', state.anchors.length);
+		openGate(false);
+		return;
 	}
+
+	// Path B: time-only (engaged non-scroller — e.g. Pinterest visitor reading intro).
+	// 8s on page with <1% scroll = clearly reading but not scrolling.
+	if (state.timeOnPage >= 8 && state.maxScrollPct < 1) {
+		openGate(true);
+	}
+}
+
+function openGate(timeOnly) {
+	state.gateOpen = true;
+	state.gateOpenTime = Date.now();
+	state.gateViaTimeOnly = timeOnly;
+
+	// Discover all content anchors in DOM order.
+	var allAnchors = document.querySelectorAll('.ad-anchor:not([data-location="nav"]):not([data-location="sidebar-top"]):not([data-location="sidebar-bottom"])');
+	state.anchors = [];
+	for (var i = 0; i < allAnchors.length; i++) {
+		state.anchors.push(allAnchors[i]);
+	}
+
+	// Activate nav and sidebar ads immediately.
+	activateStaticAds();
+
+	if (debug) console.log('[SmartAds] Gate OPEN via ' + (timeOnly ? 'TIME-ONLY (non-scroller)' : 'scroll+time') + '. Content anchors:', state.anchors.length);
+
+	// Path B: immediately inject one ad at the first visible anchor.
+	if (timeOnly && state.totalInjected === 0) {
+		injectFirstVisibleAd();
+	}
+}
+
+/**
+ * Non-scroller path: find the first anchor currently visible in the viewport
+ * and inject a 300x250 (highest fill rate) immediately.
+ */
+function injectFirstVisibleAd() {
+	for (var i = 0; i < state.anchors.length; i++) {
+		var anchor = state.anchors[i];
+		var rect = anchor.getBoundingClientRect();
+		// Anchor is in the viewport (top is below page top, above fold).
+		if (rect.top > 0 && rect.top < window.innerHeight) {
+			var adChoice = { size: [300, 250], slot: 'Ad.Plus-300x250' };
+			state.nextAnchorIndex = i + 1;
+			injectAd(anchor, adChoice);
+			if (debug) console.log('[SmartAds] Non-scroller: injected 300x250 at', anchor.getAttribute('data-position'));
+			return;
+		}
+	}
+	if (debug) console.log('[SmartAds] Non-scroller: no visible anchor found in viewport');
 }
 
 /* ================================================================
