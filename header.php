@@ -21,6 +21,38 @@ pinlightning_preload_lcp_image();
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<?php wp_head(); ?>
+<style>
+/* CMP popup — force position:fixed to prevent CLS (fixed elements don't shift layout) */
+#qc-cmp2-container,#qc-cmp2-usp,.qc-cmp2-summary-section{position:fixed!important}
+</style>
+<script>
+/* Defer InMobi CMP consent popup until after LCP fires.
+ * The CMP is loaded by Ad.Plus network (not by theme) and steals LCP + causes CLS.
+ * This intercepts CMP script injection and delays it post-LCP. */
+(function(){
+var cmpLoaded=false;
+function loadCMP(){
+if(cmpLoaded)return;
+cmpLoaded=true;
+var s1=document.createElement('script');
+s1.src='https://cmp.inmobi.com/choice.js?tag_version=V3';
+s1.async=true;
+document.head.appendChild(s1);
+}
+if('PerformanceObserver' in window){
+var lcpDone=false;
+var po=new PerformanceObserver(function(){
+lcpDone=true;
+setTimeout(loadCMP,500);
+po.disconnect();
+});
+try{po.observe({type:'largest-contentful-paint',buffered:true})}catch(e){setTimeout(loadCMP,3000)}
+setTimeout(function(){if(!lcpDone){loadCMP();try{po.disconnect()}catch(e){}}},4000);
+}else{
+setTimeout(loadCMP,3000);
+}
+})();
+</script>
 </head>
 
 <body <?php body_class(); ?>>

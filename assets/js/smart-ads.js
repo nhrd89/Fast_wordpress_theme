@@ -1516,21 +1516,51 @@ function init() {
 	}
 }
 
-// Boot: wait for DOM ready + requestIdleCallback (zero TBT).
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', function() {
-		if ('requestIdleCallback' in window) {
-			requestIdleCallback(init);
-		} else {
-			setTimeout(init, 200);
-		}
-	});
-} else {
+// Boot: wait for LCP to fire before loading any ad scripts.
+// This prevents GPT + ad partners from blocking main thread during LCP.
+// Safety net: if LCP doesn't fire in 3s, init anyway (don't lose revenue).
+var _adsBooted = false;
+function bootAfterLCP() {
+	if (_adsBooted) return;
+	_adsBooted = true;
+	// Still respect idle time — zero TBT.
 	if ('requestIdleCallback' in window) {
 		requestIdleCallback(init);
 	} else {
-		setTimeout(init, 200);
+		setTimeout(init, 50);
 	}
+}
+
+function waitForDOMThenLCP() {
+	if ('PerformanceObserver' in window) {
+		var lcpDone = false;
+		var po = new PerformanceObserver(function() {
+			lcpDone = true;
+			setTimeout(bootAfterLCP, 200);
+			po.disconnect();
+		});
+		try {
+			po.observe({ type: 'largest-contentful-paint', buffered: true });
+		} catch (e) {
+			setTimeout(bootAfterLCP, 2500);
+		}
+		// Safety: if LCP doesn't fire in 3s, init anyway.
+		setTimeout(function() {
+			if (!lcpDone) {
+				bootAfterLCP();
+				try { po.disconnect(); } catch (e) {}
+			}
+		}, 3000);
+	} else {
+		// No PerformanceObserver — delay 2.5s.
+		setTimeout(bootAfterLCP, 2500);
+	}
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', waitForDOMThenLCP);
+} else {
+	waitForDOMThenLCP();
 }
 
 })();
