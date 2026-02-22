@@ -41,7 +41,7 @@ if (isDesktop && cfg.desktopEnabled === '0') return;
 // ─── Injection Constants ───
 var MIN_DISTANCE_PX = 400;          // minimum 400px between ads
 var MIN_TIME_BETWEEN_ADS_MS = 4000; // minimum 4 seconds between injections
-var MAX_SPEED_FOR_INJECT = 1200;    // don't inject if scrolling faster (px/s)
+var MAX_SPEED_FOR_INJECT = 500;     // don't inject if scrolling faster (px/s) — data: 0% viewability above 800
 var VIEWABILITY_WAIT_MS = 8000;     // wait max 8s for previous ad viewability
 var VIEWABLE_RATIO = 0.5;           // IAB standard: 50% visible
 var VIEWABLE_MS = 1000;             // for 1 continuous second
@@ -113,6 +113,7 @@ var state = {
 	totalRequested: 0,
 	totalFilled: 0,
 	totalEmpty: 0,
+	totalUnfilled: 0,
 
 	// Pause refresh.
 	scrollPauseTimer: null,
@@ -311,9 +312,13 @@ function activateStaticAds() {
 	var statics = document.querySelectorAll('.ad-anchor[data-location="nav"], .ad-anchor[data-location="sidebar-top"], .ad-anchor[data-location="sidebar-bottom"]');
 	for (var i = 0; i < statics.length; i++) {
 		var anchor = statics[i];
-		// Skip CSS-hidden anchors (device targeting).
+		var loc = anchor.getAttribute('data-location') || '';
+
+		// Skip sidebar ads on non-desktop (sidebar is hidden/zero-width below 1024px).
+		if (window.innerWidth < 1024 && loc.indexOf('sidebar') === 0) continue;
+
+		// Skip CSS-hidden nav anchors (device targeting).
 		if (window.getComputedStyle(anchor).display === 'none') continue;
-		if (anchor.offsetParent === null && anchor.getAttribute('data-location') === 'nav') continue;
 
 		var adChoice = selectAdSize(anchor);
 		if (adChoice) {
@@ -332,6 +337,9 @@ function activateStaticAds() {
 function evaluateInjection() {
 	if (!state.gateOpen) return;
 	if (state.nextAnchorIndex >= state.anchors.length) return;
+
+	// Fast-scanners get zero in-content ads — 0% viewability at high speed.
+	if (state.pattern === 'fast-scanner') return;
 
 	var now = Date.now();
 
@@ -772,11 +780,17 @@ function onSlotRenderEnded(event) {
 	if (matchedAd) {
 		if (event.isEmpty) {
 			state.totalEmpty++;
-			// Collapse empty ad.
+			state.totalUnfilled++;
+			// Collapse empty ad and stop tracking viewability.
 			matchedAd.zoneEl.style.display = 'none';
 			matchedAd.anchor.classList.remove('ad-active');
 			matchedAd.filled = false;
-			if (debug) console.log('[SmartAds] Fill: ' + divId + ' NO-FILL — collapsed');
+			matchedAd.discarded = true;
+			if (matchedAd._observer) {
+				matchedAd._observer.disconnect();
+				matchedAd._observer = null;
+			}
+			if (debug) console.log('[SmartAds] Fill: ' + divId + ' NO-FILL — collapsed, excluded from viewability');
 		} else {
 			state.totalFilled++;
 			matchedAd.filled = true;
@@ -927,6 +941,8 @@ function buildSessionReport() {
 	var ads = [];
 	for (var j = 0; j < state.injectedAds.length; j++) {
 		var a = state.injectedAds[j];
+		// Skip unfilled/discarded slots — they don't count toward performance.
+		if (a.discarded) continue;
 		ads.push({
 			zoneId: a.zoneId,
 			slot: a.slot,
@@ -965,7 +981,9 @@ function buildSessionReport() {
 		// Ad injection stats.
 		totalInjected: state.totalInjected,
 		totalViewable: state.totalViewable,
-		viewabilityRate: state.totalInjected > 0 ? Math.round(state.totalViewable / state.totalInjected * 100) : 0,
+		// Viewability = viewable / filled (not viewable / injected).
+		// Ad.Plus sees "of the ads that filled, X% were viewable".
+		viewabilityRate: state.totalFilled > 0 ? Math.round(state.totalViewable / state.totalFilled * 100) : 0,
 		totalRefreshes: state.totalRefreshes,
 		pauseBannersInjected: state.pauseBannersInjected,
 		videoInjected: state.videoInjected,
@@ -974,6 +992,7 @@ function buildSessionReport() {
 		totalRequested: state.totalRequested,
 		totalFilled: state.totalFilled,
 		totalEmpty: state.totalEmpty,
+		totalUnfilled: state.totalUnfilled,
 		fillRate: state.totalRequested > 0 ? Math.round(state.totalFilled / state.totalRequested * 100) : 0,
 
 		// Overlay status.
@@ -1112,7 +1131,7 @@ function init() {
 				gate: state.gateOpen,
 				injected: state.totalInjected,
 				viewable: state.totalViewable,
-				viewRate: state.totalInjected > 0 ? Math.round(state.totalViewable / state.totalInjected * 100) + '%' : 'n/a',
+				viewRate: state.totalFilled > 0 ? Math.round(state.totalViewable / state.totalFilled * 100) + '%' : 'n/a',
 				speed: state.scrollSpeed + 'px/s',
 				pattern: state.pattern,
 				scroll: Math.round(state.maxScrollPct) + '%',
