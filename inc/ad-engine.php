@@ -871,7 +871,10 @@ function pinlightning_ad_zone( $zone_id, $mobile_size = '300x250', $desktop_size
  * ================================================================ */
 
 /**
- * Pass ad engine settings to the frontend JS via wp_localize_script.
+ * Output ad engine config as inline global variable.
+ *
+ * smart-ads.js is loaded post-window.load via pinlightning_postload_scripts().
+ * The plAds global must be available before the script executes.
  */
 function pinlightning_ads_enqueue() {
 	$s = pl_ad_settings();
@@ -880,7 +883,7 @@ function pinlightning_ads_enqueue() {
 		return;
 	}
 
-	wp_localize_script( 'pinlightning-smart-ads', 'plAds', array(
+	$config = array(
 		// Mode.
 		'dummy'           => (bool) $s['dummy_mode'],
 		'debug'           => (bool) $s['debug_overlay'] || isset( $_GET['pl_debug'] ) || current_user_can( 'manage_options' ),
@@ -937,6 +940,11 @@ function pinlightning_ads_enqueue() {
 		'nonce'             => wp_create_nonce( 'wp_rest' ),
 		'postId'            => get_the_ID(),
 		'postSlug'          => get_post_field( 'post_name', get_the_ID() ),
-	) );
+	);
+
+	// Output as inline global in footer (before post-load scripts at p100).
+	add_action( 'wp_footer', function() use ( $config ) {
+		echo '<script>var plAds=' . wp_json_encode( $config ) . ';</script>' . "\n";
+	}, 97 );
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_ads_enqueue', 20 );

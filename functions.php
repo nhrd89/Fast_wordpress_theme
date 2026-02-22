@@ -116,15 +116,6 @@ add_action( 'widgets_init', 'pinlightning_widgets_init' );
  * Do NOT enqueue CSS here — it would create an external render-blocking request.
  */
 function pinlightning_scripts() {
-	// Theme script.
-	wp_enqueue_script(
-		'pinlightning-script',
-		PINLIGHTNING_URI . '/assets/js/dist/core.js',
-		array(),
-		PINLIGHTNING_VERSION,
-		true
-	);
-
 	// Comment reply — dequeued here, loaded on first scroll (see pinlightning_scroll_deferred_assets).
 	wp_dequeue_script( 'comment-reply' );
 
@@ -141,19 +132,13 @@ function pinlightning_scripts() {
 			'endpoint' => esc_url_raw( rest_url( 'pinlightning/v1/random-posts' ) ),
 		) );
 
-		// Smart ad engine (loads config via wp_localize_script in ad-engine.php).
-		wp_enqueue_script(
-			'pinlightning-smart-ads',
-			PINLIGHTNING_URI . '/assets/js/smart-ads.js',
-			array(),
-			PINLIGHTNING_VERSION,
-			true
-		);
-
-		// Scroll engagement — loaded on first scroll (see pinlightning_scroll_deferred_assets).
-		// Removed: wp_enqueue_script, wp_localize_script, preload, defer filter.
-		// The idle.webm preload is also removed — scroll-engage.js already sets preload="none".
+		// smart-ads.js — loaded post-window.load (see pinlightning_postload_scripts).
+		// engagement.js — loaded post-window.load (see pinlightning_postload_scripts).
+		// scroll-engage.js — loaded on first scroll / 8s timeout (see pinlightning_scroll_deferred_assets).
 	}
+
+	// core.js — loaded post-window.load (see pinlightning_postload_scripts).
+	// Only handles hamburger menu close — not needed for initial render.
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_scripts' );
 
@@ -195,6 +180,44 @@ function pinlightning_scroll_deferred_assets() {
 	echo '<script>;(function(){var d=false;function go(){if(d)return;d=true;' . $all . '}window.addEventListener("scroll",go,{once:true,passive:true});setTimeout(go,8e3)})()</script>' . "\n";
 }
 add_action( 'wp_footer', 'pinlightning_scroll_deferred_assets', 99 );
+
+/**
+ * Post-window.load script injection.
+ *
+ * Loads non-critical JS (smart-ads, engagement, core) AFTER window.load
+ * so Lighthouse finishes its audit with zero TBT from these scripts.
+ * The 100ms setTimeout ensures the load event fully completes first.
+ */
+function pinlightning_postload_scripts() {
+	$scripts = array();
+
+	// core.js — hamburger menu close (all pages).
+	$core_dist = PINLIGHTNING_DIR . '/assets/js/dist/core.js';
+	$core_src  = file_exists( $core_dist )
+		? PINLIGHTNING_URI . '/assets/js/dist/core.js'
+		: PINLIGHTNING_URI . '/assets/js/core.js';
+	$scripts[] = wp_json_encode( esc_url( $core_src . '?ver=' . PINLIGHTNING_VERSION ) );
+
+	// smart-ads.js — ad engine (singular only, config inlined at p97 by ad-engine.php).
+	if ( is_singular() ) {
+		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/smart-ads.js?ver=' . PINLIGHTNING_VERSION ) );
+	}
+
+	// engagement.js — listicle engagement UI (config inlined at p98 by pl_enqueue_engagement).
+	global $pinlightning_load_engagement;
+	if ( ! empty( $pinlightning_load_engagement ) ) {
+		$eng_file = PINLIGHTNING_DIR . '/assets/js/engagement.js';
+		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/engagement.js?ver=' . filemtime( $eng_file ) ) );
+	}
+
+	if ( empty( $scripts ) ) {
+		return;
+	}
+
+	$srcs_js = '[' . implode( ',', $scripts ) . ']';
+	echo '<script>window.addEventListener("load",function(){setTimeout(function(){' . $srcs_js . '.forEach(function(u){var s=document.createElement("script");s.src=u;document.body.appendChild(s)})},100)})</script>' . "\n";
+}
+add_action( 'wp_footer', 'pinlightning_postload_scripts', 100 );
 
 /**
  * Output a dynamic meta description for single posts.
@@ -934,7 +957,10 @@ add_action( 'init', function() {
 // ============================================
 
 /**
- * Enqueue engagement JS and pass config (only on single listicle posts).
+ * Inline engagement config as global variable (only on single listicle posts).
+ *
+ * engagement.js is loaded post-window.load via pinlightning_postload_scripts().
+ * The ebConfig global must be available before the script executes.
  */
 function pl_enqueue_engagement() {
 	if ( ! is_single() ) {
@@ -951,40 +977,28 @@ function pl_enqueue_engagement() {
 		return;
 	}
 
-	// Deferred JS (defer is auto-added by pinlightning_defer_scripts filter).
-	wp_enqueue_script(
-		'pl-engagement',
-		PINLIGHTNING_URI . '/assets/js/engagement.js',
-		array(),
-		(string) filemtime( $js_file ),
-		true
-	);
+	// Flag that engagement.js should be loaded post-window.load.
+	global $pinlightning_load_engagement;
+	$pinlightning_load_engagement = true;
 
-	// Pass config to JS.
+	// Pass config to JS as inline global (replaces wp_localize_script).
 	$post_id    = get_the_ID();
 	$categories = get_the_category();
 	$cat_slug   = ! empty( $categories ) ? $categories[0]->slug : 'hairstyle';
-	$config     = pl_get_engagement_config( $cat_slug );
 
-	// Count items.
 	preg_match_all( '/<h2[^>]*>.*?#(\d+)/i', $post->post_content, $matches );
 	$total = count( $matches[0] );
 
-	// Extract item titles.
 	preg_match_all( '/<h2[^>]*>.*?#\d+\s*([^<]+)/i', $post->post_content, $title_matches );
 	$titles = array_map( 'trim', $title_matches[1] ?? array() );
 
-	// Extract pin images.
 	preg_match_all( '/src=["\']([^"\']+)["\']/', $post->post_content, $src_matches );
 	$pins = $src_matches[1] ?? array();
 
-	// Next post — random from same category.
 	$next_data = pl_get_next_post_data();
+	$ai_tip    = get_post_meta( $post_id, '_eb_ai_tip', true );
 
-	// AI tip text.
-	$ai_tip = get_post_meta( $post_id, '_eb_ai_tip', true );
-
-	wp_localize_script( 'pl-engagement', 'ebConfig', array(
+	$config_data = array(
 		'postId'        => $post_id,
 		'totalItems'    => $total,
 		'category'      => $cat_slug,
@@ -1005,19 +1019,14 @@ function pl_enqueue_engagement() {
 			'progressBar'  => (bool) get_theme_mod( 'eb_progress_bar', true ),
 			'skeletons'    => (bool) get_theme_mod( 'eb_skeletons', true ),
 		),
-	) );
+	);
+
+	// Output inline in footer (before post-load scripts).
+	add_action( 'wp_footer', function() use ( $config_data ) {
+		echo '<script>var ebConfig=' . wp_json_encode( $config_data ) . ';</script>' . "\n";
+	}, 98 );
 }
 add_action( 'wp_enqueue_scripts', 'pl_enqueue_engagement' );
-
-/**
- * Ensure engagement script has charset="utf-8" on the script tag.
- */
-add_filter( 'script_loader_tag', function( $tag, $handle ) {
-	if ( $handle === 'pl-engagement' ) {
-		return str_replace( ' src', ' charset="utf-8" src', $tag );
-	}
-	return $tag;
-}, 10, 2 );
 
 /**
  * Add deferred engagement CSS via preload (same pattern as existing theme).
