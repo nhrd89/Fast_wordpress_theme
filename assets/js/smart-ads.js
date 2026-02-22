@@ -672,7 +672,8 @@ function injectPauseBanner(anchorEl) {
 
 function trackAdViewability(adRecord) {
 	var el = adRecord.zoneEl;
-	var totalVisibleMs = 0;
+	// Accumulate directly on adRecord.visibleMs — no closure variable.
+	// This prevents desync with finalizeVisibility() which also writes adRecord.visibleMs.
 	adRecord._visibleStart = null;
 
 	if (!('IntersectionObserver' in window)) return;
@@ -688,32 +689,35 @@ function trackAdViewability(adRecord) {
 			el._viewRatio = ratio;
 
 			if (ratio >= VIEWABLE_RATIO) {
-				if (!adRecord._visibleStart) adRecord._visibleStart = Date.now();
+				if (!adRecord._visibleStart) {
+					adRecord._visibleStart = Date.now();
+					console.log('[SmartAds] IO:', adRecord.zoneId, 'VISIBLE ratio:', Math.round(ratio * 100) + '%', '_visibleStart:', adRecord._visibleStart);
+				}
 			} else {
 				if (adRecord._visibleStart) {
-					totalVisibleMs += Date.now() - adRecord._visibleStart;
+					var elapsed = Date.now() - adRecord._visibleStart;
+					adRecord.visibleMs += elapsed;
+					console.log('[SmartAds] IO:', adRecord.zoneId, 'HIDDEN ratio:', Math.round(ratio * 100) + '%', 'added:', elapsed + 'ms', 'total:', adRecord.visibleMs + 'ms');
 					adRecord._visibleStart = null;
 				}
 			}
 
-			// Update record.
-			adRecord.visibleMs = totalVisibleMs + (adRecord._visibleStart ? Date.now() - adRecord._visibleStart : 0);
-
 			// Check IAB viewability: 50% visible for 1+ second.
-			if (adRecord.visibleMs >= VIEWABLE_MS && !adRecord.viewable) {
+			var currentVisible = adRecord.visibleMs + (adRecord._visibleStart ? Date.now() - adRecord._visibleStart : 0);
+			if (currentVisible >= VIEWABLE_MS && !adRecord.viewable) {
 				adRecord.viewable = true;
 				state.totalViewable++;
-				if (debug) console.log('[SmartAds] Viewable:', adRecord.zoneId, Math.round(adRecord.visibleMs) + 'ms');
+				console.log('[SmartAds] Viewable:', adRecord.zoneId, Math.round(currentVisible) + 'ms');
 			}
 		}
 	}, {
-		threshold: [0, 0.25, 0.5, 0.75, 1.0]
+		threshold: [0, 0.1, 0.25, 0.5, 0.75, 1.0]
 	});
 
 	observer.observe(el);
 	adRecord._observer = observer;
 
-	// Retroactive check after GPT renders.
+	// Retroactive check after GPT renders — IO may miss initial render.
 	setTimeout(function() {
 		var rect = el.getBoundingClientRect();
 		var vpH = window.innerHeight;
@@ -725,9 +729,27 @@ function trackAdViewability(adRecord) {
 				adRecord._visibleStart = Date.now();
 				adRecord.maxRatio = Math.max(adRecord.maxRatio, r);
 				el._viewRatio = r;
+				console.log('[SmartAds] IO retroactive:', adRecord.zoneId, 'ratio:', Math.round(r * 100) + '%', 'elH:', Math.round(elH));
 			}
 		}
 	}, 500);
+
+	// Second retroactive check at 2s — some ads take longer to render.
+	setTimeout(function() {
+		if (adRecord._visibleStart || adRecord.visibleMs > 0) return; // Already tracking.
+		var rect = el.getBoundingClientRect();
+		var vpH = window.innerHeight;
+		if (rect.top < vpH && rect.bottom > 0 && rect.height > 10) {
+			var visH = Math.min(rect.bottom, vpH) - Math.max(rect.top, 0);
+			var r = visH / rect.height;
+			if (r >= VIEWABLE_RATIO) {
+				adRecord._visibleStart = Date.now();
+				adRecord.maxRatio = Math.max(adRecord.maxRatio, r);
+				el._viewRatio = r;
+				console.log('[SmartAds] IO retroactive-2s:', adRecord.zoneId, 'ratio:', Math.round(r * 100) + '%', 'elH:', Math.round(rect.height));
+			}
+		}
+	}, 2000);
 }
 
 /* ================================================================
@@ -964,6 +986,9 @@ function onSlotRenderEnded(event) {
 	var slot = event.slot;
 	var divId = slot.getSlotElementId();
 
+	// Log EVERY slotRenderEnded event for debugging fill issues.
+	console.log('[SmartAds] slotRenderEnded:', divId, 'isEmpty:', event.isEmpty, 'size:', event.size);
+
 	state.totalRequested++;
 
 	// Find matching injected ad.
@@ -981,31 +1006,46 @@ function onSlotRenderEnded(event) {
 			state.totalUnfilled++;
 
 			// Try Waldo passback before collapsing.
-			var adSizeStr = matchedAd.size.join('x');
-			var waldoTagId = getNextWaldoTag(adSizeStr);
+			try {
+				var adSizeStr = matchedAd.size.join('x');
+				var waldoTagId = getNextWaldoTag(adSizeStr);
 
-			if (waldoTagId) {
-				matchedAd.passback = true;
-				matchedAd.passbackNetwork = 'waldo';
-				matchedAd.passbackTagId = waldoTagId;
+				if (waldoTagId) {
+					matchedAd.passback = true;
+					matchedAd.passbackNetwork = 'waldo';
+					matchedAd.passbackTagId = waldoTagId;
 
-				matchedAd.zoneEl.innerHTML = '';
-				var waldoDiv = document.createElement('div');
-				waldoDiv.id = waldoTagId;
-				matchedAd.zoneEl.appendChild(waldoDiv);
+					matchedAd.zoneEl.innerHTML = '';
+					var waldoDiv = document.createElement('div');
+					waldoDiv.id = waldoTagId;
+					matchedAd.zoneEl.appendChild(waldoDiv);
 
-				if (window.__waldo && typeof window.__waldo.refreshTag === 'function') {
-					window.__waldo.refreshTag(waldoTagId);
+					if (window.__waldo && typeof window.__waldo.refreshTag === 'function') {
+						window.__waldo.refreshTag(waldoTagId);
+						console.log('[SmartAds] Waldo passback: called refreshTag(' + waldoTagId + ') for', adSizeStr, 'at', matchedAd.position);
+					} else {
+						console.log('[SmartAds] Waldo passback: __waldo not ready, tag div placed:', waldoTagId, 'waldo obj:', typeof window.__waldo);
+					}
+
+					matchedAd.filled = true;
+					state.totalFilled++;
+					state.totalUnfilled--;
+					state.waldoPassbacks++;
+				} else {
+					// No Waldo tags left — collapse.
+					matchedAd.zoneEl.style.display = 'none';
+					matchedAd.anchor.classList.remove('ad-active');
+					matchedAd.filled = false;
+					matchedAd.discarded = true;
+					if (matchedAd._observer) {
+						matchedAd._observer.disconnect();
+						matchedAd._observer = null;
+					}
+					console.log('[SmartAds] Fill:', divId, 'NO-FILL — collapsed, no Waldo tags left');
 				}
-
-				matchedAd.filled = true;
-				state.totalFilled++;
-				state.totalUnfilled--;
-				state.waldoPassbacks++;
-
-				if (debug) console.log('[SmartAds] Waldo passback:', waldoTagId, 'for', adSizeStr, 'at', matchedAd.position);
-			} else {
-				// No Waldo tags left — collapse.
+			} catch (e) {
+				console.error('[SmartAds] Waldo passback error:', e);
+				// Fall through to collapse.
 				matchedAd.zoneEl.style.display = 'none';
 				matchedAd.anchor.classList.remove('ad-active');
 				matchedAd.filled = false;
@@ -1014,12 +1054,11 @@ function onSlotRenderEnded(event) {
 					matchedAd._observer.disconnect();
 					matchedAd._observer = null;
 				}
-				if (debug) console.log('[SmartAds] Fill: ' + divId + ' NO-FILL — collapsed, no Waldo tags left');
 			}
 		} else {
 			state.totalFilled++;
 			matchedAd.filled = true;
-			if (debug) console.log('[SmartAds] Fill: ' + divId + ' FILLED — size=' + (event.size ? event.size.join('x') : 'unknown'));
+			console.log('[SmartAds] Fill:', divId, 'FILLED — size=' + (event.size ? event.size.join('x') : 'unknown'));
 		}
 		return;
 	}
@@ -1193,17 +1232,21 @@ function getSessionId() {
 }
 
 function finalizeVisibility() {
+	var now = Date.now();
 	for (var i = 0; i < state.injectedAds.length; i++) {
 		var ad = state.injectedAds[i];
 		if (ad._visibleStart) {
-			ad.visibleMs += Date.now() - ad._visibleStart;
-			ad._visibleStart = Date.now();
+			ad.visibleMs += now - ad._visibleStart;
+			ad._visibleStart = null; // Null out — we're done, no more IO will fire after beacon.
 		}
 		if (ad.visibleMs >= VIEWABLE_MS && !ad.viewable) {
 			ad.viewable = true;
 			state.totalViewable++;
 		}
 	}
+	console.log('[SmartAds] finalizeVisibility:', state.injectedAds.map(function(a) {
+		return a.zoneId + '=' + Math.round(a.visibleMs) + 'ms' + (a.viewable ? '(V)' : '');
+	}).join(', '));
 }
 
 function buildSessionReport() {
