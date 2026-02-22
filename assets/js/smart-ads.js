@@ -407,9 +407,11 @@ function evaluateInjection() {
 		return;
 	}
 
-	// Condition 5: Find the right anchor.
-	var viewportBottom = window.scrollY + window.innerHeight;
-	var targetY = viewportBottom + 200;
+	// Condition 5: Predictive anchor targeting.
+	// Use scroll speed to predict where visitor will be in ~1s.
+	// Faster scrollers get more lookahead → ad renders before they arrive.
+	var lookahead = state.scrollDirection === 'up' ? 200 : Math.min(800, Math.max(200, state.scrollSpeed * 1.0));
+	var predictedY = window.scrollY + window.innerHeight + lookahead;
 
 	var targetAnchor = null;
 	for (var i = state.nextAnchorIndex; i < state.anchors.length; i++) {
@@ -429,19 +431,19 @@ function evaluateInjection() {
 			continue;
 		}
 
-		// Found an anchor near/below current viewport.
-		if (anchorY <= targetY && anchorY >= window.scrollY - 50) {
+		// Found an anchor within predicted range.
+		if (anchorY <= predictedY && anchorY >= window.scrollY - 50) {
 			targetAnchor = anchor;
 			state.nextAnchorIndex = i + 1;
 			break;
 		}
 
-		// Anchor is far below — not ready yet.
-		if (anchorY > targetY) break;
+		// Anchor is beyond prediction window — not ready yet.
+		if (anchorY > predictedY) break;
 	}
 
 	if (!targetAnchor) {
-		if (debug) console.log('[SmartAds] eval: SKIP — no anchor in range (scrollY=' + Math.round(window.scrollY) + ', targetY=' + Math.round(targetY) + ')');
+		if (debug) console.log('[SmartAds] eval: SKIP — no anchor in range (scrollY=' + Math.round(window.scrollY) + ', lookahead=' + Math.round(lookahead) + 'px, predictedY=' + Math.round(predictedY) + ')');
 		return;
 	}
 
