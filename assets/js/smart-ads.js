@@ -407,45 +407,45 @@ function evaluateInjection() {
 		return;
 	}
 
-	// Condition 5: Predictive anchor targeting.
+	// Condition 5: Bidirectional predictive anchor targeting.
 	// Use scroll speed to predict where visitor will be in ~1s.
 	// Faster scrollers get more lookahead → ad renders before they arrive.
-	var lookahead = state.scrollDirection === 'up' ? 200 : Math.min(800, Math.max(200, state.scrollSpeed * 1.0));
-	var predictedY = window.scrollY + window.innerHeight + lookahead;
-
+	var lookahead = Math.min(800, Math.max(200, state.scrollSpeed * 1.0));
 	var targetAnchor = null;
-	for (var i = state.nextAnchorIndex; i < state.anchors.length; i++) {
-		var anchor = state.anchors[i];
 
-		// Skip anchors already activated by initViewportAds or previous injection.
-		if (anchor.classList.contains('ad-active')) {
-			state.nextAnchorIndex = i + 1;
-			continue;
+	if (state.scrollDirection === 'down') {
+		// Scrolling DOWN: look below viewport.
+		var predictedY = window.scrollY + window.innerHeight + lookahead;
+
+		for (var i = 0; i < state.anchors.length; i++) {
+			var anchor = state.anchors[i];
+			if (anchor.classList.contains('ad-active')) continue;
+			var anchorY = anchor.getBoundingClientRect().top + window.scrollY;
+			if (anchorY >= window.scrollY - 50 && anchorY <= predictedY) {
+				targetAnchor = anchor;
+				break;
+			}
 		}
 
-		var anchorY = anchor.getBoundingClientRect().top + window.scrollY;
+		if (debug && !targetAnchor) console.log('[SmartAds] eval: SKIP — no anchor below (scrollY=' + Math.round(window.scrollY) + ', lookahead=' + Math.round(lookahead) + 'px, predictedY=' + Math.round(predictedY) + ')');
+	} else {
+		// Scrolling UP: look above viewport — re-reading is engaged behavior.
+		var predictedY = window.scrollY - lookahead;
 
-		// Skip anchors we've already passed significantly.
-		if (anchorY < window.scrollY - 100) {
-			state.nextAnchorIndex = i + 1;
-			continue;
+		for (var i = state.anchors.length - 1; i >= 0; i--) {
+			var anchor = state.anchors[i];
+			if (anchor.classList.contains('ad-active')) continue;
+			var anchorY = anchor.getBoundingClientRect().top + window.scrollY;
+			if (anchorY >= predictedY && anchorY <= window.scrollY + 100) {
+				targetAnchor = anchor;
+				break;
+			}
 		}
 
-		// Found an anchor within predicted range.
-		if (anchorY <= predictedY && anchorY >= window.scrollY - 50) {
-			targetAnchor = anchor;
-			state.nextAnchorIndex = i + 1;
-			break;
-		}
-
-		// Anchor is beyond prediction window — not ready yet.
-		if (anchorY > predictedY) break;
+		if (debug && !targetAnchor) console.log('[SmartAds] eval: SKIP — no anchor above (scrollY=' + Math.round(window.scrollY) + ', lookahead=' + Math.round(lookahead) + 'px, predictedY=' + Math.round(predictedY) + ')');
 	}
 
-	if (!targetAnchor) {
-		if (debug) console.log('[SmartAds] eval: SKIP — no anchor in range (scrollY=' + Math.round(window.scrollY) + ', lookahead=' + Math.round(lookahead) + 'px, predictedY=' + Math.round(predictedY) + ')');
-		return;
-	}
+	if (!targetAnchor) return;
 
 	// Check for pause banner position.
 	if (checkPauseBannerInjection(targetAnchor)) {
