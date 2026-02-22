@@ -38,7 +38,7 @@ function pl_ad_defaults() {
 		'gate_dir_changes'      => 0,
 
 		// Density Controls.
-		'max_display_ads'       => 35,
+		'max_display_ads'       => 12,
 		'min_spacing_px'        => 200,
 		'min_paragraphs_before' => 2,
 		'min_gap_paragraphs'    => 3,
@@ -248,7 +248,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'gate_scroll_pct'       => array( 0, 100 ),
 		'gate_time_sec'         => array( 0, 60 ),
 		'gate_dir_changes'      => array( 0, 10 ),
-		'max_display_ads'       => array( 0, 50 ),
+		'max_display_ads'       => array( 0, 20 ),
 		'min_spacing_px'        => array( 200, 2000 ),
 		'min_paragraphs_before' => array( 0, 20 ),
 		'min_gap_paragraphs'    => array( 1, 20 ),
@@ -424,8 +424,8 @@ function pl_ad_render_global_tab( $s ) {
 		<tr>
 			<th>Max Display Ads</th>
 			<td>
-				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="50" class="small-text">
-				<p class="description">Maximum in-content display ads per page (v4: 35 default for full-article monetization).</p>
+				<input type="number" name="pl_ad_settings[max_display_ads]" value="<?php echo esc_attr( $s['max_display_ads'] ); ?>" min="0" max="20" class="small-text">
+				<p class="description">Maximum in-content display ads per page (12 default — higher values risk eCPM drop from low viewability).</p>
 			</td>
 		</tr>
 		<tr>

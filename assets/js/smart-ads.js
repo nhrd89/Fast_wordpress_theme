@@ -23,7 +23,7 @@
 var cfg = window.plAds || {};
 
 // wp_localize_script converts ALL values to strings. Parse numerics now.
-cfg.maxAds = parseInt(cfg.maxAds, 10) || 35;
+cfg.maxAds = Math.min(parseInt(cfg.maxAds, 10) || 12, 12);
 cfg.gateScrollPct = parseInt(cfg.gateScrollPct, 10) || 10;
 cfg.gateTimeSec = parseInt(cfg.gateTimeSec, 10) || 3;
 cfg.gateDirChanges = parseInt(cfg.gateDirChanges, 10) || 0;
@@ -435,6 +435,13 @@ function onGateOpen() {
 
 function activateZone(zone) {
 	if (zone.activated) return;
+
+	// FIX A: Skip CSS-hidden zones (device-targeted nav zones hidden by media queries).
+	if (window.getComputedStyle(zone.el).display === 'none') {
+		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: display:none (hidden by CSS)');
+		return;
+	}
+
 	if (state.activeAds >= cfg.maxAds) {
 		if (cfg.debug) console.log('[PL-Ads] Zone ' + zone.id + ' SKIP: maxAds (' + state.activeAds + '/' + cfg.maxAds + ')');
 		return;
@@ -854,6 +861,32 @@ function trackViewability(zone, sizeStr) {
 	data.observer = observer;
 	data.observedEl = zone.el;
 	observer.observe(zone.el);
+
+	// FIX B: Retroactive check for zones already visible when observer attaches.
+	// IO may not fire if zone was visible BEFORE observe() — manually check now.
+	var rect = zone.el.getBoundingClientRect();
+	var vpH = window.innerHeight;
+	if (rect.top < vpH && rect.bottom > 0) {
+		var visH = Math.min(rect.bottom, vpH) - Math.max(rect.top, 0);
+		var elH = rect.height || 1;
+		var ratio = visH / elH;
+		if (ratio >= 0.5 && !data.isVisible) {
+			data.isVisible = true;
+			data.visibleStart = Date.now();
+			if (!data.firstViewRecorded) {
+				data.firstViewRecorded = true;
+				data.timeToFirstView = Date.now() - state.sessionStart;
+			}
+			zone.el._viewRatio = ratio;
+			data.viewableTimer = setTimeout(function() {
+				data.viewableImpressions++;
+				if (data.viewableImpressions === 1) {
+					state.viewableCount++;
+				}
+				zone.el._viewLogged = true;
+			}, 1000);
+		}
+	}
 }
 
 /* ================================================================
