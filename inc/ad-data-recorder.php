@@ -74,7 +74,11 @@ function pinlightning_record_ad_data($request) {
         file_put_contents($data_dir . '/index.php', '<?php // Silence');
     }
 
-    // Sanitize and structure the data
+    // v5: timeOnPage is in seconds; convert to ms for storage compatibility.
+    $time_val = floatval( $body['timeOnPage'] ?? 0 );
+    $time_ms  = $time_val < 500 ? intval( $time_val * 1000 ) : intval( $time_val ); // auto-detect s vs ms
+
+    // Sanitize and structure the data (v5 dynamic injection fields).
     $session = array(
         'timestamp' => current_time('mysql'),
         'unix' => time(),
@@ -84,17 +88,19 @@ function pinlightning_record_ad_data($request) {
         'device' => sanitize_text_field($body['device'] ?? 'unknown'),
         'viewport_w' => intval($body['viewportW'] ?? 0),
         'viewport_h' => intval($body['viewportH'] ?? 0),
-        'time_on_page_ms' => intval($body['timeOnPage'] ?? 0),
+        'time_on_page_ms' => $time_ms,
         'max_scroll_depth_pct' => floatval($body['maxDepth'] ?? 0),
-        'avg_scroll_speed' => floatval($body['avgScrollSpeed'] ?? 0),
-        'scroll_pattern' => sanitize_text_field($body['scrollPattern'] ?? ''), // 'reader', 'scanner', 'bouncer'
+        'avg_scroll_speed' => floatval($body['scrollSpeed'] ?? $body['avgScrollSpeed'] ?? 0),
+        'scroll_pattern' => sanitize_text_field($body['scrollPattern'] ?? ''),
         'items_seen' => intval($body['itemsSeen'] ?? 0),
         'total_items' => intval($body['totalItems'] ?? 0),
         'gate_open' => !empty($body['gateOpen']),
-        'gate_scroll' => !empty($body['gateScroll']),
-        'gate_time' => !empty($body['gateTime']),
-        'gate_direction' => !empty($body['gateDirection']),
-        'total_ads_injected' => intval($body['totalAdsInjected'] ?? 0),
+        'gate_scroll' => !empty($body['gateOpen']), // v5: single gate check
+        'gate_time' => !empty($body['gateOpen']),
+        'gate_direction' => true, // v5: no direction gate
+        'dir_changes' => intval($body['dirChanges'] ?? 0),
+        // v5: dynamic injection stats.
+        'total_ads_injected' => intval($body['totalInjected'] ?? $body['totalAdsInjected'] ?? 0),
         'total_viewable' => intval($body['totalViewable'] ?? 0),
         'viewability_rate' => floatval($body['viewabilityRate'] ?? 0),
         // Out-of-page format status.
@@ -102,9 +108,6 @@ function pinlightning_record_ad_data($request) {
         'interstitial_status' => sanitize_text_field($body['interstitialStatus'] ?? 'off'),
         'pause_status' => sanitize_text_field($body['pauseStatus'] ?? 'off'),
         'top_anchor_status' => sanitize_text_field($body['topAnchorStatus'] ?? 'off'),
-        // Retry stats.
-        'retries_used' => intval($body['retriesUsed'] ?? 0),
-        'retries_successful' => intval($body['retriesSuccessful'] ?? 0),
         // Fill tracking.
         'total_requested' => intval($body['totalRequested'] ?? 0),
         'total_filled' => intval($body['totalFilled'] ?? 0),
@@ -114,56 +117,39 @@ function pinlightning_record_ad_data($request) {
         'interstitial_filled' => !empty($body['interstitialFilled']),
         'pause_filled' => !empty($body['pauseFilled']),
         'top_anchor_filled' => !empty($body['topAnchorFilled']),
-        'zones_activated' => intval($body['zonesActivated'] ?? 0),
-        // V4: pause banners + refresh.
-        'pause_banners_shown' => intval($body['pauseBannersShown'] ?? 0),
+        'zones_activated' => intval($body['totalInjected'] ?? $body['zonesActivated'] ?? 0),
+        // v5: pause banners + refresh + video.
+        'pause_banners_shown' => intval($body['pauseBannersInjected'] ?? $body['pauseBannersShown'] ?? 0),
         'pause_banners_continued' => intval($body['pauseBannersContinued'] ?? 0),
-        'refresh_count' => intval($body['refreshCount'] ?? 0),
+        'refresh_count' => intval($body['totalRefreshes'] ?? $body['refreshCount'] ?? 0),
         'refresh_impressions' => intval($body['refreshImpressions'] ?? 0),
+        'video_injected' => !empty($body['videoInjected']),
+        // Overlay detail.
+        'anchor_impressions' => intval($body['anchorImpressions'] ?? 0),
+        'anchor_viewable' => intval($body['anchorViewable'] ?? 0),
+        'interstitial_viewable' => intval($body['interstitialViewable'] ?? 0),
+        'interstitial_duration_ms' => intval($body['interstitialDurationMs'] ?? 0),
         'referrer' => sanitize_text_field($body['referrer'] ?? ''),
         'language' => sanitize_text_field($body['language'] ?? ''),
-        // Click tracking.
-        'total_display_clicks' => intval($body['totalDisplayClicks'] ?? 0),
-        'anchor_clicks' => intval($body['anchorClicks'] ?? 0),
-        'interstitial_clicks' => intval($body['interstitialClicks'] ?? 0),
-        'pause_clicks' => intval($body['pauseClicks'] ?? 0),
-        // Waldo passback tracking.
-        'waldo_requested' => intval($body['waldoRequested'] ?? 0),
-        'waldo_filled' => intval($body['waldoFilled'] ?? 0),
-        'waldo_fills' => array(),
         'zones' => array(),
     );
 
-    // Per-zone data
+    // Per-zone data (v5: per-ad injection details).
     if (!empty($body['zones']) && is_array($body['zones'])) {
         foreach ($body['zones'] as $zone) {
             $session['zones'][] = array(
                 'zone_id' => sanitize_text_field($zone['zoneId'] ?? ''),
-                'ad_size' => sanitize_text_field($zone['adSize'] ?? ''),
-                'total_visible_ms' => intval($zone['totalVisibleMs'] ?? 0),
-                'viewable_impressions' => intval($zone['viewableImpressions'] ?? 0),
+                'slot' => sanitize_text_field($zone['slot'] ?? ''),
+                'ad_size' => sanitize_text_field($zone['size'] ?? $zone['adSize'] ?? ''),
+                'position' => sanitize_text_field($zone['position'] ?? ''),
+                'speed_at_injection' => floatval($zone['speedAtInjection'] ?? $zone['scrollSpeedAtInjection'] ?? 0),
+                'pattern_at_injection' => sanitize_text_field($zone['patternAtInjection'] ?? ''),
+                'total_visible_ms' => intval($zone['visibleMs'] ?? $zone['totalVisibleMs'] ?? 0),
+                'viewable_impressions' => !empty($zone['viewable']) ? 1 : 0,
                 'max_ratio' => floatval($zone['maxRatio'] ?? 0),
-                'avg_ratio' => floatval($zone['avgRatio'] ?? 0),
-                'time_to_first_view_ms' => intval($zone['timeToFirstView'] ?? 0),
-                'injected_at_depth_pct' => floatval($zone['injectedAtDepth'] ?? 0),
-                'scroll_speed_at_injection' => floatval($zone['scrollSpeedAtInjection'] ?? 0),
                 'filled' => !empty($zone['filled']),
-                'fill_size' => sanitize_text_field($zone['fillSize'] ?? ''),
-                'advertiser_id' => intval($zone['advertiserId'] ?? 0),
-                'clicks' => intval($zone['clicks'] ?? 0),
-                'passback' => !empty($zone['passback']),
-                'passback_network' => sanitize_text_field($zone['passbackNetwork'] ?? ''),
-            );
-        }
-    }
-
-    // Waldo passback fills detail.
-    if (!empty($body['waldoFills']) && is_array($body['waldoFills'])) {
-        foreach ($body['waldoFills'] as $wzone_id => $wfill) {
-            $session['waldo_fills'][sanitize_text_field($wzone_id)] = array(
-                'tag' => sanitize_text_field($wfill['tag'] ?? ''),
-                'filled' => !empty($wfill['filled']),
-                'network' => sanitize_text_field($wfill['network'] ?? 'newor'),
+                'is_pause' => !empty($zone['isPause']),
+                'refresh_count' => intval($zone['refreshCount'] ?? 0),
             );
         }
     }
@@ -204,21 +190,19 @@ function pinlightning_archive_ad_session_to_live( $session ) {
     if ( $js_sid && isset( $recent[ $js_sid ] ) ) {
         // Heartbeat entry exists — merge richer ad-track data into it.
         $existing = $recent[ $js_sid ];
-        $existing['active_ads']     = $session['total_ads_injected'];
-        $existing['viewable_ads']   = $session['total_viewable'];
-        $existing['zones_active']   = implode( ',', array_column( $session['zones'], 'zone_id' ) );
-        $existing['events']         = $session['zones'];
-        $existing['scroll_pattern'] = $session['scroll_pattern'];
-        $existing['scroll_pct']     = max( $existing['scroll_pct'] ?? 0, $session['max_scroll_depth_pct'] );
-        $existing['time_on_page_s'] = max( $existing['time_on_page_s'] ?? 0, round( $session['time_on_page_ms'] / 1000, 1 ) );
-        // Preserve out-of-page status from heartbeat if ad-track has it; prefer ad-track's final state.
+        $existing['active_ads']        = $session['total_ads_injected'];
+        $existing['viewable_ads']      = $session['total_viewable'];
+        $existing['viewability_rate']  = $session['viewability_rate'];
+        $existing['zones_active']      = implode( ',', array_column( $session['zones'], 'zone_id' ) );
+        $existing['events']            = $session['zones'];
+        $existing['scroll_pattern']    = $session['scroll_pattern'];
+        $existing['scroll_pct']        = max( $existing['scroll_pct'] ?? 0, $session['max_scroll_depth_pct'] );
+        $existing['time_on_page_s']    = max( $existing['time_on_page_s'] ?? 0, round( $session['time_on_page_ms'] / 1000, 1 ) );
+        $existing['dir_changes']       = max( $existing['dir_changes'] ?? 0, $session['dir_changes'] ?? 0 );
+        // Overlay status (prefer final state from ad-track).
         $existing['anchor_status']       = ! empty( $session['anchor_status'] ) && $session['anchor_status'] !== 'off' ? $session['anchor_status'] : ( $existing['anchor_status'] ?? 'off' );
         $existing['interstitial_status'] = ! empty( $session['interstitial_status'] ) && $session['interstitial_status'] !== 'off' ? $session['interstitial_status'] : ( $existing['interstitial_status'] ?? 'off' );
-        $existing['pause_status']        = ! empty( $session['pause_status'] ) && $session['pause_status'] !== 'off' ? $session['pause_status'] : ( $existing['pause_status'] ?? 'off' );
         $existing['top_anchor_status']   = ! empty( $session['top_anchor_status'] ) && $session['top_anchor_status'] !== 'off' ? $session['top_anchor_status'] : ( $existing['top_anchor_status'] ?? 'off' );
-        // Merge retry stats (ad-track has final values).
-        $existing['total_retries']      = max( $existing['total_retries'] ?? 0, $session['retries_used'] ?? 0 );
-        $existing['retries_successful'] = max( $existing['retries_successful'] ?? 0, $session['retries_successful'] ?? 0 );
         // Fill tracking (ad-track has final values).
         $existing['total_requested']     = max( $existing['total_requested'] ?? 0, $session['total_requested'] ?? 0 );
         $existing['total_filled']        = max( $existing['total_filled'] ?? 0, $session['total_filled'] ?? 0 );
@@ -226,26 +210,16 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['fill_rate']           = $session['fill_rate'] ?? ( $existing['fill_rate'] ?? 0 );
         $existing['anchor_filled']       = ! empty( $session['anchor_filled'] ) || ! empty( $existing['anchor_filled'] );
         $existing['interstitial_filled'] = ! empty( $session['interstitial_filled'] ) || ! empty( $existing['interstitial_filled'] );
-        $existing['pause_filled']        = ! empty( $session['pause_filled'] ) || ! empty( $existing['pause_filled'] );
         $existing['top_anchor_filled']   = ! empty( $session['top_anchor_filled'] ) || ! empty( $existing['top_anchor_filled'] );
         $existing['zones_activated']     = max( $existing['zones_activated'] ?? 0, $session['zones_activated'] ?? 0 );
-        // V4: pause banners + refresh (ad-track has final values).
+        // v5: pause banners + refresh + video.
         $existing['pause_banners_shown']     = max( $existing['pause_banners_shown'] ?? 0, $session['pause_banners_shown'] ?? 0 );
-        $existing['pause_banners_continued'] = max( $existing['pause_banners_continued'] ?? 0, $session['pause_banners_continued'] ?? 0 );
         $existing['refresh_count']           = max( $existing['refresh_count'] ?? 0, $session['refresh_count'] ?? 0 );
-        $existing['refresh_impressions']     = max( $existing['refresh_impressions'] ?? 0, $session['refresh_impressions'] ?? 0 );
-        // Click tracking (ad-track has final values).
-        $existing['total_display_clicks'] = max( $existing['total_display_clicks'] ?? 0, $session['total_display_clicks'] ?? 0 );
-        $existing['anchor_clicks']        = max( $existing['anchor_clicks'] ?? 0, $session['anchor_clicks'] ?? 0 );
-        $existing['interstitial_clicks']  = max( $existing['interstitial_clicks'] ?? 0, $session['interstitial_clicks'] ?? 0 );
-        $existing['pause_clicks']         = max( $existing['pause_clicks'] ?? 0, $session['pause_clicks'] ?? 0 );
-        // Waldo passback (ad-track has final values).
-        $existing['waldo_requested'] = max( $existing['waldo_requested'] ?? 0, $session['waldo_requested'] ?? 0 );
-        $existing['waldo_filled']    = max( $existing['waldo_filled'] ?? 0, $session['waldo_filled'] ?? 0 );
-        if ( ! empty( $session['waldo_fills'] ) ) {
-            $existing['waldo_fills'] = $session['waldo_fills'];
-        }
-        // Preserve identity fields — only overwrite if beacon has non-empty values.
+        $existing['video_injected']          = ! empty( $session['video_injected'] ) || ! empty( $existing['video_injected'] );
+        // Overlay detail.
+        $existing['anchor_impressions']      = max( $existing['anchor_impressions'] ?? 0, $session['anchor_impressions'] ?? 0 );
+        $existing['interstitial_viewable']   = max( $existing['interstitial_viewable'] ?? 0, $session['interstitial_viewable'] ?? 0 );
+        // Identity fields.
         if ( ! empty( $session['referrer'] ) ) {
             $existing['referrer'] = $session['referrer'];
         }
@@ -261,36 +235,31 @@ function pinlightning_archive_ad_session_to_live( $session ) {
     $sid = $js_sid ?: 'ad_' . substr( md5( $session['unix'] . $session['post_slug'] . wp_rand() ), 0, 12 );
 
     $entry = array(
-        'sid'            => $sid,
-        'ts'             => $session['unix'],
-        'post_id'        => $session['post_id'],
-        'post_slug'      => $session['post_slug'],
-        'post_title'     => $session['post_slug'], // ad recorder doesn't have title
-        'device'         => $session['device'],
-        'viewport_w'     => $session['viewport_w'],
-        'viewport_h'     => $session['viewport_h'],
-        'time_on_page_s' => round( $session['time_on_page_ms'] / 1000, 1 ),
-        'scroll_pct'     => $session['max_scroll_depth_pct'],
-        'scroll_speed'   => intval( $session['avg_scroll_speed'] ),
-        'scroll_pattern' => $session['scroll_pattern'],
-        'gate_scroll'    => $session['gate_scroll'],
-        'gate_time'      => $session['gate_time'],
-        'gate_direction' => $session['gate_direction'],
-        'gate_open'      => $session['gate_open'],
-        'active_ads'     => $session['total_ads_injected'],
-        'viewable_ads'   => $session['total_viewable'],
-        'zones_active'   => implode( ',', array_column( $session['zones'], 'zone_id' ) ),
-        'referrer'       => $session['referrer'] ?? '',
-        'language'       => $session['language'] ?? '',
-        'events'         => $session['zones'],
-        // Out-of-page format status.
+        'sid'              => $sid,
+        'ts'               => $session['unix'],
+        'post_id'          => $session['post_id'],
+        'post_slug'        => $session['post_slug'],
+        'post_title'       => $session['post_slug'],
+        'device'           => $session['device'],
+        'viewport_w'       => $session['viewport_w'],
+        'viewport_h'       => $session['viewport_h'],
+        'time_on_page_s'   => round( $session['time_on_page_ms'] / 1000, 1 ),
+        'scroll_pct'       => $session['max_scroll_depth_pct'],
+        'scroll_speed'     => intval( $session['avg_scroll_speed'] ),
+        'scroll_pattern'   => $session['scroll_pattern'],
+        'dir_changes'      => $session['dir_changes'] ?? 0,
+        'gate_open'        => $session['gate_open'],
+        'active_ads'       => $session['total_ads_injected'],
+        'viewable_ads'     => $session['total_viewable'],
+        'viewability_rate' => $session['viewability_rate'],
+        'zones_active'     => implode( ',', array_column( $session['zones'], 'zone_id' ) ),
+        'referrer'         => $session['referrer'] ?? '',
+        'language'         => $session['language'] ?? '',
+        'events'           => $session['zones'],
+        // Overlay status.
         'anchor_status'       => $session['anchor_status'] ?? 'off',
         'interstitial_status' => $session['interstitial_status'] ?? 'off',
-        'pause_status'        => $session['pause_status'] ?? 'off',
         'top_anchor_status'   => $session['top_anchor_status'] ?? 'off',
-        // Retry stats.
-        'total_retries'      => $session['retries_used'] ?? 0,
-        'retries_successful' => $session['retries_successful'] ?? 0,
         // Fill tracking.
         'total_requested'      => $session['total_requested'] ?? 0,
         'total_filled'         => $session['total_filled'] ?? 0,
@@ -298,26 +267,17 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'fill_rate'            => $session['fill_rate'] ?? 0,
         'anchor_filled'        => $session['anchor_filled'] ?? false,
         'interstitial_filled'  => $session['interstitial_filled'] ?? false,
-        'pause_filled'         => $session['pause_filled'] ?? false,
         'top_anchor_filled'    => $session['top_anchor_filled'] ?? false,
         'zones_activated'      => $session['zones_activated'] ?? 0,
-        // V4: pause banners + refresh.
-        'pause_banners_shown'     => $session['pause_banners_shown'] ?? 0,
-        'pause_banners_continued' => $session['pause_banners_continued'] ?? 0,
-        'refresh_count'           => $session['refresh_count'] ?? 0,
-        'refresh_impressions'     => $session['refresh_impressions'] ?? 0,
-        // Click tracking.
-        'total_display_clicks' => $session['total_display_clicks'] ?? 0,
-        'anchor_clicks'        => $session['anchor_clicks'] ?? 0,
-        'interstitial_clicks'  => $session['interstitial_clicks'] ?? 0,
-        'pause_clicks'         => $session['pause_clicks'] ?? 0,
-        // Waldo passback.
-        'waldo_requested' => $session['waldo_requested'] ?? 0,
-        'waldo_filled'    => $session['waldo_filled'] ?? 0,
-        'waldo_fills'     => $session['waldo_fills'] ?? array(),
+        // v5: dynamic injection stats.
+        'pause_banners_shown'    => $session['pause_banners_shown'] ?? 0,
+        'refresh_count'          => $session['refresh_count'] ?? 0,
+        'video_injected'         => $session['video_injected'] ?? false,
+        'anchor_impressions'     => $session['anchor_impressions'] ?? 0,
+        'interstitial_viewable'  => $session['interstitial_viewable'] ?? 0,
         'status'         => 'ended',
         'ended_at'       => time(),
-        'source'         => 'ad-track', // Distinguish from heartbeat-sourced entries.
+        'source'         => 'ad-track',
     );
 
     $recent[ $sid ] = $entry;

@@ -172,15 +172,10 @@ function pl_ad_compute_export_summary( $s ) {
 		$top_device = array_key_first( $s['by_device'] );
 	}
 
-	$retry_rate = $s['total_retries'] > 0
-		? round( ( $s['retries_successful'] / $s['total_retries'] ) * 100, 1 )
-		: 0;
-
 	return array(
 		'total_sessions'    => $sessions,
 		'gate_pass_rate'    => $gate_pass_rate . '%',
 		'adplus_fill_rate'  => $adplus_fill_rate . '%',
-		'newor_fill_rate'   => $newor_fill_rate . '%',
 		'effective_fill'    => $effective_fill . '%',
 		'viewability'       => $viewability . '%',
 		'total_clicks'      => $total_clicks,
@@ -190,15 +185,13 @@ function pl_ad_compute_export_summary( $s ) {
 		'avg_zones_session' => $avg_zones,
 		'top_referrer'      => $top_referrer,
 		'top_device'        => $top_device,
-		'retry_success_rate' => $retry_rate . '%',
 		'anchor_impressions' => $s['anchor_total_impressions'],
-		// V4 metrics.
+		// v5 injection metrics.
 		'top_anchor_fired'           => $s['top_anchor_fired'] ?? 0,
 		'top_anchor_filled'          => $s['top_anchor_filled'] ?? 0,
 		'pause_banners_shown'        => $s['total_pause_banners_shown'] ?? 0,
-		'pause_banners_continued'    => $s['total_pause_banners_continued'] ?? 0,
 		'refresh_count'              => $s['total_refresh_count'] ?? 0,
-		'refresh_impressions'        => $s['total_refresh_impressions'] ?? 0,
+		'video_injected_count'       => $s['video_injected_count'] ?? 0,
 	);
 }
 
@@ -377,10 +370,10 @@ function pl_ad_render_overview_cards( $s ) {
 	$fill_rate   = $s['total_ad_requests'] > 0 ? round( ( $s['total_ad_fills'] / $s['total_ad_requests'] ) * 100 ) : 0;
 	$viewability = $s['total_zones_activated'] > 0 ? round( ( $s['total_viewable_ads'] / $s['total_zones_activated'] ) * 100 ) : 0;
 
-	$waldo_fills = $s['waldo_total_filled'];
+	$avg_injected = $sessions > 0 ? round( $s['total_zones_activated'] / $sessions, 1 ) : 0;
 
 	$total_clicks      = $s['total_display_clicks'] + $s['total_anchor_clicks'] + $s['total_interstitial_clicks'] + $s['total_pause_clicks'];
-	$total_impressions = $s['total_ad_fills'] + $s['waldo_total_filled'] + $s['anchor_total_impressions'];
+	$total_impressions = $s['total_ad_fills'] + ( $s['waldo_total_filled'] ?? 0 ) + $s['anchor_total_impressions'];
 	$ctr               = $total_impressions > 0 ? round( ( $total_clicks / $total_impressions ) * 100, 2 ) : 0;
 
 	?>
@@ -396,29 +389,24 @@ function pl_ad_render_overview_cards( $s ) {
 			<div class="pl-card-sub">Avg scroll <?php echo $avg_scroll; ?>%</div>
 		</div>
 		<div class="pl-card blue">
-			<div class="pl-card-label">Ad.Plus Fill Rate</div>
+			<div class="pl-card-label">Avg Ads/Session</div>
+			<div class="pl-card-value"><?php echo $avg_injected; ?></div>
+			<div class="pl-card-sub"><?php echo number_format( $s['total_zones_activated'] ); ?> total injected</div>
+		</div>
+		<div class="pl-card blue">
+			<div class="pl-card-label">Fill Rate</div>
 			<div class="pl-card-value"><?php echo $fill_rate; ?>%</div>
 			<div class="pl-card-sub"><?php echo $s['total_ad_fills']; ?>/<?php echo $s['total_ad_requests']; ?> filled</div>
-		</div>
-		<div class="pl-card purple">
-			<div class="pl-card-label">Newor Passback Fills</div>
-			<div class="pl-card-value"><?php echo number_format( $waldo_fills ); ?></div>
-			<div class="pl-card-sub"><?php echo $s['waldo_total_requested']; ?> attempted, <?php echo ( $s['waldo_total_requested'] > 0 ? round( ( $waldo_fills / $s['waldo_total_requested'] ) * 100 ) : 0 ); ?>% rate</div>
 		</div>
 		<div class="pl-card green">
 			<div class="pl-card-label">Viewability</div>
 			<div class="pl-card-value"><?php echo $viewability; ?>%</div>
-			<div class="pl-card-sub"><?php echo $s['total_viewable_ads']; ?> viewable impressions</div>
+			<div class="pl-card-sub"><?php echo $s['total_viewable_ads']; ?> viewable of <?php echo $s['total_zones_activated']; ?> injected</div>
 		</div>
 		<div class="pl-card">
 			<div class="pl-card-label">Total Clicks</div>
 			<div class="pl-card-value"><?php echo number_format( $total_clicks ); ?></div>
 			<div class="pl-card-sub">CTR: <?php echo $ctr; ?>%</div>
-		</div>
-		<div class="pl-card">
-			<div class="pl-card-label">Zones Activated</div>
-			<div class="pl-card-value"><?php echo number_format( $s['total_zones_activated'] ); ?></div>
-			<div class="pl-card-sub">Avg <?php echo ( $sessions > 0 ? round( $s['total_zones_activated'] / $sessions, 1 ) : 0 ); ?> per session</div>
 		</div>
 		<div class="pl-card">
 			<div class="pl-card-label">Anchor Impressions</div>
@@ -434,6 +422,11 @@ function pl_ad_render_overview_cards( $s ) {
 			<div class="pl-card-label">Refreshes</div>
 			<div class="pl-card-value"><?php echo number_format( $s['total_refresh_count'] ?? 0 ); ?></div>
 			<div class="pl-card-sub"><?php echo $s['total_refresh_impressions'] ?? 0; ?> extra impressions</div>
+		</div>
+		<div class="pl-card">
+			<div class="pl-card-label">Video Injected</div>
+			<div class="pl-card-value"><?php echo number_format( $s['video_injected_count'] ?? 0 ); ?></div>
+			<div class="pl-card-sub">Dynamic video ads</div>
 		</div>
 	</div>
 	<?php
@@ -526,36 +519,41 @@ function pl_ad_render_bar_chart( $daily, $series, $label, $is_pct = false ) {
  * ================================================================ */
 
 function pl_ad_render_fill_analysis( $s ) {
-	$fill_rate  = $s['total_ad_requests'] > 0 ? round( ( $s['total_ad_fills'] / $s['total_ad_requests'] ) * 100 ) : 0;
-	$waldo_rate = $s['waldo_total_requested'] > 0 ? round( ( $s['waldo_total_filled'] / $s['waldo_total_requested'] ) * 100 ) : 0;
+	$fill_rate     = $s['total_ad_requests'] > 0 ? round( ( $s['total_ad_fills'] / $s['total_ad_requests'] ) * 100 ) : 0;
+	$has_passback  = ( $s['waldo_total_requested'] ?? 0 ) > 0;
+	$waldo_rate    = $has_passback ? round( ( $s['waldo_total_filled'] / $s['waldo_total_requested'] ) * 100 ) : 0;
 
 	// Effective display fill (what % of zone activations ended with an ad showing).
-	$display_showing = 0;
-	foreach ( $s['by_zone'] as $z ) {
-		$display_showing += ( $z['filled'] ?? 0 ) + ( $z['passback_filled'] ?? 0 );
+	$display_showing = $s['total_ad_fills'];
+	if ( $has_passback ) {
+		foreach ( $s['by_zone'] as $z ) {
+			$display_showing += ( $z['passback_filled'] ?? 0 );
+		}
 	}
 	$effective = $s['total_zones_activated'] > 0 ? round( ( $display_showing / $s['total_zones_activated'] ) * 100 ) : 0;
 
 	?>
 	<div class="pl-section">
 		<h2>Fill Rate Analysis</h2>
-		<div class="pl-grid-3">
+		<div class="pl-grid-<?php echo $has_passback ? '3' : '2'; ?>">
 			<div>
-				<h4>Ad.Plus (Primary)</h4>
+				<h4>Ad.Plus Fill Rate</h4>
 				<div style="font-size:36px;font-weight:700;color:#2271b1;"><?php echo $fill_rate; ?>%</div>
 				<p style="color:#666;font-size:13px;"><?php echo $s['total_ad_fills']; ?> filled / <?php echo $s['total_ad_requests']; ?> requested</p>
 				<div class="pl-bar"><div class="pl-bar-fill" style="width:<?php echo $fill_rate; ?>%;background:#2271b1;"></div></div>
 			</div>
+			<?php if ( $has_passback ) : ?>
 			<div>
 				<h4>Newor Media (Backfill)</h4>
 				<div style="font-size:36px;font-weight:700;color:#8c5fc7;"><?php echo $waldo_rate; ?>%</div>
 				<p style="color:#666;font-size:13px;"><?php echo $s['waldo_total_filled']; ?> filled / <?php echo $s['waldo_total_requested']; ?> attempted</p>
 				<div class="pl-bar"><div class="pl-bar-fill" style="width:<?php echo $waldo_rate; ?>%;background:#8c5fc7;"></div></div>
 			</div>
+			<?php endif; ?>
 			<div>
-				<h4>Effective Fill (Combined)</h4>
+				<h4>Effective Fill</h4>
 				<div style="font-size:36px;font-weight:700;color:#00a32a;"><?php echo $effective; ?>%</div>
-				<p style="color:#666;font-size:13px;"><?php echo $display_showing; ?> ads shown / <?php echo $s['total_zones_activated']; ?> zones</p>
+				<p style="color:#666;font-size:13px;"><?php echo $display_showing; ?> ads showing / <?php echo $s['total_zones_activated']; ?> injected</p>
 				<div class="pl-bar"><div class="pl-bar-fill" style="width:<?php echo $effective; ?>%;background:#00a32a;"></div></div>
 			</div>
 		</div>
@@ -563,11 +561,13 @@ function pl_ad_render_fill_analysis( $s ) {
 		<!-- Fill funnel -->
 		<h4 style="margin-top:20px;">Fill Funnel</h4>
 		<table class="pl-table" style="max-width:600px;">
-			<tr><td>Zones Activated</td><td class="num"><strong><?php echo $s['total_zones_activated']; ?></strong></td><td class="num">100%</td></tr>
+			<tr><td>Ads Injected</td><td class="num"><strong><?php echo $s['total_zones_activated']; ?></strong></td><td class="num">100%</td></tr>
 			<tr><td>&rarr; Ad.Plus Filled</td><td class="num" style="color:#2271b1;"><?php echo $s['total_ad_fills']; ?></td><td class="num"><?php echo $s['total_zones_activated'] > 0 ? round( ( $s['total_ad_fills'] / $s['total_zones_activated'] ) * 100 ) : 0; ?>%</td></tr>
-			<tr><td>&rarr; Ad.Plus Empty &rarr; Passed to Newor</td><td class="num" style="color:#8c5fc7;"><?php echo $s['waldo_total_requested']; ?></td><td class="num"><?php echo $s['total_zones_activated'] > 0 ? round( ( $s['waldo_total_requested'] / $s['total_zones_activated'] ) * 100 ) : 0; ?>%</td></tr>
+			<tr><td>&rarr; Empty (No Fill)</td><td class="num" style="color:#d63638;"><?php echo $s['total_ad_empty']; ?></td><td class="num"><?php echo $s['total_zones_activated'] > 0 ? round( ( $s['total_ad_empty'] / $s['total_zones_activated'] ) * 100 ) : 0; ?>%</td></tr>
+			<?php if ( $has_passback ) : ?>
+			<tr><td>&nbsp;&nbsp;&rarr; Passed to Newor</td><td class="num" style="color:#8c5fc7;"><?php echo $s['waldo_total_requested']; ?></td><td class="num"><?php echo $s['total_zones_activated'] > 0 ? round( ( $s['waldo_total_requested'] / $s['total_zones_activated'] ) * 100 ) : 0; ?>%</td></tr>
 			<tr><td>&nbsp;&nbsp;&rarr; Newor Filled</td><td class="num" style="color:#8c5fc7;"><?php echo $s['waldo_total_filled']; ?></td><td class="num"><?php echo $s['waldo_total_requested'] > 0 ? round( ( $s['waldo_total_filled'] / $s['waldo_total_requested'] ) * 100 ) : 0; ?>%</td></tr>
-			<tr><td>&nbsp;&nbsp;&rarr; Both Empty (Collapsed)</td><td class="num" style="color:#d63638;"><?php echo max( 0, $s['total_ad_empty'] - $s['waldo_total_filled'] ); ?></td><td class="num"></td></tr>
+			<?php endif; ?>
 		</table>
 	</div>
 	<?php
@@ -700,18 +700,15 @@ function pl_ad_render_overlay_performance( $s ) {
 
 function pl_ad_render_revenue_estimate( $s ) {
 	// eCPM values from Ad.Plus reference (USD per 1000 impressions).
+	// v5: higher viewability = higher effective eCPMs.
 	$ecpm = array(
-		'300x250'  => 0.49,
-		'970x250'  => 0.80,
-		'728x90'   => 0.60,
-		'320x100'  => 0.40,
-		'160x600'  => 0.50,
+		'display'  => 0.80,  // v5 dynamic injection: higher viewability yields better eCPM.
 		'anchor'   => 0.65,
 		'top_anchor' => 0.40,
 		'interstitial' => 8.00,
 		'pause'    => 0.49,
 		'video'    => 1.50,
-		'refresh'  => 0.25,
+		'refresh'  => 0.35,
 	);
 
 	// Estimate impressions by type from zone data.
@@ -722,8 +719,8 @@ function pl_ad_render_revenue_estimate( $s ) {
 	$pause_imps   = $s['total_pause_banners_shown'] ?? 0;
 	$refresh_imps = $s['total_refresh_impressions'] ?? 0;
 
-	// Weighted display eCPM (assume mix of sizes).
-	$display_rev  = ( $display_imps / 1000 ) * 0.55;
+	// Display revenue with v5 dynamic injection eCPM.
+	$display_rev  = ( $display_imps / 1000 ) * $ecpm['display'];
 	$anchor_rev   = ( $anchor_imps / 1000 ) * $ecpm['anchor'];
 	$top_anchor_rev = ( $top_anchor_imps / 1000 ) * $ecpm['top_anchor'];
 	$inter_rev    = ( $inter_imps / 1000 ) * $ecpm['interstitial'];
@@ -742,7 +739,7 @@ function pl_ad_render_revenue_estimate( $s ) {
 				<table class="pl-table">
 					<thead><tr><th>Format</th><th class="num">Impressions</th><th class="num">eCPM</th><th class="num">Est. Revenue</th></tr></thead>
 					<tbody>
-						<tr><td>Display (in-content)</td><td class="num"><?php echo number_format( $display_imps ); ?></td><td class="num">$0.55</td><td class="num" style="color:#00a32a;">$<?php echo number_format( $display_rev, 2 ); ?></td></tr>
+						<tr><td>Display (in-content)</td><td class="num"><?php echo number_format( $display_imps ); ?></td><td class="num">$<?php echo $ecpm['display']; ?></td><td class="num" style="color:#00a32a;">$<?php echo number_format( $display_rev, 2 ); ?></td></tr>
 						<tr><td>Bottom Anchor</td><td class="num"><?php echo number_format( $anchor_imps ); ?></td><td class="num">$<?php echo $ecpm['anchor']; ?></td><td class="num" style="color:#00a32a;">$<?php echo number_format( $anchor_rev, 2 ); ?></td></tr>
 						<tr><td>Top Anchor</td><td class="num"><?php echo number_format( $top_anchor_imps ); ?></td><td class="num">$<?php echo $ecpm['top_anchor']; ?></td><td class="num" style="color:#00a32a;">$<?php echo number_format( $top_anchor_rev, 2 ); ?></td></tr>
 						<tr><td>Interstitial</td><td class="num"><?php echo number_format( $inter_imps ); ?></td><td class="num">$<?php echo $ecpm['interstitial']; ?></td><td class="num" style="color:#00a32a;">$<?php echo number_format( $inter_rev, 2 ); ?></td></tr>

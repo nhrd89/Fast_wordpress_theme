@@ -74,17 +74,19 @@ function pl_ad_empty_day_stats() {
 		'pause_filled'               => 0,
 		'pause_total_visible_ms'     => 0,
 
-		// V4: pause banners (contentPause) + refresh.
+		// v5: pause banners (contentPause) + refresh + video.
 		'total_pause_banners_shown'     => 0,
 		'total_pause_banners_continued' => 0,
 		'total_refresh_count'           => 0,
 		'total_refresh_impressions'     => 0,
+		'video_injected_count'          => 0,
+		'total_scroll_speed_sum'        => 0,
 
-		// Passback.
+		// Passback (legacy v4, will be 0 for v5 sessions).
 		'waldo_total_requested' => 0,
 		'waldo_total_filled'    => 0,
 
-		// Retries.
+		// Retries (legacy v4).
 		'total_retries'      => 0,
 		'retries_successful' => 0,
 	);
@@ -147,8 +149,13 @@ function pl_ad_aggregate_session( $session ) {
 	$stats['by_hour'][ $hour ] = ( $stats['by_hour'][ $hour ] ?? 0 ) + 1;
 
 	// --- Engagement ---
-	$stats['total_time_s']     += floatval( $session['time_on_page_s'] ?? 0 );
-	$stats['total_scroll_pct'] += floatval( $session['scroll_pct'] ?? 0 );
+	// Handle both naming conventions: live sessions use time_on_page_s, recorder uses time_on_page_ms.
+	$time_s = floatval( $session['time_on_page_s'] ?? 0 );
+	if ( $time_s == 0 && ! empty( $session['time_on_page_ms'] ) ) {
+		$time_s = floatval( $session['time_on_page_ms'] ) / 1000;
+	}
+	$stats['total_time_s']     += $time_s;
+	$stats['total_scroll_pct'] += floatval( $session['scroll_pct'] ?? $session['max_scroll_depth_pct'] ?? 0 );
 
 	// Gate.
 	if ( ! empty( $session['gate_open'] ) ) {
@@ -157,8 +164,9 @@ function pl_ad_aggregate_session( $session ) {
 	$stats['gate_checks']++;
 
 	// --- Ad Performance ---
-	$zones_activated  = intval( $session['zones_activated'] ?? $session['active_ads'] ?? 0 );
-	$viewable         = intval( $session['viewable_ads'] ?? 0 );
+	// Handle both naming conventions: live sessions vs recorder.
+	$zones_activated  = intval( $session['zones_activated'] ?? $session['active_ads'] ?? $session['total_ads_injected'] ?? 0 );
+	$viewable         = intval( $session['viewable_ads'] ?? $session['total_viewable'] ?? 0 );
 	$total_requested  = intval( $session['total_requested'] ?? 0 );
 	$total_filled     = intval( $session['total_filled'] ?? 0 );
 	$total_empty      = intval( $session['total_empty'] ?? 0 );
@@ -216,11 +224,15 @@ function pl_ad_aggregate_session( $session ) {
 		}
 	}
 
-	// V4: Pause banners (contentPause) + refresh.
+	// v5: Pause banners + refresh + video + scroll speed.
 	$stats['total_pause_banners_shown']     += intval( $session['pause_banners_shown'] ?? 0 );
 	$stats['total_pause_banners_continued'] += intval( $session['pause_banners_continued'] ?? 0 );
 	$stats['total_refresh_count']           += intval( $session['refresh_count'] ?? 0 );
 	$stats['total_refresh_impressions']     += intval( $session['refresh_impressions'] ?? 0 );
+	if ( ! empty( $session['video_injected'] ) ) {
+		$stats['video_injected_count'] = ( $stats['video_injected_count'] ?? 0 ) + 1;
+	}
+	$stats['total_scroll_speed_sum'] = ( $stats['total_scroll_speed_sum'] ?? 0 ) + intval( $session['scroll_speed'] ?? $session['avg_scroll_speed'] ?? 0 );
 
 	// --- Passback (Newor Media) ---
 	$stats['waldo_total_requested'] += intval( $session['waldo_requested'] ?? 0 );
