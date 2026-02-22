@@ -108,6 +108,8 @@ var state = {
 	anchorFilled: false,
 	topAnchorFilled: false,
 	interstitialFilled: false,
+	leftSideRailSlot: null,
+	rightSideRailSlot: null,
 
 	// Ad fill tracking.
 	totalRequested: 0,
@@ -392,6 +394,23 @@ function initViewportAds() {
 
 function evaluateInjection() {
 	if (!state.gateOpen) return;
+
+	// Emergency injection: 10s since gate, no scroll-driven ads yet.
+	var timeSinceGate = Date.now() - state.gateOpenTime;
+	if (timeSinceGate > 10000 && state.totalInjected <= state.viewportAdsInjected) {
+		for (var ei = 0; ei < state.anchors.length; ei++) {
+			var eAnchor = state.anchors[ei];
+			if (eAnchor.classList.contains('ad-active')) continue;
+			var eRect = eAnchor.getBoundingClientRect();
+			if (eRect.top > 0 && eRect.top < window.innerHeight) {
+				injectAd(eAnchor, { size: [300, 250], slot: 'Ad.Plus-300x250' });
+				console.log('[SmartAds] Emergency injection at', eAnchor.getAttribute('data-position'));
+				break;
+			}
+		}
+		return;
+	}
+
 	if (state.nextAnchorIndex >= state.anchors.length) {
 		if (debug) console.log('[SmartAds] eval: no anchors remaining');
 		return;
@@ -647,8 +666,8 @@ function injectPauseBanner(anchorEl) {
 
 function trackAdViewability(adRecord) {
 	var el = adRecord.zoneEl;
-	var visibleStart = null;
 	var totalVisibleMs = 0;
+	adRecord._visibleStart = null;
 
 	if (!('IntersectionObserver' in window)) return;
 
@@ -663,16 +682,16 @@ function trackAdViewability(adRecord) {
 			el._viewRatio = ratio;
 
 			if (ratio >= VIEWABLE_RATIO) {
-				if (!visibleStart) visibleStart = Date.now();
+				if (!adRecord._visibleStart) adRecord._visibleStart = Date.now();
 			} else {
-				if (visibleStart) {
-					totalVisibleMs += Date.now() - visibleStart;
-					visibleStart = null;
+				if (adRecord._visibleStart) {
+					totalVisibleMs += Date.now() - adRecord._visibleStart;
+					adRecord._visibleStart = null;
 				}
 			}
 
 			// Update record.
-			adRecord.visibleMs = totalVisibleMs + (visibleStart ? Date.now() - visibleStart : 0);
+			adRecord.visibleMs = totalVisibleMs + (adRecord._visibleStart ? Date.now() - adRecord._visibleStart : 0);
 
 			// Check IAB viewability: 50% visible for 1+ second.
 			if (adRecord.visibleMs >= VIEWABLE_MS && !adRecord.viewable) {
@@ -696,8 +715,8 @@ function trackAdViewability(adRecord) {
 			var visH = Math.min(rect.bottom, vpH) - Math.max(rect.top, 0);
 			var elH = rect.height || 1;
 			var r = visH / elH;
-			if (r >= VIEWABLE_RATIO && !visibleStart) {
-				visibleStart = Date.now();
+			if (r >= VIEWABLE_RATIO && !adRecord._visibleStart) {
+				adRecord._visibleStart = Date.now();
 				adRecord.maxRatio = Math.max(adRecord.maxRatio, r);
 				el._viewRatio = r;
 			}
@@ -747,7 +766,7 @@ function initOverlays() {
 				state.topAnchorFiredAt = Date.now();
 				var top = document.createElement('div');
 				top.style.cssText = 'position:fixed;top:0;left:0;width:100%;z-index:9999;text-align:center;background:#e8f5e9;border-bottom:2px dashed #4caf50;padding:8px;font-family:monospace;font-size:11px;font-weight:700;color:#1b5e20';
-				top.textContent = 'TOP ANCHOR \u2014 Ad.Plus-Anchor-Small';
+				top.textContent = 'TOP ANCHOR \u2014 Ad.Plus-AnchorSmall';
 				document.body.appendChild(top);
 			}
 		}, 1000);
@@ -830,7 +849,7 @@ function initOverlays() {
 
 		googletag.cmd.push(function() {
 			var slot = googletag.defineOutOfPageSlot(
-				SLOT_BASE + 'Ad.Plus-Anchor-Small',
+				SLOT_BASE + 'Ad.Plus-AnchorSmall',
 				googletag.enums.OutOfPageFormat.TOP_ANCHOR
 			);
 			if (slot) {
@@ -844,6 +863,45 @@ function initOverlays() {
 		});
 		if (debug) console.log('[SmartAds] Top anchor shown');
 	}, 1000);
+
+	// Side Rails — desktop only, sticky left + right (>= 1200px).
+	if (window.innerWidth >= 1200) {
+		setTimeout(function() {
+			googletag.cmd.push(function() {
+				var leftSlot = googletag.defineOutOfPageSlot(
+					SLOT_BASE + 'Ad.Plus-SideAnchor',
+					googletag.enums.OutOfPageFormat.LEFT_SIDE_RAIL
+				);
+				if (leftSlot) {
+					leftSlot.addService(googletag.pubads());
+					googletag.display(leftSlot);
+					state.leftSideRailSlot = leftSlot;
+				}
+
+				var rightSlot = googletag.defineOutOfPageSlot(
+					SLOT_BASE + 'Ad.Plus-SideAnchor',
+					googletag.enums.OutOfPageFormat.RIGHT_SIDE_RAIL
+				);
+				if (rightSlot) {
+					rightSlot.addService(googletag.pubads());
+					googletag.display(rightSlot);
+					state.rightSideRailSlot = rightSlot;
+				}
+
+				// Refresh both every 30s.
+				if (leftSlot || rightSlot) {
+					setInterval(function() {
+						var slots = [];
+						if (leftSlot) slots.push(leftSlot);
+						if (rightSlot) slots.push(rightSlot);
+						googletag.pubads().refresh(slots);
+					}, 30000);
+				}
+
+				if (debug) console.log('[SmartAds] Side rails:', leftSlot ? 'left' : 'no-left', rightSlot ? 'right' : 'no-right');
+			});
+		}, 1000);
+	}
 }
 
 /* ================================================================
@@ -1016,15 +1074,23 @@ function getSessionId() {
 	return sessionSid;
 }
 
-function buildSessionReport() {
-	// Finalize visible times.
+function finalizeVisibility() {
 	for (var i = 0; i < state.injectedAds.length; i++) {
 		var ad = state.injectedAds[i];
-		// Update visibleMs from the observer data.
-		if (ad._observer) {
-			// The observer callback tracks this in real-time via closure.
+		if (ad._visibleStart) {
+			ad.visibleMs += Date.now() - ad._visibleStart;
+			ad._visibleStart = Date.now();
+		}
+		if (ad.visibleMs >= VIEWABLE_MS && !ad.viewable) {
+			ad.viewable = true;
+			state.totalViewable++;
 		}
 	}
+}
+
+function buildSessionReport() {
+	// Flush in-progress visibility before reporting.
+	finalizeVisibility();
 
 	var ads = [];
 	for (var j = 0; j < state.injectedAds.length; j++) {

@@ -71,7 +71,7 @@ function pl_ad_defaults() {
 		// Ad Unit Slot Names.
 		'slot_interstitial'     => 'Ad.Plus-Interstitial',
 		'slot_anchor'           => 'Ad.Plus-Anchor',
-		'slot_top_anchor'       => 'Ad.Plus-Anchor-Small',
+		'slot_top_anchor'       => 'Ad.Plus-AnchorSmall',
 		'slot_300x250'          => 'Ad.Plus-300x250',
 		'slot_970x250'          => 'Ad.Plus-970x250',
 		'slot_728x90'           => 'Ad.Plus-728x90',
