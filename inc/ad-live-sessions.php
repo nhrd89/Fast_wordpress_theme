@@ -137,6 +137,12 @@ function pl_live_sessions_heartbeat( $request ) {
 		'pause_banners_shown'  => intval( $body['pauseBannersInjected'] ?? $body['pauseBannersShown'] ?? 0 ),
 		'refresh_count'        => intval( $body['totalRefreshes'] ?? $body['refreshCount'] ?? 0 ),
 		'video_injected'       => ! empty( $body['videoInjected'] ),
+		// Waldo passback tracking.
+		'waldo_passbacks'      => intval( $body['waldoPassbacks'] ?? 0 ),
+		'waldo_tags_used'      => intval( $body['waldoTagsUsed'] ?? 0 ),
+		// Side rail fill tracking.
+		'left_side_rail_filled'  => ! empty( $body['leftSideRailFilled'] ),
+		'right_side_rail_filled' => ! empty( $body['rightSideRailFilled'] ),
 	);
 
 	// v5: Per-ad injection details from heartbeat.
@@ -154,6 +160,9 @@ function pl_live_sessions_heartbeat( $request ) {
 				'max_ratio'     => floatval( $z['maxRatio'] ?? 0 ),
 				'filled'        => isset( $z['filled'] ) ? (bool) $z['filled'] : null,
 				'is_pause'      => ! empty( $z['isPause'] ),
+				'is_video'      => ! empty( $z['isVideo'] ),
+				'passback'      => ! empty( $z['passback'] ),
+				'passback_net'  => sanitize_text_field( $z['passbackNetwork'] ?? '' ),
 				'refresh_count' => intval( $z['refreshCount'] ?? 0 ),
 			);
 		}

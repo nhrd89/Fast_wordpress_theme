@@ -125,6 +125,12 @@ function pinlightning_record_ad_data($request) {
         'refresh_count' => intval($body['totalRefreshes'] ?? $body['refreshCount'] ?? 0),
         'refresh_impressions' => intval($body['refreshImpressions'] ?? 0),
         'video_injected' => !empty($body['videoInjected']),
+        // Waldo passback tracking.
+        'waldo_passbacks' => intval($body['waldoPassbacks'] ?? 0),
+        'waldo_tags_used' => intval($body['waldoTagsUsed'] ?? 0),
+        // Side rail fill tracking.
+        'left_side_rail_filled' => !empty($body['leftSideRailFilled']),
+        'right_side_rail_filled' => !empty($body['rightSideRailFilled']),
         // Overlay detail.
         'anchor_impressions' => intval($body['anchorImpressions'] ?? 0),
         'anchor_viewable' => intval($body['anchorViewable'] ?? 0),
@@ -150,6 +156,9 @@ function pinlightning_record_ad_data($request) {
                 'max_ratio' => floatval($zone['maxRatio'] ?? 0),
                 'filled' => !empty($zone['filled']),
                 'is_pause' => !empty($zone['isPause']),
+                'is_video' => !empty($zone['isVideo']),
+                'passback' => !empty($zone['passback']),
+                'passback_network' => sanitize_text_field($zone['passbackNetwork'] ?? ''),
                 'refresh_count' => intval($zone['refreshCount'] ?? 0),
             );
         }
@@ -220,6 +229,11 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         // Overlay detail.
         $existing['anchor_impressions']      = max( $existing['anchor_impressions'] ?? 0, $session['anchor_impressions'] ?? 0 );
         $existing['interstitial_viewable']   = max( $existing['interstitial_viewable'] ?? 0, $session['interstitial_viewable'] ?? 0 );
+        // Waldo + side rail (ad-track has final values).
+        $existing['waldo_passbacks']         = max( $existing['waldo_passbacks'] ?? 0, $session['waldo_passbacks'] ?? 0 );
+        $existing['waldo_tags_used']         = max( $existing['waldo_tags_used'] ?? 0, $session['waldo_tags_used'] ?? 0 );
+        $existing['left_side_rail_filled']   = ! empty( $session['left_side_rail_filled'] ) || ! empty( $existing['left_side_rail_filled'] );
+        $existing['right_side_rail_filled']  = ! empty( $session['right_side_rail_filled'] ) || ! empty( $existing['right_side_rail_filled'] );
         // Identity fields.
         if ( ! empty( $session['referrer'] ) ) {
             $existing['referrer'] = $session['referrer'];
@@ -276,6 +290,11 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'video_injected'         => $session['video_injected'] ?? false,
         'anchor_impressions'     => $session['anchor_impressions'] ?? 0,
         'interstitial_viewable'  => $session['interstitial_viewable'] ?? 0,
+        // Waldo + side rail.
+        'waldo_passbacks'          => $session['waldo_passbacks'] ?? 0,
+        'waldo_tags_used'          => $session['waldo_tags_used'] ?? 0,
+        'left_side_rail_filled'    => $session['left_side_rail_filled'] ?? false,
+        'right_side_rail_filled'   => $session['right_side_rail_filled'] ?? false,
         'status'         => 'ended',
         'ended_at'       => time(),
         'source'         => 'ad-track',

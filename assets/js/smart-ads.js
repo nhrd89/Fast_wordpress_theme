@@ -56,6 +56,15 @@ var MAX_REFRESHES = 15;             // per session
 var PAUSE_BANNER_POSITIONS = ['item3-after-p', 'item6-after-p', 'item9-after-p', 'item12-after-p'];
 var MAX_PAUSE_BANNERS = 2;
 
+// ─── Waldo (Newor Media) Passback Tags ───
+// Each tag ID can only be used ONCE per page.
+var WALDO_TAGS = {
+	multi: ['waldo-tag-24348', 'waldo-tag-24350', 'waldo-tag-24352'],
+	medium_tall: ['waldo-tag-24354', 'waldo-tag-24356'],
+	small: ['waldo-tag-29686', 'waldo-tag-29688', 'waldo-tag-29690']
+};
+var waldoUsed = { multi: 0, medium_tall: 0, small: 0 };
+
 /* ================================================================
  * MODULE 2: STATE
  * ================================================================ */
@@ -110,6 +119,8 @@ var state = {
 	interstitialFilled: false,
 	leftSideRailSlot: null,
 	rightSideRailSlot: null,
+	leftSideRailFilled: false,
+	rightSideRailFilled: false,
 
 	// Ad fill tracking.
 	totalRequested: 0,
@@ -117,13 +128,13 @@ var state = {
 	totalEmpty: 0,
 	totalUnfilled: 0,
 	viewportAdsInjected: 0,
+	waldoPassbacks: 0,
 
 	// Pause refresh.
 	scrollPauseTimer: null,
 	lastRefreshTime: {},
 
 	// GPT state.
-	gptLoaded: false,
 	gptReady: false,
 	slotCounter: 0
 };
@@ -293,6 +304,7 @@ function openGate(timeOnly) {
 function injectFirstVisibleAd() {
 	for (var i = 0; i < state.anchors.length; i++) {
 		var anchor = state.anchors[i];
+		if (anchor.classList.contains('ad-active')) continue;
 		var rect = anchor.getBoundingClientRect();
 		// Anchor is in the viewport (top is below page top, above fold).
 		if (rect.top > 0 && rect.top < window.innerHeight) {
@@ -318,74 +330,73 @@ function injectFirstVisibleAd() {
  * Called via setTimeout(initViewportAds, 2000) from init().
  */
 function initViewportAds() {
-	console.log('[SmartAds] initViewportAds() called');
-	console.log('[SmartAds] dummy:', cfg.dummy, 'googletag:', typeof googletag !== 'undefined', 'cmd:', typeof googletag !== 'undefined' && !!googletag.cmd);
-
-	// Debug: enumerate all anchors in DOM.
-	var allAnchors = document.querySelectorAll('.ad-anchor');
-	console.log('[SmartAds] Total .ad-anchor in DOM:', allAnchors.length);
-	for (var d = 0; d < allAnchors.length; d++) {
-		console.log('[SmartAds]   anchor[' + d + ']:', allAnchors[d].getAttribute('data-position'), 'loc=' + allAnchors[d].getAttribute('data-location'), 'display=' + window.getComputedStyle(allAnchors[d]).display, 'active=' + allAnchors[d].classList.contains('ad-active'));
+	if (debug) {
+		console.log('[SmartAds] initViewportAds() called');
+		console.log('[SmartAds] dummy:', cfg.dummy, 'googletag:', typeof googletag !== 'undefined', 'cmd:', typeof googletag !== 'undefined' && !!googletag.cmd);
+		var allAnchors = document.querySelectorAll('.ad-anchor');
+		console.log('[SmartAds] Total .ad-anchor in DOM:', allAnchors.length);
+		for (var d = 0; d < allAnchors.length; d++) {
+			console.log('[SmartAds]   anchor[' + d + ']:', allAnchors[d].getAttribute('data-position'), 'loc=' + allAnchors[d].getAttribute('data-location'), 'display=' + window.getComputedStyle(allAnchors[d]).display, 'active=' + allAnchors[d].classList.contains('ad-active'));
+		}
 	}
 
 	// Nav ad — device-targeted, always inject.
 	// Fallback: also match data-position starting with "nav" if data-location is missing.
 	var navAnchors = document.querySelectorAll('.ad-anchor[data-location="nav"], .ad-anchor[data-position^="nav-below"]');
-	console.log('[SmartAds] Nav anchors found:', navAnchors.length);
+	if (debug) console.log('[SmartAds] Nav anchors found:', navAnchors.length);
 	for (var i = 0; i < navAnchors.length; i++) {
 		var nav = navAnchors[i];
 		var navDisplay = window.getComputedStyle(nav).display;
-		console.log('[SmartAds] Nav[' + i + ']:', nav.getAttribute('data-position'), 'display=' + navDisplay, 'active=' + nav.classList.contains('ad-active'));
+		if (debug) console.log('[SmartAds] Nav[' + i + ']:', nav.getAttribute('data-position'), 'display=' + navDisplay, 'active=' + nav.classList.contains('ad-active'));
 		if (nav.classList.contains('ad-active')) continue;
 		if (navDisplay === 'none') continue;
 		var adChoice = selectAdSize(nav);
 		if (adChoice) {
 			injectAd(nav, adChoice);
 			state.viewportAdsInjected++;
-			console.log('[SmartAds] Viewport ad injected:', adChoice.slot, 'at', nav.getAttribute('data-position'));
+			if (debug) console.log('[SmartAds] Viewport ad injected:', adChoice.slot, 'at', nav.getAttribute('data-position'));
 		}
 	}
 
 	// Sidebar ads — desktop only (>= 1024px).
-	console.log('[SmartAds] isDesktop:', isDesktop, 'innerWidth:', window.innerWidth);
+	if (debug) console.log('[SmartAds] isDesktop:', isDesktop, 'innerWidth:', window.innerWidth);
 	if (isDesktop) {
 		var sidebarAnchors = document.querySelectorAll('.ad-anchor[data-location="sidebar-top"], .ad-anchor[data-location="sidebar-bottom"], .ad-anchor[data-position="sidebar-top"], .ad-anchor[data-position="sidebar-bottom"]');
-		console.log('[SmartAds] Sidebar anchors found:', sidebarAnchors.length);
+		if (debug) console.log('[SmartAds] Sidebar anchors found:', sidebarAnchors.length);
 		for (var s = 0; s < sidebarAnchors.length; s++) {
 			var sb = sidebarAnchors[s];
-			console.log('[SmartAds] Sidebar[' + s + ']:', sb.getAttribute('data-position'), 'active=' + sb.classList.contains('ad-active'));
+			if (debug) console.log('[SmartAds] Sidebar[' + s + ']:', sb.getAttribute('data-position'), 'active=' + sb.classList.contains('ad-active'));
 			if (sb.classList.contains('ad-active')) continue;
 			var sbChoice = selectAdSize(sb);
 			if (sbChoice) {
 				injectAd(sb, sbChoice);
 				state.viewportAdsInjected++;
-				console.log('[SmartAds] Viewport ad injected:', sbChoice.slot, 'at', sb.getAttribute('data-position'));
+				if (debug) console.log('[SmartAds] Viewport ad injected:', sbChoice.slot, 'at', sb.getAttribute('data-position'));
 			}
 		}
 	}
 
 	// First content anchor currently in viewport — inject 300x250.
 	var contentAnchors = document.querySelectorAll('.ad-anchor:not([data-location="nav"]):not([data-location="sidebar-top"]):not([data-location="sidebar-bottom"])');
-	console.log('[SmartAds] Content anchors found:', contentAnchors.length);
+	if (debug) console.log('[SmartAds] Content anchors found:', contentAnchors.length);
 	var foundViewportAnchor = false;
 	for (var c = 0; c < contentAnchors.length; c++) {
 		var anchor = contentAnchors[c];
 		if (anchor.classList.contains('ad-active')) continue;
 		var rect = anchor.getBoundingClientRect();
-		console.log('[SmartAds] Content[' + c + ']:', anchor.getAttribute('data-position'), 'top=' + Math.round(rect.top), 'inViewport=' + (rect.top > 0 && rect.top < window.innerHeight));
+		if (debug) console.log('[SmartAds] Content[' + c + ']:', anchor.getAttribute('data-position'), 'top=' + Math.round(rect.top), 'inViewport=' + (rect.top > 0 && rect.top < window.innerHeight));
 		if (rect.top > 0 && rect.top < window.innerHeight) {
 			injectAd(anchor, { size: [300, 250], slot: 'Ad.Plus-300x250' });
 			state.viewportAdsInjected++;
-			console.log('[SmartAds] Viewport ad injected: Ad.Plus-300x250 at', anchor.getAttribute('data-position'));
+			if (debug) console.log('[SmartAds] Viewport ad injected: Ad.Plus-300x250 at', anchor.getAttribute('data-position'));
 			foundViewportAnchor = true;
 			break;
 		}
-		// Stop scanning once anchors are below viewport.
 		if (rect.top >= window.innerHeight) break;
 	}
-	if (!foundViewportAnchor) console.log('[SmartAds] No content anchor in viewport (innerHeight=' + window.innerHeight + ')');
+	if (debug && !foundViewportAnchor) console.log('[SmartAds] No content anchor in viewport (innerHeight=' + window.innerHeight + ')');
 
-	console.log('[SmartAds] initViewportAds() done — total viewport ads:', state.viewportAdsInjected);
+	if (debug) console.log('[SmartAds] initViewportAds() done — total viewport ads:', state.viewportAdsInjected);
 }
 
 /* ================================================================
@@ -404,15 +415,10 @@ function evaluateInjection() {
 			var eRect = eAnchor.getBoundingClientRect();
 			if (eRect.top > 0 && eRect.top < window.innerHeight) {
 				injectAd(eAnchor, { size: [300, 250], slot: 'Ad.Plus-300x250' });
-				console.log('[SmartAds] Emergency injection at', eAnchor.getAttribute('data-position'));
+				if (debug) console.log('[SmartAds] Emergency injection at', eAnchor.getAttribute('data-position'));
 				break;
 			}
 		}
-		return;
-	}
-
-	if (state.nextAnchorIndex >= state.anchors.length) {
-		if (debug) console.log('[SmartAds] eval: no anchors remaining');
 		return;
 	}
 
@@ -905,6 +911,52 @@ function initOverlays() {
 }
 
 /* ================================================================
+ * MODULE 13b: WALDO PASSBACK TAG SELECTOR
+ * ================================================================ */
+
+function getNextWaldoTag(adSize) {
+	if (adSize === '300x600') {
+		if (waldoUsed.medium_tall < WALDO_TAGS.medium_tall.length) {
+			return WALDO_TAGS.medium_tall[waldoUsed.medium_tall++];
+		}
+	}
+
+	if (adSize === '300x250' || adSize === '336x280' || adSize === '250x250') {
+		if (waldoUsed.small < WALDO_TAGS.small.length) {
+			return WALDO_TAGS.small[waldoUsed.small++];
+		}
+		if (waldoUsed.multi < WALDO_TAGS.multi.length) {
+			return WALDO_TAGS.multi[waldoUsed.multi++];
+		}
+	}
+
+	if (adSize === '728x90' || adSize === '970x250' || adSize === '970x90' || adSize === '320x100' || adSize === '320x50' || adSize === '468x60') {
+		if (waldoUsed.multi < WALDO_TAGS.multi.length) {
+			return WALDO_TAGS.multi[waldoUsed.multi++];
+		}
+	}
+
+	if (adSize === '160x600') {
+		if (waldoUsed.medium_tall < WALDO_TAGS.medium_tall.length) {
+			return WALDO_TAGS.medium_tall[waldoUsed.medium_tall++];
+		}
+	}
+
+	// Fallback: try any remaining pool.
+	if (waldoUsed.small < WALDO_TAGS.small.length) {
+		return WALDO_TAGS.small[waldoUsed.small++];
+	}
+	if (waldoUsed.multi < WALDO_TAGS.multi.length) {
+		return WALDO_TAGS.multi[waldoUsed.multi++];
+	}
+	if (waldoUsed.medium_tall < WALDO_TAGS.medium_tall.length) {
+		return WALDO_TAGS.medium_tall[waldoUsed.medium_tall++];
+	}
+
+	return null;
+}
+
+/* ================================================================
  * MODULE 14: AD FILL TRACKER
  * ================================================================ */
 
@@ -927,16 +979,43 @@ function onSlotRenderEnded(event) {
 		if (event.isEmpty) {
 			state.totalEmpty++;
 			state.totalUnfilled++;
-			// Collapse empty ad and stop tracking viewability.
-			matchedAd.zoneEl.style.display = 'none';
-			matchedAd.anchor.classList.remove('ad-active');
-			matchedAd.filled = false;
-			matchedAd.discarded = true;
-			if (matchedAd._observer) {
-				matchedAd._observer.disconnect();
-				matchedAd._observer = null;
+
+			// Try Waldo passback before collapsing.
+			var adSizeStr = matchedAd.size.join('x');
+			var waldoTagId = getNextWaldoTag(adSizeStr);
+
+			if (waldoTagId) {
+				matchedAd.passback = true;
+				matchedAd.passbackNetwork = 'waldo';
+				matchedAd.passbackTagId = waldoTagId;
+
+				matchedAd.zoneEl.innerHTML = '';
+				var waldoDiv = document.createElement('div');
+				waldoDiv.id = waldoTagId;
+				matchedAd.zoneEl.appendChild(waldoDiv);
+
+				if (window.__waldo && typeof window.__waldo.refreshTag === 'function') {
+					window.__waldo.refreshTag(waldoTagId);
+				}
+
+				matchedAd.filled = true;
+				state.totalFilled++;
+				state.totalUnfilled--;
+				state.waldoPassbacks++;
+
+				if (debug) console.log('[SmartAds] Waldo passback:', waldoTagId, 'for', adSizeStr, 'at', matchedAd.position);
+			} else {
+				// No Waldo tags left — collapse.
+				matchedAd.zoneEl.style.display = 'none';
+				matchedAd.anchor.classList.remove('ad-active');
+				matchedAd.filled = false;
+				matchedAd.discarded = true;
+				if (matchedAd._observer) {
+					matchedAd._observer.disconnect();
+					matchedAd._observer = null;
+				}
+				if (debug) console.log('[SmartAds] Fill: ' + divId + ' NO-FILL — collapsed, no Waldo tags left');
 			}
-			if (debug) console.log('[SmartAds] Fill: ' + divId + ' NO-FILL — collapsed, excluded from viewability');
 		} else {
 			state.totalFilled++;
 			matchedAd.filled = true;
@@ -959,6 +1038,18 @@ function onSlotRenderEnded(event) {
 	}
 	if (state.topAnchorSlot && slot === state.topAnchorSlot) {
 		if (!event.isEmpty) { state.topAnchorFilled = true; state.totalFilled++; }
+		else state.totalEmpty++;
+		return;
+	}
+	if (state.leftSideRailSlot && slot === state.leftSideRailSlot) {
+		state.leftSideRailFilled = !event.isEmpty;
+		if (!event.isEmpty) state.totalFilled++;
+		else state.totalEmpty++;
+		return;
+	}
+	if (state.rightSideRailSlot && slot === state.rightSideRailSlot) {
+		state.rightSideRailFilled = !event.isEmpty;
+		if (!event.isEmpty) state.totalFilled++;
 		else state.totalEmpty++;
 		return;
 	}
@@ -985,8 +1076,32 @@ function tryInjectVideo() {
 
 	var videoDiv = document.createElement('div');
 	videoDiv.className = 'ad-zone ad-video';
+	videoDiv.id = 'video-1';
 	videoDiv.setAttribute('data-zone', 'video-1');
 	videoAnchor.appendChild(videoDiv);
+
+	// Track video in the injection system for viewability.
+	var videoRecord = {
+		anchor: videoAnchor,
+		zoneEl: videoDiv,
+		zoneId: 'video-1',
+		slot: 'InPage-Video',
+		size: [300, 200],
+		position: 'intro-after-p3',
+		injectedAt: Date.now(),
+		injectedAtScrollY: window.scrollY,
+		injectedAtSpeed: state.scrollSpeed,
+		injectedAtPattern: state.pattern,
+		viewable: false,
+		visibleMs: 0,
+		maxRatio: 0,
+		filled: true,
+		isPause: false,
+		isVideo: true,
+		refreshCount: 0
+	};
+	state.injectedAds.push(videoRecord);
+	state.totalInjected++;
 
 	if (cfg.dummy) {
 		videoDiv.style.cssText = 'width:300px;height:200px;background:rgba(239,68,68,0.15);border:2px dashed #ef4444;display:flex;align-items:center;justify-content:center;font:12px/1.3 system-ui;color:#ef4444;margin:10px auto;text-align:center';
@@ -1001,6 +1116,9 @@ function tryInjectVideo() {
 		script2.textContent = '(playerPro=window.playerPro||[]).push({id:"z2I717k6zq5b",after:document.querySelector(".ad-video"),appParams:{"C_NETWORK_CODE":"22953639975","C_WEBSITE":"cheerlives.com"}});';
 		videoDiv.appendChild(script2);
 	}
+
+	// Start viewability tracking for video.
+	trackAdViewability(videoRecord);
 
 	if (debug) console.log('[SmartAds] Video injected at intro-after-p3');
 }
@@ -1109,7 +1227,10 @@ function buildSessionReport() {
 			maxRatio: Math.round(a.maxRatio * 100) / 100,
 			filled: a.filled,
 			isPause: a.isPause,
-			refreshCount: a.refreshCount
+			isVideo: a.isVideo || false,
+			refreshCount: a.refreshCount,
+			passback: a.passback || false,
+			passbackNetwork: a.passbackNetwork || ''
 		});
 	}
 
@@ -1148,6 +1269,8 @@ function buildSessionReport() {
 		totalFilled: state.totalFilled,
 		totalEmpty: state.totalEmpty,
 		totalUnfilled: state.totalUnfilled,
+		waldoPassbacks: state.waldoPassbacks,
+		waldoTagsUsed: waldoUsed.multi + waldoUsed.medium_tall + waldoUsed.small,
 		fillRate: state.totalRequested > 0 ? Math.round(state.totalFilled / state.totalRequested * 100) : 0,
 
 		// Overlay status.
@@ -1160,6 +1283,8 @@ function buildSessionReport() {
 		anchorFilled: state.anchorFilled,
 		topAnchorFilled: state.topAnchorFilled,
 		interstitialFilled: state.interstitialFilled,
+		leftSideRailFilled: state.leftSideRailFilled,
+		rightSideRailFilled: state.rightSideRailFilled,
 		interstitialViewable: state.interstitialViewable,
 		interstitialDurationMs: state.interstitialClosedAt ? state.interstitialClosedAt - state.interstitialShownAt : (state.interstitialShownAt ? Date.now() - state.interstitialShownAt : 0),
 
@@ -1255,6 +1380,12 @@ function init() {
 			state.gptReady = true;
 		};
 		document.head.appendChild(gptScript);
+
+		// Load Waldo (Newor Media) passback script.
+		var waldoScript = document.createElement('script');
+		waldoScript.async = true;
+		waldoScript.src = '//cdn.thisiswaldo.com/static/js/24273.js';
+		document.head.appendChild(waldoScript);
 	}
 
 	// Init overlays (not gated, not scroll-driven).
