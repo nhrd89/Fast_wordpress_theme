@@ -283,15 +283,25 @@ function initSlots() {
 		}
 
 		/* --- Sidebar Slots (desktop only) --- */
+		/* Sidebar is 280px with 24px padding = 232px content area.
+		   Only sizes <= 232px wide are eligible for auction. */
 
 		if (IS_DESKTOP) {
+
+			// Primary sidebar: tall formats preferred
+			var sidebarSizeMap1 = googletag.sizeMapping()
+				.addSize([1025, 0], [[160, 600], [120, 600], [200, 200], [180, 150], [120, 240]])
+				.addSize([0, 0],    [])  // Hide on mobile/tablet
+				.build();
+
 			if (document.getElementById('300x600-1')) {
 				var sb1 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-300x250',
-					[[300, 600], [300, 250], [160, 600], [120, 600]],
+					[[160, 600], [120, 600], [200, 200], [180, 150], [120, 240]],
 					'300x600-1'
 				);
 				if (sb1) {
+					sb1.defineSizeMapping(sidebarSizeMap1);
 					sb1.addService(googletag.pubads());
 					sb1.setTargeting('refresh', 'true');
 					sb1.setTargeting('pos', 'sidebar');
@@ -303,13 +313,20 @@ function initSlots() {
 				}
 			}
 
+			// Secondary sidebar: short formats (no tall — two skyscrapers would be too much)
+			var sidebarSizeMap2 = googletag.sizeMapping()
+				.addSize([1025, 0], [[200, 200], [180, 150], [120, 240]])
+				.addSize([0, 0],    [])  // Hide on mobile/tablet
+				.build();
+
 			if (document.getElementById('300x250-sidebar')) {
 				var sb2 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-300x250',
-					[[300, 250], [250, 250], [300, 100]],
+					[[200, 200], [180, 150], [120, 240]],
 					'300x250-sidebar'
 				);
 				if (sb2) {
+					sb2.defineSizeMapping(sidebarSizeMap2);
 					sb2.addService(googletag.pubads());
 					sb2.setTargeting('refresh', 'true');
 					sb2.setTargeting('pos', 'sidebar');
