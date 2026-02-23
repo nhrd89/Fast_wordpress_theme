@@ -214,6 +214,21 @@ function initSlots() {
 			};
 		}
 
+		// Top Anchor
+		var topAnchor = googletag.defineOutOfPageSlot(
+			SLOT_PATH + 'Ad.Plus-AnchorSmall',
+			googletag.enums.OutOfPageFormat.TOP_ANCHOR
+		);
+		if (topAnchor) {
+			topAnchor.addService(googletag.pubads());
+			_overlaySlots.topAnchor = topAnchor;
+			_slotMap['__topAnchor'] = {
+				slot: topAnchor, type: 'anchor',
+				refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
+				renderedSize: null, viewable: false
+			};
+		}
+
 		// Side Rails (desktop only)
 		if (IS_DESKTOP) {
 			var leftRail = googletag.defineOutOfPageSlot(
