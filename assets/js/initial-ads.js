@@ -109,8 +109,9 @@ function boot() {
 		log('plAds not found — ads disabled');
 		return;
 	}
-	if (!document.getElementById('initial-ad-1')) {
-		log('No initial ad containers — not a single post or ads disabled');
+	// Nav ad exists on ALL pages; initial-ad-1 only on single posts.
+	if (!document.getElementById('nav-ad-1') && !document.getElementById('initial-ad-1')) {
+		log('No ad containers found — ads disabled');
 		return;
 	}
 	log('Booting — loading GPT');
@@ -244,6 +245,37 @@ function initSlots() {
 			}
 		}
 
+		/* --- Nav Ad Slot (all pages) --- */
+		/* Leaderboard under navigation — highest viewability placement.
+		   Short formats only: max 90px desktop, 100px mobile. */
+
+		var navSizeMap = googletag.sizeMapping()
+			.addSize([1025, 0], [[970, 90], [970, 250], [728, 90]])
+			.addSize([768, 0],  [[728, 90], [468, 60]])
+			.addSize([468, 0],  [[320, 100], [320, 50], [300, 100]])
+			.addSize([320, 0],  [[320, 100], [320, 50], [300, 100]])
+			.addSize([0, 0],    [[300, 100], [300, 50]])
+			.build();
+
+		if (document.getElementById('nav-ad-1')) {
+			var navSlot = googletag.defineSlot(
+				SLOT_PATH + 'Ad.Plus-300x250',
+				[[970, 90], [970, 250], [728, 90], [468, 60], [320, 100], [320, 50], [300, 100], [300, 50]],
+				'nav-ad-1'
+			);
+			if (navSlot) {
+				navSlot.defineSizeMapping(navSizeMap);
+				navSlot.addService(googletag.pubads());
+				navSlot.setTargeting('refresh', 'true');
+				navSlot.setTargeting('pos', 'nav');
+				_slotMap['nav-ad-1'] = {
+					slot: navSlot, type: 'nav',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
+					renderedSize: null, viewable: false
+				};
+			}
+		}
+
 		/* --- Initial In-Content Slots --- */
 
 		// Slot 1 — before paragraph 1
@@ -352,7 +384,7 @@ function initSlots() {
 		googletag.enableServices();
 
 		// Display all display slots (overlays are auto-displayed by GPT)
-		var displayIds = ['initial-ad-1', 'initial-ad-2', '300x600-1', '300x250-sidebar'];
+		var displayIds = ['nav-ad-1', 'initial-ad-1', 'initial-ad-2', '300x600-1', '300x250-sidebar'];
 		for (var i = 0; i < displayIds.length; i++) {
 			if (document.getElementById(displayIds[i])) {
 				googletag.display(displayIds[i]);
@@ -387,7 +419,7 @@ function onSlotRenderEnded(event) {
 
 	if (event.isEmpty) {
 		// Collapse — shrink container to 0
-		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad'))) {
+		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad') || container.classList.contains('pl-nav-ad'))) {
 			container.style.minHeight = '0';
 			container.style.margin    = '0';
 			container.style.overflow  = 'hidden';
@@ -411,6 +443,13 @@ function onSlotRenderEnded(event) {
 	if (size && container && container.classList.contains('pl-sidebar-ad')) {
 		var origSbMin = parseInt(container.style.minHeight, 10) || 250;
 		if (size[1] > origSbMin) {
+			container.style.minHeight = size[1] + 'px';
+		}
+	}
+	// Nav ad container: grow only, set max-width to rendered width
+	if (size && container && container.classList.contains('pl-nav-ad')) {
+		var origNavMin = parseInt(container.style.minHeight, 10) || 90;
+		if (size[1] > origNavMin) {
 			container.style.minHeight = size[1] + 'px';
 		}
 	}
@@ -445,8 +484,8 @@ function onImpressionViewable(event) {
 		return;
 	}
 
-	// Overlay = 30s, initial in-content = 45s, sidebar = 45s
-	var delay = (info.type === 'anchor' || info.type === 'sideRail') ? 30000 : 45000;
+	// Overlay/nav = 30s, initial in-content = 45s, sidebar = 45s
+	var delay = (info.type === 'anchor' || info.type === 'sideRail' || info.type === 'nav') ? 30000 : 45000;
 	log('Refresh SCHEDULED:', divId, '— ' + (delay / 1000) + 's timer started',
 		'(will be attempt #' + (info.refreshCount + 1) + ')');
 

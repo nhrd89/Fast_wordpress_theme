@@ -954,7 +954,7 @@ function pinlightning_ad_zone( $zone_id, $mobile_size = '300x250', $desktop_size
 function pinlightning_ads_enqueue() {
 	$s = pl_ad_settings();
 
-	if ( ! $s['enabled'] || ! is_singular() ) {
+	if ( ! $s['enabled'] ) {
 		return;
 	}
 
@@ -1023,8 +1023,8 @@ function pinlightning_ads_enqueue() {
 		'heartbeatEndpoint' => rest_url( 'pl-ads/v1/heartbeat' ),
 		'liveMonitor'       => (bool) get_transient( 'pl_live_monitor_active' ),
 		'nonce'             => wp_create_nonce( 'wp_rest' ),
-		'postId'            => get_the_ID(),
-		'postSlug'          => get_post_field( 'post_name', get_the_ID() ),
+		'postId'            => is_singular() ? get_the_ID() : 0,
+		'postSlug'          => is_singular() ? get_post_field( 'post_name', get_the_ID() ) : '',
 	);
 
 	// Output as inline global in footer (before post-load scripts at p100).

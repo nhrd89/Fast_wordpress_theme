@@ -198,8 +198,9 @@ function pinlightning_postload_scripts() {
 		: PINLIGHTNING_URI . '/assets/js/core.js';
 	$scripts[] = wp_json_encode( esc_url( $core_src . '?ver=' . PINLIGHTNING_VERSION ) );
 
-	// initial-ads.js — Layer 1: GPT + initial viewport slots (singular only).
-	if ( is_singular() ) {
+	// initial-ads.js — Layer 1: GPT + initial viewport slots (all pages — nav ad is site-wide).
+	$ad_settings = function_exists( 'pl_ad_settings' ) ? pl_ad_settings() : array( 'enabled' => false );
+	if ( ! empty( $ad_settings['enabled'] ) ) {
 		$init_ads_file = PINLIGHTNING_DIR . '/assets/js/initial-ads.js';
 		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/initial-ads.js?ver=' . filemtime( $init_ads_file ) ) );
 	}
