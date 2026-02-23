@@ -184,8 +184,7 @@ while ( have_posts() ) :
 	<?php endif; ?>
 
 	<aside class="sidebar" aria-label="Sidebar">
-		<!-- Sidebar top ad anchor -->
-		<div class="ad-anchor" data-position="sidebar-top" data-item="0" data-location="sidebar-top"></div>
+		<?php pl_render_sidebar_ads(); ?>
 
 		<!-- Popular Posts -->
 		<div class="sidebar-widget">
@@ -218,8 +217,6 @@ while ( have_posts() ) :
 			?>
 		</div>
 
-		<!-- Sidebar bottom ad anchor -->
-		<div class="ad-anchor" data-position="sidebar-bottom" data-item="0" data-location="sidebar-bottom"></div>
 	</aside>
 
 <?php endwhile; ?>

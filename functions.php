@@ -198,7 +198,12 @@ function pinlightning_postload_scripts() {
 		: PINLIGHTNING_URI . '/assets/js/core.js';
 	$scripts[] = wp_json_encode( esc_url( $core_src . '?ver=' . PINLIGHTNING_VERSION ) );
 
-	// smart-ads.js — ad engine (singular only, config inlined at p97 by ad-engine.php).
+	// initial-ads.js — Layer 1: GPT + initial viewport slots (singular only).
+	if ( is_singular() ) {
+		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/initial-ads.js?ver=' . PINLIGHTNING_VERSION ) );
+	}
+
+	// smart-ads.js — Layer 2: dynamic below-fold injection (singular only).
 	if ( is_singular() ) {
 		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/smart-ads.js?ver=' . PINLIGHTNING_VERSION ) );
 	}
@@ -922,6 +927,7 @@ require_once PINLIGHTNING_DIR . '/inc/image-handler.php';
 require_once PINLIGHTNING_DIR . '/inc/pinterest-seo.php';
 require_once PINLIGHTNING_DIR . '/inc/rest-random-posts.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-engine.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-system.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics-aggregator.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics-dashboard.php';
