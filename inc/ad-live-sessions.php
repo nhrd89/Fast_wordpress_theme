@@ -50,7 +50,12 @@ function pl_live_sessions_clear_all() {
 	delete_transient( 'pl_live_sess_index' );
 	delete_transient( 'pl_live_recent_sessions' );
 
-	wp_send_json_success( 'All session data cleared.' );
+	// Also truncate event-level tracking tables.
+	global $wpdb;
+	$wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}pl_ad_events" );
+	$wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}pl_ad_hourly_stats" );
+
+	wp_send_json_success( 'All session and event data cleared.' );
 }
 add_action( 'wp_ajax_pl_live_clear_all', 'pl_live_sessions_clear_all' );
 
