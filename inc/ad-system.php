@@ -113,7 +113,7 @@ function pl_render_sidebar_ads() {
 	echo '<div class="pl-sidebar-ads">';
 	echo '<div class="pl-sidebar-ad" style="min-height:600px;width:100%;margin:0 auto 16px;text-align:center;">';
 	echo '<div id="300x600-1"></div></div>';
-	echo '<div class="pl-sidebar-ad" style="min-height:200px;width:100%;margin:0 auto 16px;text-align:center;">';
+	echo '<div class="pl-sidebar-ad" style="min-height:250px;width:100%;margin:0 auto 16px;text-align:center;">';
 	echo '<div id="300x250-sidebar"></div></div>';
 	echo '</div>';
 }

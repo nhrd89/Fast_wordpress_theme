@@ -283,21 +283,21 @@ function initSlots() {
 		}
 
 		/* --- Sidebar Slots (desktop only) --- */
-		/* Sidebar is 280px with 24px padding = 232px content area.
-		   Only sizes <= 232px wide are eligible for auction. */
+		/* Sidebar widened to 348px with 24px padding = 300px content area.
+		   300x250, 300x600, 250x250, 200x200, 160x600 all fit. */
 
 		if (IS_DESKTOP) {
 
-			// Primary sidebar: tall formats preferred
+			// Primary sidebar: tall + medium formats — maximum auction competition
 			var sidebarSizeMap1 = googletag.sizeMapping()
-				.addSize([1025, 0], [[160, 600], [120, 600], [200, 200], [180, 150], [120, 240]])
+				.addSize([1025, 0], [[300, 600], [300, 250], [250, 250], [200, 200], [160, 600]])
 				.addSize([0, 0],    [])  // Hide on mobile/tablet
 				.build();
 
 			if (document.getElementById('300x600-1')) {
 				var sb1 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-300x250',
-					[[160, 600], [120, 600], [200, 200], [180, 150], [120, 240]],
+					[[300, 600], [300, 250], [250, 250], [200, 200], [160, 600]],
 					'300x600-1'
 				);
 				if (sb1) {
@@ -313,16 +313,16 @@ function initSlots() {
 				}
 			}
 
-			// Secondary sidebar: short formats (no tall — two skyscrapers would be too much)
+			// Secondary sidebar: medium formats (no 300x600 — two tall ads would overwhelm)
 			var sidebarSizeMap2 = googletag.sizeMapping()
-				.addSize([1025, 0], [[200, 200], [180, 150], [120, 240]])
+				.addSize([1025, 0], [[300, 250], [250, 250], [200, 200]])
 				.addSize([0, 0],    [])  // Hide on mobile/tablet
 				.build();
 
 			if (document.getElementById('300x250-sidebar')) {
 				var sb2 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-300x250',
-					[[200, 200], [180, 150], [120, 240]],
+					[[300, 250], [250, 250], [200, 200]],
 					'300x250-sidebar'
 				);
 				if (sb2) {
@@ -430,27 +430,41 @@ function onImpressionViewable(event) {
 	if (!info) return;
 
 	info.viewable = true;
+	log('impressionViewable fired:', divId, 'type:', info.type,
+		'refreshCount:', info.refreshCount, '/', info.maxRefresh);
 	pushEvent('ad_viewable', { divId: divId, type: info.type });
 
 	// Schedule refresh based on format type
 	// maxRefresh: -1 = unlimited (overlays), 0 = never (interstitial), N = cap
-	if (info.maxRefresh === 0) return; // Interstitial — no refresh
-	if (info.maxRefresh !== -1 && info.refreshCount >= info.maxRefresh) return;
+	if (info.maxRefresh === 0) {
+		log('Refresh SKIPPED:', divId, '— interstitial (maxRefresh=0)');
+		return;
+	}
+	if (info.maxRefresh !== -1 && info.refreshCount >= info.maxRefresh) {
+		log('Refresh SKIPPED:', divId, '— max reached (' + info.refreshCount + '/' + info.maxRefresh + ')');
+		return;
+	}
 
 	// Overlay = 30s, initial in-content = 45s, sidebar = 45s
 	var delay = (info.type === 'anchor' || info.type === 'sideRail') ? 30000 : 45000;
+	log('Refresh SCHEDULED:', divId, '— ' + (delay / 1000) + 's timer started',
+		'(will be attempt #' + (info.refreshCount + 1) + ')');
 
 	setTimeout(function() {
 		// Double-check: tab visible, user engaged
-		if (document.hidden) return;
+		if (document.hidden) {
+			log('Refresh ABORTED:', divId, '— tab hidden');
+			return;
+		}
 
+		log('Refresh EXECUTING:', divId, 'type:', info.type);
 		googletag.cmd.push(function() {
 			googletag.pubads().refresh([slot]);
 		});
 		info.refreshCount++;
 		info.lastRefresh = Date.now();
 
-		log('Refreshed:', divId, 'count:', info.refreshCount, 'type:', info.type);
+		log('Refresh DONE:', divId, 'count:', info.refreshCount, '/', info.maxRefresh);
 		pushEvent('ad_refreshed', {
 			divId:        divId,
 			refreshCount: info.refreshCount,

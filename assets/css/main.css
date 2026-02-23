@@ -885,14 +885,14 @@
 }
 
 /* === Desktop sidebar layout (fixed on viewport) === */
-/* Virtual container: 720 content + 60 gap + 280 sidebar = 1060px */
+/* Virtual container: 720 content + 60 gap + 348 sidebar = 1128px */
 @media (min-width: 1200px) {
 	.sidebar {
 		display: block;
 		position: fixed;
 		top: 80px;
-		right: max(1rem, calc((100vw - 1060px) / 2));
-		width: 280px;
+		right: max(1rem, calc((100vw - 1128px) / 2));
+		width: 348px;
 		max-height: calc(100vh - 100px);
 		overflow-y: auto;
 		z-index: 10;
@@ -904,7 +904,7 @@
 	.comments-toggle,
 	.infinite-posts,
 	.related-posts {
-		margin-left: max(1rem, calc((100vw - 1060px) / 2));
+		margin-left: max(1rem, calc((100vw - 1128px) / 2));
 		margin-right: auto;
 		max-width: var(--pl-content);
 	}
