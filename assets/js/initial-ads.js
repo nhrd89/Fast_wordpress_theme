@@ -120,6 +120,14 @@ function boot() {
 function loadGPT() {
 	window.googletag = window.googletag || { cmd: [] };
 
+	// If GPT is already loaded (e.g. by a cached old script), skip the <script> tag
+	// and go straight to slot definitions.
+	if (window.googletag && window.googletag.apiReady) {
+		log('GPT already loaded — reusing');
+		initSlots();
+		return;
+	}
+
 	var s   = document.createElement('script');
 	s.src   = GPT_URL;
 	s.async = true;
@@ -162,6 +170,13 @@ function initSlots() {
 			.build();
 
 		/* --- GPT Global Config --- */
+
+		// If a stale cached script already initialized GPT, destroy its slots first.
+		var existingSlots = googletag.pubads().getSlots ? googletag.pubads().getSlots() : [];
+		if (existingSlots.length) {
+			log('Destroying', existingSlots.length, 'stale slots from cached script');
+			googletag.destroySlots(existingSlots);
+		}
 
 		googletag.pubads().enableSingleRequest();   // SRA: one HTTP request for all initial slots
 		googletag.pubads().collapseEmptyDivs();     // Collapse unfilled containers

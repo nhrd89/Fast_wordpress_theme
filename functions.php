@@ -200,12 +200,14 @@ function pinlightning_postload_scripts() {
 
 	// initial-ads.js — Layer 1: GPT + initial viewport slots (singular only).
 	if ( is_singular() ) {
-		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/initial-ads.js?ver=' . PINLIGHTNING_VERSION ) );
+		$init_ads_file = PINLIGHTNING_DIR . '/assets/js/initial-ads.js';
+		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/initial-ads.js?ver=' . filemtime( $init_ads_file ) ) );
 	}
 
 	// smart-ads.js — Layer 2: dynamic below-fold injection (singular only).
 	if ( is_singular() ) {
-		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/smart-ads.js?ver=' . PINLIGHTNING_VERSION ) );
+		$smart_ads_file = PINLIGHTNING_DIR . '/assets/js/smart-ads.js';
+		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/smart-ads.js?ver=' . filemtime( $smart_ads_file ) ) );
 	}
 
 	// engagement.js — listicle engagement UI (config inlined at p98 by pl_enqueue_engagement).
