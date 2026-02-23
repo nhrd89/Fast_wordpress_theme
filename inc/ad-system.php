@@ -62,11 +62,14 @@ function pl_inject_initial_ads( $content ) {
 		. '<div id="initial-ad-1"></div></div>';
 	$ad2 = '<div class="pl-initial-ad" style="text-align:center;min-height:250px;margin:12px auto;">'
 		. '<div id="initial-ad-2"></div></div>';
+	$pause = '<div class="pl-pause-ad" style="text-align:center;min-height:0;overflow:hidden;contain:layout;">'
+		. '<div id="pause-ad-1"></div></div>';
 
-	// Build output: ad1 before first paragraph, ad2 after second paragraph.
-	$output       = $ad1;
-	$p_count      = 0;
-	$ad2_inserted = false;
+	// Build output: ad1 before first paragraph, ad2 after paragraph 2, pause after paragraph 5.
+	$output         = $ad1;
+	$p_count        = 0;
+	$ad2_inserted   = false;
+	$pause_inserted = false;
 
 	for ( $i = 0; $i < count( $parts ); $i++ ) {
 		$output .= $parts[ $i ];
@@ -77,12 +80,20 @@ function pl_inject_initial_ads( $content ) {
 				$output      .= $ad2;
 				$ad2_inserted = true;
 			}
+			if ( 5 === $p_count && ! $pause_inserted ) {
+				$output         .= $pause;
+				$pause_inserted  = true;
+			}
 		}
 	}
 
 	// Fallback: if fewer than 2 paragraphs found, append ad2 at end.
 	if ( ! $ad2_inserted ) {
 		$output .= $ad2;
+	}
+	// Fallback: if fewer than 5 paragraphs, append pause ad at end.
+	if ( ! $pause_inserted ) {
+		$output .= $pause;
 	}
 
 	return $output;

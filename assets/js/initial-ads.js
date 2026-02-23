@@ -265,7 +265,7 @@ function initSlots() {
 		   Short formats only: max 90px desktop, 100px mobile. */
 
 		var navSizeMap = googletag.sizeMapping()
-			.addSize([1025, 0], [[970, 90], [728, 90], [970, 250]])
+			.addSize([1025, 0], [[970, 90], [728, 90]])
 			.addSize([768, 0],  [[728, 90], [468, 60]])
 			.addSize([468, 0],  [[320, 100], [320, 50], [300, 100], [300, 50]])
 			.addSize([320, 0],  [[320, 100], [320, 50], [300, 100], [300, 50]])
@@ -274,8 +274,8 @@ function initSlots() {
 
 		if (document.getElementById('nav-ad-1')) {
 			var navSlot = googletag.defineSlot(
-				SLOT_PATH + 'Ad.Plus-300x250',
-				[[970, 90], [728, 90], [970, 250], [468, 60], [320, 100], [320, 50], [300, 100], [300, 50]],
+				SLOT_PATH + 'Ad.Plus-970x90',
+				[[970, 90], [728, 90], [468, 60], [320, 100], [320, 50], [300, 100], [300, 50]],
 				'nav-ad-1'
 			);
 			if (navSlot) {
@@ -291,42 +291,46 @@ function initSlots() {
 			}
 		}
 
-		/* --- Initial In-Content Slots --- */
+		/* --- Initial In-Content Slots (only on single posts) --- */
 
 		// Slot 1 — before paragraph 1
-		var slot1 = googletag.defineSlot(
-			SLOT_PATH + 'Ad.Plus-300x250',
-			[[336, 280], [300, 250], [970, 250], [300, 600], [250, 250], [300, 100]],
-			'initial-ad-1'
-		);
-		if (slot1) {
-			slot1.defineSizeMapping(contentSizeMap1);
-			slot1.addService(googletag.pubads());
-			slot1.setTargeting('refresh', 'true');
-			slot1.setTargeting('pos', 'atf');
-			_slotMap['initial-ad-1'] = {
-				slot: slot1, type: 'initial',
-				refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
-				renderedSize: null, viewable: false
-			};
+		if (document.getElementById('initial-ad-1')) {
+			var slot1 = googletag.defineSlot(
+				SLOT_PATH + 'Ad.Plus-300x250',
+				[[336, 280], [300, 250], [970, 250], [300, 600], [250, 250], [300, 100]],
+				'initial-ad-1'
+			);
+			if (slot1) {
+				slot1.defineSizeMapping(contentSizeMap1);
+				slot1.addService(googletag.pubads());
+				slot1.setTargeting('refresh', 'true');
+				slot1.setTargeting('pos', 'atf');
+				_slotMap['initial-ad-1'] = {
+					slot: slot1, type: 'initial',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
+					renderedSize: null, viewable: false
+				};
+			}
 		}
 
 		// Slot 2 — after paragraph 2
-		var slot2 = googletag.defineSlot(
-			SLOT_PATH + 'Ad.Plus-300x250',
-			[[336, 280], [300, 250], [300, 600], [250, 250], [300, 100]],
-			'initial-ad-2'
-		);
-		if (slot2) {
-			slot2.defineSizeMapping(contentSizeMap2);
-			slot2.addService(googletag.pubads());
-			slot2.setTargeting('refresh', 'true');
-			slot2.setTargeting('pos', 'atf');
-			_slotMap['initial-ad-2'] = {
-				slot: slot2, type: 'initial',
-				refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
-				renderedSize: null, viewable: false
-			};
+		if (document.getElementById('initial-ad-2')) {
+			var slot2 = googletag.defineSlot(
+				SLOT_PATH + 'Ad.Plus-336x280',
+				[[336, 280], [300, 250], [300, 600], [250, 250], [300, 100]],
+				'initial-ad-2'
+			);
+			if (slot2) {
+				slot2.defineSizeMapping(contentSizeMap2);
+				slot2.addService(googletag.pubads());
+				slot2.setTargeting('refresh', 'true');
+				slot2.setTargeting('pos', 'atf');
+				_slotMap['initial-ad-2'] = {
+					slot: slot2, type: 'initial',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
+					renderedSize: null, viewable: false
+				};
+			}
 		}
 
 		/* --- Sidebar Slots (desktop only) --- */
@@ -343,7 +347,7 @@ function initSlots() {
 
 			if (document.getElementById('300x600-1')) {
 				var sb1 = googletag.defineSlot(
-					SLOT_PATH + 'Ad.Plus-300x250',
+					SLOT_PATH + 'Ad.Plus-300x600',
 					[[300, 600], [300, 250], [250, 250], [200, 200], [160, 600]],
 					'300x600-1'
 				);
@@ -368,7 +372,7 @@ function initSlots() {
 
 			if (document.getElementById('300x250-sidebar')) {
 				var sb2 = googletag.defineSlot(
-					SLOT_PATH + 'Ad.Plus-300x250',
+					SLOT_PATH + 'Ad.Plus-250x250',
 					[[300, 250], [250, 250], [200, 200]],
 					'300x250-sidebar'
 				);
@@ -386,6 +390,28 @@ function initSlots() {
 			}
 		}
 
+		/* --- Pause Banner Slot (single posts only) --- */
+		/* GPT contentPause: ad appears when user stops scrolling.
+		   min-height:0 — no space reserved until activation. */
+
+		if (document.getElementById('pause-ad-1')) {
+			var pauseSlot = googletag.defineSlot(
+				SLOT_PATH + 'Ad.Plus-Pause-300x250',
+				[300, 250],
+				'pause-ad-1'
+			);
+			if (pauseSlot) {
+				pauseSlot.addService(googletag.pubads());
+				pauseSlot.setConfig({ contentPause: true });
+				pauseSlot.setTargeting('pos', 'pause');
+				_slotMap['pause-ad-1'] = {
+					slot: pauseSlot, type: 'pause',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: 2,
+					renderedSize: null, viewable: false
+				};
+			}
+		}
+
 		/* --- Event Listeners --- */
 
 		// Container resize on fill / collapse on empty
@@ -399,7 +425,7 @@ function initSlots() {
 		googletag.enableServices();
 
 		// Display all display slots (overlays are auto-displayed by GPT)
-		var displayIds = ['nav-ad-1', 'initial-ad-1', 'initial-ad-2', '300x600-1', '300x250-sidebar'];
+		var displayIds = ['nav-ad-1', 'initial-ad-1', 'initial-ad-2', 'pause-ad-1', '300x600-1', '300x250-sidebar'];
 		for (var i = 0; i < displayIds.length; i++) {
 			if (document.getElementById(displayIds[i])) {
 				googletag.display(displayIds[i]);
@@ -434,7 +460,7 @@ function onSlotRenderEnded(event) {
 
 	if (event.isEmpty) {
 		// Collapse — shrink container to 0
-		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad') || container.classList.contains('pl-nav-ad'))) {
+		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad') || container.classList.contains('pl-nav-ad') || container.classList.contains('pl-pause-ad'))) {
 			container.style.minHeight = '0';
 			container.style.margin    = '0';
 			container.style.overflow  = 'hidden';
@@ -509,6 +535,23 @@ function onImpressionViewable(event) {
 		if (document.hidden) {
 			log('Refresh ABORTED:', divId, '— tab hidden');
 			return;
+		}
+
+		// Viewport check for display slots (overlays skip — they manage their own visibility)
+		var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'sideRail');
+		if (!isOverlay) {
+			var refreshEl = document.getElementById(divId);
+			if (refreshEl) {
+				var rRect = refreshEl.getBoundingClientRect();
+				var vpH   = window.innerHeight;
+				if (rRect.height > 0) {
+					var visH = Math.max(0, Math.min(rRect.bottom, vpH) - Math.max(rRect.top, 0));
+					if (visH / rRect.height < 0.5) {
+						log('Refresh ABORTED:', divId, '— not in viewport');
+						return;
+					}
+				}
+			}
 		}
 
 		log('Refresh EXECUTING:', divId, 'type:', info.type);

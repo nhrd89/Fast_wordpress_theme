@@ -117,8 +117,6 @@ while ( have_posts() ) :
 				</div>
 			</header>
 
-			<?php echo pl_render_ad_anchor( 'post-top', array( 'location' => 'content' ) ); ?>
-
 			<div class="single-content">
 				<?php
 				the_content();
@@ -144,8 +142,6 @@ while ( have_posts() ) :
 			</footer>
 		</article>
 	</div>
-
-	<?php echo pl_render_ad_anchor( 'post-bottom', array( 'location' => 'content' ) ); ?>
 
 	<?php if ( comments_open() || get_comments_number() ) : ?>
 		<details class="comments-toggle">
