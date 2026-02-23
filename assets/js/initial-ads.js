@@ -272,7 +272,7 @@ function initSlots() {
 		if (IS_DESKTOP) {
 			if (document.getElementById('300x600-1')) {
 				var sb1 = googletag.defineSlot(
-					SLOT_PATH + 'Ad.Plus-300x600',
+					SLOT_PATH + 'Ad.Plus-300x250',
 					[[300, 600], [300, 250], [160, 600], [120, 600]],
 					'300x600-1'
 				);
@@ -355,7 +355,7 @@ function onSlotRenderEnded(event) {
 
 	if (event.isEmpty) {
 		// Collapse — shrink container to 0
-		if (container && container.classList.contains('pl-initial-ad')) {
+		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad'))) {
 			container.style.minHeight = '0';
 			container.style.margin    = '0';
 			container.style.overflow  = 'hidden';
