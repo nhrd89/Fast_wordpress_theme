@@ -480,6 +480,9 @@ function updateDashboard() {
 function mainLoop() {
 	sampleScroll();
 
+	// Video check runs independently of display ad guards
+	checkVideoInjection();
+
 	var now     = Date.now();
 	var scrollY = window.pageYOffset || 0;
 
@@ -504,6 +507,86 @@ function mainLoop() {
 
 	// Inject
 	injectDynamicAd(target);
+}
+
+/* ================================================================
+ * VIDEO OUTSTREAM AD (Ad.Plus InPage Player)
+ * ================================================================ */
+
+/**
+ * Inject the Ad.Plus video outstream player once per session.
+ * Only a single video ad per page is allowed (Ad.Plus policy).
+ * The player handles sticky/floating, display passback, and sizing.
+ */
+function checkVideoInjection() {
+	// One video per page — ever
+	if (window.__plVideoInjected) return;
+
+	// Only on single posts
+	var content = document.querySelector('.single-content');
+	if (!content) return;
+
+	// Only for engaged visitors
+	if (_visitorType !== 'reader' && _visitorType !== 'scanner') return;
+
+	// Must have scrolled at least 40% of page
+	var docH      = document.documentElement.scrollHeight || 1;
+	var scrollY   = window.pageYOffset || 0;
+	var scrollPct = Math.round((scrollY + window.innerHeight) / docH * 100);
+	if (scrollPct < 40) return;
+
+	// At least 2 dynamic content ads must have filled
+	var filledCount = 0;
+	for (var i = 0; i < _dynamicSlots.length; i++) {
+		if (_dynamicSlots[i].filled) filledCount++;
+	}
+	if (filledCount < 2) return;
+
+	// Find injection point: paragraph 6-8 deep in content
+	var paragraphs = content.querySelectorAll('p');
+	var targetPara = null;
+	for (var p = 7; p >= 5; p--) {
+		if (paragraphs[p]) { targetPara = paragraphs[p]; break; }
+	}
+	if (!targetPara) return;
+
+	// Mark injected BEFORE async work to prevent race conditions
+	window.__plVideoInjected = true;
+
+	// Create container
+	var container = document.createElement('div');
+	container.className = 'pl-video-ad';
+	container.id = 'video-ad-1';
+	container.style.cssText = 'margin:20px auto;text-align:center;max-width:640px';
+	targetPara.parentNode.insertBefore(container, targetPara.nextSibling);
+
+	// Load Ad.Plus player script
+	var playerScript = document.createElement('script');
+	playerScript.async = true;
+	playerScript.src = 'https://cdn.ad.plus/player/adplus.js';
+	document.head.appendChild(playerScript);
+
+	// Initialize player
+	var initScript = document.createElement('script');
+	initScript.textContent = '(function(){' +
+		'var s=document.getElementById("video-ad-1");' +
+		'(playerPro=window.playerPro||[]).push({' +
+			'id:"z2I717k6zq5b",' +
+			'after:s,' +
+			'appParams:{' +
+				'"C_NETWORK_CODE":"22953639975",' +
+				'"C_WEBSITE":"cheerlives.com"' +
+			'}' +
+		'});' +
+	'})();';
+	document.body.appendChild(initScript);
+
+	log('Video ad injected for', _visitorType, 'at', scrollPct + '%');
+	pushEvent('video_ad_injected', {
+		visitorType: _visitorType,
+		scrollPct:   scrollPct,
+		filledAds:   filledCount
+	});
 }
 
 /* ================================================================
