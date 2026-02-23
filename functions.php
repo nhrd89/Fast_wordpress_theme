@@ -934,6 +934,8 @@ require_once PINLIGHTNING_DIR . '/inc/ad-system.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-data-recorder.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics-aggregator.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-analytics-dashboard.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-analytics-events.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-recommendations.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-optimizer.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-live-sessions.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';

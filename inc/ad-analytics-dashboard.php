@@ -275,6 +275,7 @@ function pl_ad_render_analytics() {
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-live-sessions' ) ); ?>" class="button">Live Sessions</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-optimizer' ) ); ?>" class="button">Optimizer</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-recommendations&range=' . $range ) ); ?>" class="button">Recommendations</a>
 
 			<span style="border-left:1px solid #c3c4c7;height:24px;margin:0 4px;"></span>
 
@@ -308,6 +309,18 @@ function pl_ad_render_analytics() {
 			<?php pl_ad_render_zone_performance( $stats ); ?>
 			<?php pl_ad_render_top_posts( $stats ); ?>
 			<?php pl_ad_render_click_report( $stats ); ?>
+
+			<?php
+			// Event-level analytics from pl_ad_events / pl_ad_hourly_stats tables.
+			if ( function_exists( 'pl_ad_events_render_all' ) ) {
+				pl_ad_events_render_all( $start, $end );
+			}
+
+			// Auto-generated recommendations.
+			if ( function_exists( 'pl_ad_recommendations_for_dashboard' ) ) {
+				pl_ad_recommendations_for_dashboard( $stats, $start, $end );
+			}
+			?>
 		<?php endif; ?>
 	</div>
 

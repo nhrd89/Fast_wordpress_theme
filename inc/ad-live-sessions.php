@@ -350,6 +350,7 @@ function pl_live_sessions_page() {
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-analytics-dashboard' ) ); ?>" class="button button-primary">Analytics Dashboard</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-optimizer' ) ); ?>" class="button">Optimizer</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-recommendations' ) ); ?>" class="button">Recommendations</a>
 			<span style="border-left:1px solid #c3c4c7;height:24px"></span>
 			<button type="button" id="plClearLiveSessions" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Data</button>
 			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>
@@ -442,6 +443,54 @@ function pl_live_sessions_page() {
 			</table>
 		</div>
 	</div>
+
+		<!-- EVENT STATS SUMMARY -->
+		<div style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;margin-bottom:20px;padding:16px;">
+			<h3 style="margin:0 0 12px;font-size:14px;">Today's Event-Level Stats</h3>
+			<?php
+			global $wpdb;
+			$te    = $wpdb->prefix . 'pl_ad_events';
+			$today = current_time( 'Y-m-d' );
+
+			// Check if table exists before querying.
+			$table_exists = $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+				DB_NAME, $te
+			) );
+
+			if ( $table_exists ) {
+				$evt_stats = $wpdb->get_results( $wpdb->prepare(
+					"SELECT event_type, COUNT(*) AS cnt FROM {$te} WHERE created_at >= %s GROUP BY event_type",
+					$today
+				), OBJECT_K );
+				$evt_cnt = function( $type ) use ( $evt_stats ) {
+					return isset( $evt_stats[ $type ] ) ? (int) $evt_stats[ $type ]->cnt : 0;
+				};
+				$e_imps = $evt_cnt( 'impression' );
+				$e_emp  = $evt_cnt( 'empty' );
+				$e_view = $evt_cnt( 'viewable' );
+				$e_ref  = $evt_cnt( 'refresh' );
+				$e_skip = $evt_cnt( 'refresh_skip' );
+				$e_dyn  = $evt_cnt( 'dynamic_inject' );
+				$e_vid  = $evt_cnt( 'video_inject' );
+				$fill   = ( $e_imps + $e_emp ) > 0 ? round( $e_imps / ( $e_imps + $e_emp ) * 100, 1 ) : 0;
+				$vr     = $e_imps > 0 ? round( $e_view / $e_imps * 100, 1 ) : 0;
+			?>
+			<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;">
+				<div><strong style="color:#2271b1"><?php echo number_format( $e_imps ); ?></strong> impressions</div>
+				<div><strong style="color:#d63638"><?php echo number_format( $e_emp ); ?></strong> empties</div>
+				<div><strong style="color:<?php echo $fill >= 70 ? '#00a32a' : '#d63638'; ?>"><?php echo $fill; ?>%</strong> fill rate</div>
+				<div><strong style="color:#00a32a"><?php echo number_format( $e_view ); ?></strong> viewable</div>
+				<div><strong style="color:<?php echo $vr >= 60 ? '#00a32a' : '#d63638'; ?>"><?php echo $vr; ?>%</strong> viewability</div>
+				<div><strong><?php echo number_format( $e_ref ); ?></strong> refreshes</div>
+				<div><strong><?php echo number_format( $e_skip ); ?></strong> skips</div>
+				<div><strong><?php echo number_format( $e_dyn ); ?></strong> dynamic injects</div>
+				<div><strong><?php echo number_format( $e_vid ); ?></strong> video injects</div>
+			</div>
+			<?php } else { ?>
+			<p style="color:#888;font-size:13px;margin:0;">Event tracking tables not yet created. Events will appear after the first ad impression.</p>
+			<?php } ?>
+		</div>
 
 	<script>
 	(function() {
