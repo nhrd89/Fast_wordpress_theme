@@ -20,6 +20,9 @@ var SLOT_PATH  = '/21849154601,22953639975/';
 var GPT_URL    = 'https://securepubads.g.doubleclick.net/tag/js/gpt.js';
 var DEBUG      = typeof plAds !== 'undefined' && plAds.debug;
 var IS_DESKTOP = window.innerWidth >= 1025;
+var FMT        = (typeof plAds !== 'undefined' && plAds.formats) ? plAds.formats : {};
+var REF_CFG    = (typeof plAds !== 'undefined' && plAds.refresh) ? plAds.refresh : {};
+var VW_CFG     = (typeof plAds !== 'undefined' && plAds.viewability) ? plAds.viewability : {};
 
 /* ================================================================
  * STATE
@@ -106,6 +109,28 @@ function pushEvent(name, data) {
 	data.timestamp = Date.now();
 	data.event     = name;
 	window.__plAdEvents.push(data);
+}
+
+function fmtOn(key) {
+	var v = FMT[key];
+	if (v === undefined || v === null) return true;
+	return !!v && v !== 'false' && v !== '0';
+}
+
+function refMax(key, fallback) {
+	var cfg = REF_CFG[key];
+	if (!cfg) return fallback;
+	if (!cfg.enabled || cfg.enabled === 'false' || cfg.enabled === '0') return 0;
+	return cfg.max !== undefined ? parseInt(cfg.max, 10) : fallback;
+}
+
+function refDelay(slotType) {
+	var map = { nav:'nav', initial:'initial', sidebar:'sidebar', pause:'pause',
+	            anchor:'anchor', sideRail:'sideRails', topAnchor:'topAnchor' };
+	var cfg = REF_CFG[map[slotType] || slotType];
+	if (!cfg) return (slotType === 'anchor' || slotType === 'sideRail' || slotType === 'nav') ? 30000 : 45000;
+	if (!cfg.enabled || cfg.enabled === 'false' || cfg.enabled === '0') return 0;
+	return cfg.delay ? parseInt(cfg.delay, 10) * 1000 : 30000;
 }
 
 function trackAdEvent(eventType, slotId, extra) {
@@ -242,53 +267,59 @@ function initSlots() {
 
 		/* --- Overlay Slots (all devices) --- */
 
-		// Interstitial
-		var interstitial = googletag.defineOutOfPageSlot(
-			SLOT_PATH + 'Ad.Plus-Interstitial',
-			googletag.enums.OutOfPageFormat.INTERSTITIAL
-		);
-		if (interstitial) {
-			interstitial.addService(googletag.pubads());
-			_overlaySlots.interstitial = interstitial;
-			_slotMap['__interstitial'] = {
-				slot: interstitial, type: 'interstitial',
-				refreshCount: 0, lastRefresh: 0, maxRefresh: 0,
-				renderedSize: null, viewable: false
-			};
-		}
+		// Interstitial (guard: plAds.formats.interstitial)
+		if (fmtOn('interstitial')) {
+			var interstitial = googletag.defineOutOfPageSlot(
+				SLOT_PATH + 'Ad.Plus-Interstitial',
+				googletag.enums.OutOfPageFormat.INTERSTITIAL
+			);
+			if (interstitial) {
+				interstitial.addService(googletag.pubads());
+				_overlaySlots.interstitial = interstitial;
+				_slotMap['__interstitial'] = {
+					slot: interstitial, type: 'interstitial',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: 0,
+					renderedSize: null, viewable: false
+				};
+			}
+		} else { log('Interstitial SKIPPED — disabled'); }
 
-		// Bottom Anchor
-		var anchor = googletag.defineOutOfPageSlot(
-			SLOT_PATH + 'Ad.Plus-Anchor',
-			googletag.enums.OutOfPageFormat.BOTTOM_ANCHOR
-		);
-		if (anchor) {
-			anchor.addService(googletag.pubads());
-			_overlaySlots.anchor = anchor;
-			_slotMap['__anchor'] = {
-				slot: anchor, type: 'anchor',
-				refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
-				renderedSize: null, viewable: false
-			};
-		}
+		// Bottom Anchor (guard: plAds.formats.anchor)
+		if (fmtOn('anchor')) {
+			var anchor = googletag.defineOutOfPageSlot(
+				SLOT_PATH + 'Ad.Plus-Anchor',
+				googletag.enums.OutOfPageFormat.BOTTOM_ANCHOR
+			);
+			if (anchor) {
+				anchor.addService(googletag.pubads());
+				_overlaySlots.anchor = anchor;
+				_slotMap['__anchor'] = {
+					slot: anchor, type: 'anchor',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('anchor', -1),
+					renderedSize: null, viewable: false
+				};
+			}
+		} else { log('Anchor SKIPPED — disabled'); }
 
-		// Top Anchor
-		var topAnchor = googletag.defineOutOfPageSlot(
-			SLOT_PATH + 'Ad.Plus-AnchorSmall',
-			googletag.enums.OutOfPageFormat.TOP_ANCHOR
-		);
-		if (topAnchor) {
-			topAnchor.addService(googletag.pubads());
-			_overlaySlots.topAnchor = topAnchor;
-			_slotMap['__topAnchor'] = {
-				slot: topAnchor, type: 'anchor',
-				refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
-				renderedSize: null, viewable: false
-			};
-		}
+		// Top Anchor (guard: plAds.formats.topAnchor)
+		if (fmtOn('topAnchor')) {
+			var topAnchor = googletag.defineOutOfPageSlot(
+				SLOT_PATH + 'Ad.Plus-AnchorSmall',
+				googletag.enums.OutOfPageFormat.TOP_ANCHOR
+			);
+			if (topAnchor) {
+				topAnchor.addService(googletag.pubads());
+				_overlaySlots.topAnchor = topAnchor;
+				_slotMap['__topAnchor'] = {
+					slot: topAnchor, type: 'topAnchor',
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('topAnchor', -1),
+					renderedSize: null, viewable: false
+				};
+			}
+		} else { log('Top Anchor SKIPPED — disabled'); }
 
-		// Side Rails (desktop only)
-		if (IS_DESKTOP) {
+		// Side Rails (guard: plAds.formats.sideRails)
+		if (IS_DESKTOP && fmtOn('sideRails')) {
 			var leftRail = googletag.defineOutOfPageSlot(
 				SLOT_PATH + 'Ad.Plus-Side-Anchor',
 				googletag.enums.OutOfPageFormat.LEFT_SIDE_RAIL
@@ -298,7 +329,7 @@ function initSlots() {
 				_overlaySlots.leftRail = leftRail;
 				_slotMap['__leftRail'] = {
 					slot: leftRail, type: 'sideRail',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sideRails', -1),
 					renderedSize: null, viewable: false
 				};
 			}
@@ -312,7 +343,7 @@ function initSlots() {
 				_overlaySlots.rightRail = rightRail;
 				_slotMap['__rightRail'] = {
 					slot: rightRail, type: 'sideRail',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sideRails', -1),
 					renderedSize: null, viewable: false
 				};
 			}
@@ -330,7 +361,7 @@ function initSlots() {
 			.addSize([0, 0],    [[300, 100], [300, 50]])
 			.build();
 
-		if (document.getElementById('nav-ad-1')) {
+		if (fmtOn('nav') && document.getElementById('nav-ad-1')) {
 			var navSlot = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-970x90',
 				[[970, 90], [728, 90], [468, 60], [320, 100], [320, 50], [300, 100], [300, 50]],
@@ -343,7 +374,7 @@ function initSlots() {
 				navSlot.setTargeting('pos', 'nav');
 				_slotMap['nav-ad-1'] = {
 					slot: navSlot, type: 'nav',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: -1,
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('nav', -1),
 					renderedSize: null, viewable: false
 				};
 			}
@@ -352,7 +383,7 @@ function initSlots() {
 		/* --- Initial In-Content Slots (only on single posts) --- */
 
 		// Slot 1 — before paragraph 1
-		if (document.getElementById('initial-ad-1')) {
+		if (fmtOn('initial1') && document.getElementById('initial-ad-1')) {
 			var slot1 = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-300x250',
 				[[336, 280], [300, 250], [970, 250], [300, 600], [250, 250], [300, 100]],
@@ -365,14 +396,14 @@ function initSlots() {
 				slot1.setTargeting('pos', 'atf');
 				_slotMap['initial-ad-1'] = {
 					slot: slot1, type: 'initial',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('initial', 3),
 					renderedSize: null, viewable: false
 				};
 			}
 		}
 
 		// Slot 2 — after paragraph 2
-		if (document.getElementById('initial-ad-2')) {
+		if (fmtOn('initial2') && document.getElementById('initial-ad-2')) {
 			var slot2 = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-336x280',
 				[[336, 280], [300, 250], [300, 600], [250, 250], [300, 100]],
@@ -385,7 +416,7 @@ function initSlots() {
 				slot2.setTargeting('pos', 'atf');
 				_slotMap['initial-ad-2'] = {
 					slot: slot2, type: 'initial',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('initial', 3),
 					renderedSize: null, viewable: false
 				};
 			}
@@ -403,7 +434,7 @@ function initSlots() {
 				.addSize([0, 0],    [])  // Hide on mobile/tablet
 				.build();
 
-			if (document.getElementById('300x600-1')) {
+			if (fmtOn('sidebar1') && document.getElementById('300x600-1')) {
 				var sb1 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-300x600',
 					[[300, 600], [300, 250], [250, 250], [200, 200], [160, 600]],
@@ -416,7 +447,7 @@ function initSlots() {
 					sb1.setTargeting('pos', 'sidebar');
 					_slotMap['300x600-1'] = {
 						slot: sb1, type: 'sidebar',
-						refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
+						refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sidebar', 3),
 						renderedSize: null, viewable: false
 					};
 				}
@@ -428,7 +459,7 @@ function initSlots() {
 				.addSize([0, 0],    [])  // Hide on mobile/tablet
 				.build();
 
-			if (document.getElementById('300x250-sidebar')) {
+			if (fmtOn('sidebar2') && document.getElementById('300x250-sidebar')) {
 				var sb2 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-250x250',
 					[[300, 250], [250, 250], [200, 200]],
@@ -441,7 +472,7 @@ function initSlots() {
 					sb2.setTargeting('pos', 'sidebar');
 					_slotMap['300x250-sidebar'] = {
 						slot: sb2, type: 'sidebar',
-						refreshCount: 0, lastRefresh: 0, maxRefresh: 3,
+						refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sidebar', 3),
 						renderedSize: null, viewable: false
 					};
 				}
@@ -452,7 +483,7 @@ function initSlots() {
 		/* GPT contentPause: ad appears when user stops scrolling.
 		   min-height:0 — no space reserved until activation. */
 
-		if (document.getElementById('pause-ad-1')) {
+		if (fmtOn('pause') && document.getElementById('pause-ad-1')) {
 			var pauseSlot = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-Pause-300x250',
 				[300, 250],
@@ -464,7 +495,7 @@ function initSlots() {
 				pauseSlot.setTargeting('pos', 'pause');
 				_slotMap['pause-ad-1'] = {
 					slot: pauseSlot, type: 'pause',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: 2,
+					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('pause', 2),
 					renderedSize: null, viewable: false
 				};
 			}
@@ -606,29 +637,35 @@ function onImpressionViewable(event) {
 		return;
 	}
 
-	// Overlay/nav = 30s, initial in-content = 45s, sidebar = 45s
-	var delay = (info.type === 'anchor' || info.type === 'sideRail' || info.type === 'nav') ? 30000 : 45000;
+	// Refresh delay from optimizer config (per-format)
+	var delay = refDelay(info.type);
+	if (delay === 0) {
+		log('Refresh SKIPPED:', divId, '— disabled for', info.type);
+		return;
+	}
 	log('Refresh SCHEDULED:', divId, '— ' + (delay / 1000) + 's timer started',
 		'(will be attempt #' + (info.refreshCount + 1) + ')');
 
 	setTimeout(function() {
 		// Double-check: tab visible, user engaged
-		if (document.hidden) {
+		if (VW_CFG.skipTabHidden !== 'false' && VW_CFG.skipTabHidden !== false && document.hidden) {
 			log('Refresh ABORTED:', divId, '— tab hidden');
 			trackAdEvent('refresh_skip', divId);
 			return;
 		}
 
 		// Viewport check for display slots (overlays skip — they manage their own visibility)
-		var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'sideRail');
-		if (!isOverlay) {
+		var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'topAnchor' || info.type === 'sideRail');
+		var doViewportCheck = VW_CFG.viewportCheck !== 'false' && VW_CFG.viewportCheck !== false;
+		if (!isOverlay && doViewportCheck) {
 			var refreshEl = document.getElementById(divId);
 			if (refreshEl) {
 				var rRect = refreshEl.getBoundingClientRect();
 				var vpH   = window.innerHeight;
 				if (rRect.height > 0) {
 					var visH = Math.max(0, Math.min(rRect.bottom, vpH) - Math.max(rRect.top, 0));
-					if (visH / rRect.height < 0.5) {
+					var minVis = VW_CFG.minVisibility ? parseFloat(VW_CFG.minVisibility) / 100 : 0.5;
+					if (visH / rRect.height < minVis) {
 						log('Refresh ABORTED:', divId, '— not in viewport');
 						trackAdEvent('refresh_skip', divId);
 						return;

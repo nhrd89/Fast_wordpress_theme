@@ -21,13 +21,19 @@
  * ================================================================ */
 
 var SLOT_PATH         = '/21849154601,22953639975/';
-var MAX_DYNAMIC_SLOTS = 6;
+var IS_DESKTOP        = window.innerWidth >= 1025;
+var DEBUG             = typeof plAds !== 'undefined' && plAds.debug;
+
+// Optimizer config (Layer 2 tuning)
+var L2  = (typeof plAds !== 'undefined' && plAds.layer2)  ? plAds.layer2  : {};
+var VID = (typeof plAds !== 'undefined' && plAds.video)   ? plAds.video   : {};
+var FMT = (typeof plAds !== 'undefined' && plAds.formats) ? plAds.formats : {};
+
+var MAX_DYNAMIC_SLOTS = L2.maxSlots ? parseInt(L2.maxSlots, 10) : 6;
 var MAX_REFRESH_DYN   = 2;       // max refreshes per dynamic slot
 var REFRESH_INTERVAL  = 30000;   // 30s minimum (Google policy)
 var MAIN_LOOP_MS      = 500;     // main loop interval
-var MIN_SPACING_PX    = 600;     // minimum px between any two ads
-var IS_DESKTOP        = window.innerWidth >= 1025;
-var DEBUG             = typeof plAds !== 'undefined' && plAds.debug;
+var MIN_SPACING_PX    = L2.spacing ? parseInt(L2.spacing, 10) : 600;
 
 /* ================================================================
  * STATE
@@ -95,10 +101,12 @@ function sampleScroll() {
 	_lastSampleT = now;
 	_timeOnPage  = (now - _sessionStart) / 1000;
 
-	// Classify visitor
-	if (_scrollSpeed < 100) {
+	// Classify visitor (thresholds from optimizer)
+	var readerSpeed  = L2.readerSpeed ? parseInt(L2.readerSpeed, 10) : 100;
+	var scannerSpeed = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) : 400;
+	if (_scrollSpeed < readerSpeed) {
 		_visitorType = 'reader';
-	} else if (_scrollSpeed < 400) {
+	} else if (_scrollSpeed < scannerSpeed) {
 		_visitorType = 'scanner';
 	} else {
 		_visitorType = 'fast-scanner';
@@ -498,20 +506,26 @@ function mainLoop() {
 	// Video check runs independently of display ad guards
 	checkVideoInjection();
 
+	// Layer 2 (dynamic ads) disabled in optimizer
+	var dynVal = FMT.dynamic;
+	if (dynVal === false || dynVal === 'false' || dynVal === '' || dynVal === '0' || dynVal === 0) return;
+
 	var now     = Date.now();
 	var scrollY = window.pageYOffset || 0;
 
 	// Don't inject if fast-scanner (0% viewability at high speed)
 	if (_visitorType === 'fast-scanner') return;
 
-	// Don't inject too frequently
-	if (now - _lastInjectionT < 4000) return;
+	// Don't inject too frequently (cooldown from optimizer)
+	var cooldown = L2.cooldown ? parseInt(L2.cooldown, 10) : 4000;
+	if (now - _lastInjectionT < cooldown) return;
 
 	// Don't inject if too close to last injection position
 	if (Math.abs(scrollY - _lastInjectionY) < MIN_SPACING_PX) return;
 
 	// Don't inject if scrolling too fast right now
-	if (_scrollSpeed > 500) return;
+	var maxSpeed = L2.maxScrollSpeed ? parseInt(L2.maxScrollSpeed, 10) : 500;
+	if (_scrollSpeed > maxSpeed) return;
 
 	// Find best injection point
 	var target = findBestInjectionPoint();
@@ -541,21 +555,28 @@ function checkVideoInjection() {
 	var content = document.querySelector('.single-content');
 	if (!content) return;
 
-	// Only for engaged visitors
-	if (_visitorType !== 'reader' && _visitorType !== 'scanner') return;
+	// Video disabled in optimizer
+	var vidEnabled = VID.enabled;
+	if (vidEnabled === false || vidEnabled === 'false' || vidEnabled === '' || vidEnabled === '0' || vidEnabled === 0) return;
 
-	// Must have scrolled at least 40% of page
+	// Only for engaged visitors (configurable)
+	var allowedVisitor = VID.allowedVisitor || 'reader,scanner';
+	if (allowedVisitor.indexOf(_visitorType) === -1) return;
+
+	// Must have scrolled at least N% of page
+	var minScroll = VID.minScroll ? parseInt(VID.minScroll, 10) : 40;
 	var docH      = document.documentElement.scrollHeight || 1;
 	var scrollY   = window.pageYOffset || 0;
 	var scrollPct = Math.round((scrollY + window.innerHeight) / docH * 100);
-	if (scrollPct < 40) return;
+	if (scrollPct < minScroll) return;
 
-	// At least 2 dynamic content ads must have filled
+	// At least N dynamic content ads must have filled
+	var minFilled = VID.minFilledAds ? parseInt(VID.minFilledAds, 10) : 2;
 	var filledCount = 0;
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		if (_dynamicSlots[i].filled) filledCount++;
 	}
-	if (filledCount < 2) return;
+	if (filledCount < minFilled) return;
 
 	// Find injection point: paragraph 6-8 deep in content
 	var paragraphs = content.querySelectorAll('p');

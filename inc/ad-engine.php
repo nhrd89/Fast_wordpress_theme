@@ -1018,6 +1018,13 @@ function pinlightning_ads_enqueue() {
 			'pause'        => $s['slot_pause'],
 		),
 
+		// Optimizer settings (from pl-ad-optimizer control center).
+		'formats'      => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_format_settings' ) : array(),
+		'refresh'      => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_refresh_settings' ) : array(),
+		'layer2'       => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_layer2_settings' ) : array(),
+		'video'        => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_video_settings' ) : array(),
+		'viewability'  => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_viewability_settings' ) : array(),
+
 		// Context.
 		'recordEndpoint'    => rest_url( 'pinlightning/v1/ad-data' ),
 		'heartbeatEndpoint' => rest_url( 'pl-ads/v1/heartbeat' ),
