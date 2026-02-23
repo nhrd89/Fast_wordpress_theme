@@ -122,30 +122,6 @@ function pl_ad_generate_recommendations( $session_stats, $event_data ) {
 		);
 	}
 
-	// ---- GATE PASS RATE ----
-	$gate_rate = ( $s['gate_checks'] ?? 0 ) > 0
-		? ( ( $s['gate_opens'] ?? 0 ) / $s['gate_checks'] ) * 100 : 0;
-
-	if ( $gate_rate > 0 && $gate_rate < 30 ) {
-		$recs[] = array(
-			'type'     => 'warning',
-			'category' => 'Gate',
-			'title'    => 'Low gate pass rate — few visitors qualify for ads',
-			'detail'   => 'Only ' . round( $gate_rate, 1 ) . '% of sessions pass the engagement gate. If revenue is too low, consider relaxing gate thresholds (lower scroll depth or time requirements) while monitoring viewability impact.',
-			'metric'   => round( $gate_rate, 1 ) . '% gate pass rate',
-			'priority' => 2,
-		);
-	} elseif ( $gate_rate > 80 ) {
-		$recs[] = array(
-			'type'     => 'info',
-			'category' => 'Gate',
-			'title'    => 'Very high gate pass rate',
-			'detail'   => 'At ' . round( $gate_rate, 1 ) . '%, nearly all visitors qualify. If viewability is below 60%, you could tighten the gate to improve ad quality and CPMs.',
-			'metric'   => round( $gate_rate, 1 ) . '% gate pass rate',
-			'priority' => 4,
-		);
-	}
-
 	// ---- ENGAGEMENT (TIME ON PAGE) ----
 	$avg_time = $sessions > 0 ? ( $s['total_time_s'] ?? 0 ) / $sessions : 0;
 
@@ -366,7 +342,7 @@ function pl_ad_generate_recommendations( $session_stats, $event_data ) {
 			'type'     => 'info',
 			'category' => 'Density',
 			'title'    => 'Low ads per session',
-			'detail'   => 'Average ' . round( $avg_ads, 1 ) . ' ads/session. If content is long enough, you may be leaving revenue on the table. Consider adjusting injection spacing or gate thresholds.',
+			'detail'   => 'Average ' . round( $avg_ads, 1 ) . ' ads/session. If content is long enough, you may be leaving revenue on the table. Consider adjusting injection spacing or Layer 2 density settings.',
 			'metric'   => round( $avg_ads, 1 ) . ' ads/session',
 			'priority' => 3,
 		);

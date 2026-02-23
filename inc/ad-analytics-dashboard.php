@@ -125,10 +125,6 @@ add_action( 'admin_init', 'pl_ad_handle_analytics_clear' );
 function pl_ad_compute_export_summary( $s ) {
 	$sessions = $s['total_sessions'];
 
-	$gate_pass_rate = $s['gate_checks'] > 0
-		? round( ( $s['gate_opens'] / $s['gate_checks'] ) * 100, 1 )
-		: 0;
-
 	$adplus_fill_rate = $s['total_ad_requests'] > 0
 		? round( ( $s['total_ad_fills'] / $s['total_ad_requests'] ) * 100, 1 )
 		: 0;
@@ -174,7 +170,6 @@ function pl_ad_compute_export_summary( $s ) {
 
 	return array(
 		'total_sessions'    => $sessions,
-		'gate_pass_rate'    => $gate_pass_rate . '%',
 		'adplus_fill_rate'  => $adplus_fill_rate . '%',
 		'effective_fill'    => $effective_fill . '%',
 		'viewability'       => $viewability . '%',
@@ -376,7 +371,6 @@ function pl_ad_render_analytics() {
 
 function pl_ad_render_overview_cards( $s ) {
 	$sessions   = $s['total_sessions'];
-	$gate_rate  = $s['gate_checks'] > 0 ? round( ( $s['gate_opens'] / $s['gate_checks'] ) * 100 ) : 0;
 	$avg_time   = $sessions > 0 ? round( $s['total_time_s'] / $sessions ) : 0;
 	$avg_scroll = $sessions > 0 ? round( $s['total_scroll_pct'] / $sessions ) : 0;
 
@@ -394,7 +388,7 @@ function pl_ad_render_overview_cards( $s ) {
 		<div class="pl-card">
 			<div class="pl-card-label">Sessions</div>
 			<div class="pl-card-value"><?php echo number_format( $sessions ); ?></div>
-			<div class="pl-card-sub"><?php echo number_format( $s['gate_opens'] ); ?> gate opens (<?php echo $gate_rate; ?>%)</div>
+			<div class="pl-card-sub">Avg scroll <?php echo $avg_scroll; ?>%</div>
 		</div>
 		<div class="pl-card">
 			<div class="pl-card-label">Avg Time on Page</div>
@@ -458,10 +452,10 @@ function pl_ad_render_trend_charts( $daily, $start, $end ) {
 	<div class="pl-section">
 		<h2>Daily Trends</h2>
 		<div class="pl-grid-2">
-			<!-- Sessions + Gate Opens trend -->
+			<!-- Sessions trend -->
 			<div>
-				<h4 style="margin:0 0 10px;">Sessions &amp; Gate Opens</h4>
-				<?php pl_ad_render_bar_chart( $daily, array( 'total_sessions' => '#2271b1', 'gate_opens' => '#00a32a' ), 'Sessions / Gate Opens' ); ?>
+				<h4 style="margin:0 0 10px;">Sessions</h4>
+				<?php pl_ad_render_bar_chart( $daily, array( 'total_sessions' => '#2271b1' ), 'Sessions' ); ?>
 			</div>
 
 			<!-- Fill Rate trend -->
@@ -1052,8 +1046,6 @@ function pl_ad_render_top_posts( $s ) {
 				<tr>
 					<th>Post</th>
 					<th class="num">Sessions</th>
-					<th class="num">Gate Open</th>
-					<th class="num">Gate Rate</th>
 					<th class="num">Ads Filled</th>
 					<th class="num">Viewable</th>
 					<th class="num">Clicks</th>
@@ -1062,15 +1054,12 @@ function pl_ad_render_top_posts( $s ) {
 			</thead>
 			<tbody>
 				<?php foreach ( $posts as $slug => $p ) :
-					$gate_rate = ( $p['sessions'] ?? 0 ) > 0 ? round( ( ( $p['gate_opens'] ?? 0 ) / $p['sessions'] ) * 100 ) : 0;
 					$avg_time  = ( $p['sessions'] ?? 0 ) > 0 ? round( ( $p['total_time_s'] ?? 0 ) / $p['sessions'] ) : 0;
 					$display   = strlen( $slug ) > 50 ? substr( $slug, 0, 47 ) . '...' : $slug;
 				?>
 				<tr>
 					<td title="<?php echo esc_attr( $slug ); ?>"><?php echo esc_html( $display ); ?></td>
 					<td class="num"><?php echo $p['sessions'] ?? 0; ?></td>
-					<td class="num"><?php echo $p['gate_opens'] ?? 0; ?></td>
-					<td class="num"><?php echo $gate_rate; ?>%</td>
 					<td class="num"><?php echo $p['ads_filled'] ?? 0; ?></td>
 					<td class="num"><?php echo $p['ads_viewable'] ?? 0; ?></td>
 					<td class="num"><?php echo $p['clicks'] ?? 0; ?></td>

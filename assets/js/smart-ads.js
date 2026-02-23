@@ -51,6 +51,11 @@ var _lastSampleT    = 0;
 var _scrollSpeed    = 0;
 var _visitorType    = 'unknown';  // reader | scanner | fast-scanner
 
+// Scroll depth & direction
+var _maxScrollDepth  = 0;    // max scroll depth as percentage
+var _dirChanges      = 0;    // scroll direction change count
+var _lastScrollDir   = 0;    // 1=down, -1=up, 0=initial
+
 // Engagement bridge
 var _timeOnPage     = 0;
 var _sessionStart   = Date.now();
@@ -97,9 +102,21 @@ function sampleScroll() {
 		_scrollSpeed = Math.round(total / weight);
 	}
 
+	// Track scroll direction changes (before updating _lastSampleY)
+	if (_lastSampleT > 0) {
+		var dir = y > _lastSampleY ? 1 : (y < _lastSampleY ? -1 : 0);
+		if (dir !== 0 && dir !== _lastScrollDir && _lastScrollDir !== 0) _dirChanges++;
+		if (dir !== 0) _lastScrollDir = dir;
+	}
+
 	_lastSampleY = y;
 	_lastSampleT = now;
 	_timeOnPage  = (now - _sessionStart) / 1000;
+
+	// Track max scroll depth
+	var docH = document.documentElement.scrollHeight || 1;
+	var depthPct = Math.round((y + window.innerHeight) / docH * 100);
+	if (depthPct > _maxScrollDepth) _maxScrollDepth = Math.min(depthPct, 100);
 
 	// Classify visitor (thresholds from optimizer)
 	var readerSpeed  = L2.readerSpeed ? parseInt(L2.readerSpeed, 10) : 100;
@@ -635,9 +652,18 @@ function checkVideoInjection() {
 function sendBeacon() {
 	if (typeof plAds === 'undefined' || !plAds.record) return;
 
+	// Compute totals from dynamic slots
+	var totalViewable  = 0;
+	var totalFilled    = 0;
+	var totalEmpty     = 0;
+	var totalRefreshes = 0;
 	var zones = [];
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		var s = _dynamicSlots[i];
+		if (s.viewable) totalViewable++;
+		if (s.filled) totalFilled++;
+		if (!s.filled && !s.destroyed) totalEmpty++;
+		totalRefreshes += s.refreshCount;
 		zones.push({
 			divId:        s.divId,
 			filled:       s.filled,
@@ -648,22 +674,203 @@ function sendBeacon() {
 		});
 	}
 
+	// Gather Layer 1 overlay status from __initialAds
+	var slotMap = (window.__initialAds && window.__initialAds.getSlotMap) ? window.__initialAds.getSlotMap() : {};
+	var anchorStatus       = slotMap['__anchor']       ? (slotMap['__anchor'].viewable ? 'fired' : 'waiting') : 'off';
+	var interstitialStatus = slotMap['__interstitial']  ? (slotMap['__interstitial'].viewable ? 'fired' : 'waiting') : 'off';
+	var topAnchorStatus    = slotMap['__topAnchor']     ? (slotMap['__topAnchor'].viewable ? 'fired' : 'waiting') : 'off';
+	var anchorFilled       = !!(slotMap['__anchor'] && slotMap['__anchor'].renderedSize);
+	var intFilled          = !!(slotMap['__interstitial'] && slotMap['__interstitial'].renderedSize);
+	var topFilled          = !!(slotMap['__topAnchor'] && slotMap['__topAnchor'].renderedSize);
+	var leftFilled         = !!(slotMap['__leftRail'] && slotMap['__leftRail'].renderedSize);
+	var rightFilled        = !!(slotMap['__rightRail'] && slotMap['__rightRail'].renderedSize);
+
+	// Count Layer 1 totals
+	var l1Filled = 0, l1Empty = 0, l1Viewable = 0, l1Refreshes = 0;
+	var l1keys = Object.keys(slotMap);
+	for (var k = 0; k < l1keys.length; k++) {
+		var info = slotMap[l1keys[k]];
+		if (info.renderedSize) l1Filled++; else l1Empty++;
+		if (info.viewable) l1Viewable++;
+		l1Refreshes += info.refreshCount || 0;
+	}
+
+	var totalRequested = l1keys.length + _dynamicSlots.length;
+	var allFilled      = l1Filled + totalFilled;
+	var allViewable    = l1Viewable + totalViewable;
+	var allRefreshes   = l1Refreshes + totalRefreshes;
+	var fillRate       = totalRequested > 0 ? Math.round((allFilled / totalRequested) * 100) : 0;
+	var viewRate       = allFilled > 0 ? Math.round((allViewable / allFilled) * 100) : 0;
+
+	// Session ID from Layer 1 tracker
+	var sid = (window.__plAdTracker && window.__plAdTracker.sessionId) ? window.__plAdTracker.sessionId : '';
+
 	var payload = {
-		layer:        2,
-		session:      true,
-		postId:       plAds.postId,
-		device:       IS_DESKTOP ? 'desktop' : (window.innerWidth >= 768 ? 'tablet' : 'mobile'),
-		timeOnPage:   Math.round(_timeOnPage),
-		scrollSpeed:  _scrollSpeed,
-		visitorType:  _visitorType,
-		totalInjected: _dynamicSlots.length,
-		zones:        zones
+		layer:           2,
+		session:         true,
+		sid:             sid,
+		postId:          plAds.postId || 0,
+		postSlug:        plAds.postSlug || '',
+		postTitle:       plAds.postTitle || '',
+		device:          IS_DESKTOP ? 'desktop' : (window.innerWidth >= 768 ? 'tablet' : 'mobile'),
+		viewportW:       window.innerWidth,
+		viewportH:       window.innerHeight,
+		timeOnPage:      Math.round(_timeOnPage),
+		maxDepth:        _maxScrollDepth,
+		scrollPct:       _maxScrollDepth,
+		scrollSpeed:     _scrollSpeed,
+		scrollPattern:   _visitorType,
+		dirChanges:      _dirChanges,
+		visitorType:     _visitorType,
+		referrer:        document.referrer || '',
+		language:        (navigator.language || navigator.userLanguage || ''),
+		// Injection totals
+		totalInjected:       _dynamicSlots.length,
+		viewportAdsInjected: _dynamicSlots.length,
+		totalViewable:       allViewable,
+		viewabilityRate:     viewRate,
+		// Fill tracking
+		totalRequested:  totalRequested,
+		totalFilled:     allFilled,
+		totalEmpty:      l1Empty + totalEmpty,
+		fillRate:        fillRate,
+		// Overlay status
+		anchorStatus:        anchorStatus,
+		interstitialStatus:  interstitialStatus,
+		topAnchorStatus:     topAnchorStatus,
+		anchorFilled:        anchorFilled,
+		interstitialFilled:  intFilled,
+		topAnchorFilled:     topFilled,
+		leftSideRailFilled:  leftFilled,
+		rightSideRailFilled: rightFilled,
+		// Overlay viewability
+		anchorImpressions: slotMap['__anchor'] ? (slotMap['__anchor'].refreshCount + 1) : 0,
+		anchorViewable:    slotMap['__anchor'] && slotMap['__anchor'].viewable ? 1 : 0,
+		interstitialViewable: slotMap['__interstitial'] && slotMap['__interstitial'].viewable ? 1 : 0,
+		// Refresh + video + pause
+		totalRefreshes:      allRefreshes,
+		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
+		videoInjected:       !!window.__plVideoInjected,
+		// Dynamic slot detail
+		zones:           zones
 	};
 
 	var json = JSON.stringify(payload);
 	if (navigator.sendBeacon && plAds.recordEndpoint) {
 		navigator.sendBeacon(plAds.recordEndpoint, new Blob([json], { type: 'application/json' }));
 	}
+}
+
+/* ================================================================
+ * HEARTBEAT — real-time session data for admin Live Sessions
+ * ================================================================ */
+
+var _heartbeatInterval = null;
+
+function sendHeartbeat() {
+	if (typeof plAds === 'undefined' || !plAds.heartbeatEndpoint) return;
+
+	// Compute same totals as sendBeacon
+	var totalViewable = 0, totalFilled = 0, totalRefreshes = 0;
+	for (var i = 0; i < _dynamicSlots.length; i++) {
+		if (_dynamicSlots[i].viewable) totalViewable++;
+		if (_dynamicSlots[i].filled) totalFilled++;
+		totalRefreshes += _dynamicSlots[i].refreshCount;
+	}
+
+	var slotMap = (window.__initialAds && window.__initialAds.getSlotMap) ? window.__initialAds.getSlotMap() : {};
+	var l1Filled = 0, l1Viewable = 0, l1Refreshes = 0;
+	var l1keys = Object.keys(slotMap);
+	for (var k = 0; k < l1keys.length; k++) {
+		var info = slotMap[l1keys[k]];
+		if (info.renderedSize) l1Filled++;
+		if (info.viewable) l1Viewable++;
+		l1Refreshes += info.refreshCount || 0;
+	}
+
+	var allFilled   = l1Filled + totalFilled;
+	var allViewable = l1Viewable + totalViewable;
+	var totalReq    = l1keys.length + _dynamicSlots.length;
+	var fillRate    = totalReq > 0 ? Math.round((allFilled / totalReq) * 100) : 0;
+	var viewRate    = allFilled > 0 ? Math.round((allViewable / allFilled) * 100) : 0;
+
+	var sid = (window.__plAdTracker && window.__plAdTracker.sessionId) ? window.__plAdTracker.sessionId : '';
+
+	var data = {
+		sid:             sid,
+		postId:          plAds.postId || 0,
+		postSlug:        plAds.postSlug || '',
+		postTitle:       plAds.postTitle || '',
+		device:          IS_DESKTOP ? 'desktop' : (window.innerWidth >= 768 ? 'tablet' : 'mobile'),
+		viewportW:       window.innerWidth,
+		viewportH:       window.innerHeight,
+		timeOnPage:      Math.round(_timeOnPage),
+		maxDepth:        _maxScrollDepth,
+		scrollPct:       _maxScrollDepth,
+		scrollSpeed:     _scrollSpeed,
+		scrollPattern:   _visitorType,
+		dirChanges:      _dirChanges,
+		referrer:        document.referrer || '',
+		language:        (navigator.language || navigator.userLanguage || ''),
+		// Totals
+		totalInjected:       _dynamicSlots.length,
+		viewportAdsInjected: _dynamicSlots.length,
+		totalViewable:       allViewable,
+		viewabilityRate:     viewRate,
+		totalRequested:      totalReq,
+		totalFilled:         allFilled,
+		fillRate:            fillRate,
+		totalRefreshes:      l1Refreshes + totalRefreshes,
+		// Overlay status
+		anchorStatus:        slotMap['__anchor'] ? (slotMap['__anchor'].viewable ? 'fired' : (slotMap['__anchor'].renderedSize ? 'firing' : 'waiting')) : 'off',
+		interstitialStatus:  slotMap['__interstitial'] ? (slotMap['__interstitial'].viewable ? 'fired' : (slotMap['__interstitial'].renderedSize ? 'firing' : 'waiting')) : 'off',
+		topAnchorStatus:     slotMap['__topAnchor'] ? (slotMap['__topAnchor'].viewable ? 'fired' : (slotMap['__topAnchor'].renderedSize ? 'firing' : 'waiting')) : 'off',
+		anchorFilled:        !!(slotMap['__anchor'] && slotMap['__anchor'].renderedSize),
+		interstitialFilled:  !!(slotMap['__interstitial'] && slotMap['__interstitial'].renderedSize),
+		topAnchorFilled:     !!(slotMap['__topAnchor'] && slotMap['__topAnchor'].renderedSize),
+		leftSideRailFilled:  !!(slotMap['__leftRail'] && slotMap['__leftRail'].renderedSize),
+		rightSideRailFilled: !!(slotMap['__rightRail'] && slotMap['__rightRail'].renderedSize),
+		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
+		videoInjected:       !!window.__plVideoInjected
+	};
+
+	// Build zones array for per-ad detail
+	var zones = [];
+	for (var d = 0; d < _dynamicSlots.length; d++) {
+		var ds = _dynamicSlots[d];
+		if (ds.destroyed) continue;
+		zones.push({
+			zoneId:   ds.divId,
+			slot:     'Ad.Plus-300x250',
+			size:     ds.renderedSize ? ds.renderedSize[0] + 'x' + ds.renderedSize[1] : '',
+			viewable: ds.viewable,
+			filled:   ds.filled,
+			refreshCount: ds.refreshCount
+		});
+	}
+	data.zones = zones;
+
+	// Use fetch (not sendBeacon) so we can send credentials for CORS
+	fetch(plAds.heartbeatEndpoint, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'X-WP-Nonce': plAds.nonce
+		},
+		body: JSON.stringify(data),
+		credentials: 'same-origin',
+		keepalive: true
+	}).catch(function() {});
+}
+
+function startHeartbeat() {
+	// Always start heartbeat — server handles load (lightweight transient storage)
+	// Only send every 5s to minimize network overhead
+	if (_heartbeatInterval) return;
+	_heartbeatInterval = setInterval(sendHeartbeat, 5000);
+	// Send first heartbeat immediately
+	sendHeartbeat();
+	log('Heartbeat started (5s interval)');
 }
 
 /* ================================================================
@@ -685,6 +892,12 @@ function init() {
 
 		// Start main loop
 		setInterval(mainLoop, MAIN_LOOP_MS);
+
+		// Start heartbeat for live sessions dashboard
+		startHeartbeat();
+
+		// Passive scroll listener for accurate mobile tracking
+		window.addEventListener('scroll', sampleScroll, { passive: true });
 
 		// Start refresh checker (every 10s)
 		setInterval(checkRefreshes, 10000);
@@ -733,6 +946,13 @@ function init() {
 					googletag.enableServices();
 				});
 				setInterval(mainLoop, MAIN_LOOP_MS);
+
+				// Start heartbeat for live sessions dashboard
+				startHeartbeat();
+
+				// Passive scroll listener for accurate mobile tracking
+				window.addEventListener('scroll', sampleScroll, { passive: true });
+
 				setInterval(checkRefreshes, 10000);
 				setInterval(updateDashboard, 5000);
 				document.addEventListener('visibilitychange', function() {

@@ -48,8 +48,6 @@ add_action( 'pl_ad_optimizer_daily', 'pl_ad_run_optimizer' );
 
 function pl_optimizer_adjustable_settings() {
 	return array(
-		'gate_scroll_pct'      => array( 'min' => 5,   'max' => 40,   'step' => 5 ),
-		'gate_time_sec'        => array( 'min' => 2,   'max' => 15,   'step' => 1 ),
 		'max_display_ads'      => array( 'min' => 2,   'max' => 7,    'step' => 1 ),
 		'min_spacing_px'       => array( 'min' => 600, 'max' => 2500, 'step' => 100 ),
 		'pause_min_ads'        => array( 'min' => 1,   'max' => 4,    'step' => 1 ),
@@ -79,15 +77,6 @@ function pl_optimizer_adjust( &$current, $key, $steps ) {
 
 function pl_optimizer_get_rules() {
 	return array(
-		array(
-			'id' => 'R1', 'name' => 'Gate Pass Rate',
-			'trigger' => 'Gate pass rate < 50%', 'action' => 'Decrease gate_scroll_pct -5',
-			'evaluate' => function ( $s, $current ) {
-				$rate = $s['gate_checks'] > 0 ? ( $s['gate_opens'] / $s['gate_checks'] ) * 100 : 100;
-				if ( $rate < 50 ) return array( 'setting' => 'gate_scroll_pct', 'steps' => -1, 'detail' => 'Gate pass rate ' . round( $rate ) . '% — relaxing scroll threshold' );
-				return false;
-			},
-		),
 		array(
 			'id' => 'R2', 'name' => 'Display Fill Rate',
 			'trigger' => 'Ad.Plus fill rate < 40%', 'action' => 'Decrease max_display_ads -1',
@@ -148,11 +137,11 @@ function pl_optimizer_get_rules() {
 		),
 		array(
 			'id' => 'R8', 'name' => 'Interstitial Trigger Rate',
-			'trigger' => 'Interstitial fires < 20% of gate opens', 'action' => 'Decrease gate_time_sec -1',
+			'trigger' => 'Interstitial fires < 20% of sessions', 'action' => 'Warning logged',
 			'evaluate' => function ( $s, $current ) {
-				if ( $s['gate_opens'] < 20 ) return false;
-				$rate = ( $s['interstitial_fired'] / $s['gate_opens'] ) * 100;
-				if ( $rate < 20 ) return array( 'setting' => 'gate_time_sec', 'steps' => -1, 'detail' => 'Interstitial trigger rate ' . round( $rate ) . '%' );
+				if ( $s['total_sessions'] < 50 ) return false;
+				$rate = ( $s['interstitial_fired'] / $s['total_sessions'] ) * 100;
+				if ( $rate < 20 ) return array( 'setting' => '_warning', 'steps' => 0, 'detail' => 'Interstitial trigger rate ' . round( $rate ) . '% of sessions' );
 				return false;
 			},
 		),
@@ -167,12 +156,12 @@ function pl_optimizer_get_rules() {
 			},
 		),
 		array(
-			'id' => 'R10', 'name' => 'Bounce Rate Gate',
-			'trigger' => 'Bouncer pattern > 40%', 'action' => 'Increase gate_time_sec +1',
+			'id' => 'R10', 'name' => 'Bounce Rate Monitor',
+			'trigger' => 'Bouncer pattern > 40%', 'action' => 'Warning logged',
 			'evaluate' => function ( $s, $current ) {
 				$bouncers = $s['by_pattern']['bouncer'] ?? 0;
 				$rate = $s['total_sessions'] > 0 ? ( $bouncers / $s['total_sessions'] ) * 100 : 0;
-				if ( $rate > 40 ) return array( 'setting' => 'gate_time_sec', 'steps' => 1, 'detail' => 'Bouncer rate ' . round( $rate ) . '%' );
+				if ( $rate > 40 ) return array( 'setting' => '_warning', 'steps' => 0, 'detail' => 'Bouncer rate ' . round( $rate ) . '% — consider switching to Light density' );
 				return false;
 			},
 		),
@@ -261,7 +250,6 @@ function pl_ad_run_optimizer() {
 
 	$summary = array(
 		'sessions'    => $stats['total_sessions'],
-		'gate_rate'   => $stats['gate_checks'] > 0 ? round( ( $stats['gate_opens'] / $stats['gate_checks'] ) * 100 ) : 0,
 		'fill_rate'   => $stats['total_ad_requests'] > 0 ? round( ( $stats['total_ad_fills'] / $stats['total_ad_requests'] ) * 100 ) : 0,
 		'viewability' => $stats['total_zones_activated'] > 0 ? round( ( $stats['total_viewable_ads'] / $stats['total_zones_activated'] ) * 100 ) : 0,
 	);
@@ -867,7 +855,7 @@ function pl_ad_render_optimizer() {
 								</div>
 								<?php if ( ! empty( $entry['summary'] ) ) : ?>
 									<span style="font-size:11px;color:#666;">
-										<?php echo $entry['summary']['sessions']; ?>s | G<?php echo $entry['summary']['gate_rate']; ?>% | F<?php echo $entry['summary']['fill_rate']; ?>% | V<?php echo $entry['summary']['viewability']; ?>%
+										<?php echo $entry['summary']['sessions']; ?>s | F<?php echo $entry['summary']['fill_rate']; ?>% | V<?php echo $entry['summary']['viewability']; ?>%
 									</span>
 								<?php endif; ?>
 							</div>

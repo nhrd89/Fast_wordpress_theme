@@ -100,7 +100,7 @@ function pl_live_sessions_heartbeat( $request ) {
 		'ts'               => time(),
 		'post_id'          => intval( $body['postId'] ?? 0 ),
 		'post_slug'        => sanitize_text_field( $body['postSlug'] ?? '' ),
-		'post_title'       => sanitize_text_field( $body['postTitle'] ?? '' ),
+		'post_title'       => ! empty( $body['postTitle'] ) ? sanitize_text_field( $body['postTitle'] ) : ( intval( $body['postId'] ?? 0 ) ? get_the_title( intval( $body['postId'] ) ) : '' ),
 		'device'           => sanitize_text_field( $body['device'] ?? 'unknown' ),
 		'viewport_w'       => intval( $body['viewportW'] ?? 0 ),
 		'viewport_h'       => intval( $body['viewportH'] ?? 0 ),
@@ -109,7 +109,6 @@ function pl_live_sessions_heartbeat( $request ) {
 		'scroll_speed'     => intval( $body['scrollSpeed'] ?? 0 ),
 		'scroll_pattern'   => sanitize_text_field( $body['scrollPattern'] ?? '' ),
 		'dir_changes'      => intval( $body['dirChanges'] ?? 0 ),
-		'gate_open'        => ! empty( $body['gateOpen'] ),
 		// v5: dynamic injection stats.
 		'viewport_ads'     => intval( $body['viewportAdsInjected'] ?? 0 ),
 		'active_ads'       => intval( $body['totalInjected'] ?? $body['activeAds'] ?? 0 ),
@@ -401,7 +400,7 @@ function pl_live_sessions_page() {
 						<th>Scroll</th>
 						<th>Speed</th>
 						<th>Pattern</th>
-						<th>Gate</th>
+						<th>Filled</th>
 						<th>Injected</th>
 						<th>Viewable</th>
 						<th>View%</th>
@@ -431,7 +430,7 @@ function pl_live_sessions_page() {
 						<th>Scroll</th>
 						<th>Speed</th>
 						<th>Pattern</th>
-						<th>Gate</th>
+						<th>Filled</th>
 						<th>Injected</th>
 						<th>Viewable</th>
 						<th>View%</th>
@@ -508,13 +507,8 @@ function pl_live_sessions_page() {
 		var expandedSids = {};
 		var lastData = null;
 
-		function gateIcon(ok) {
+		function statusIcon(ok) {
 			return ok ? '<span class="pl-gate-ok">&#10003;</span>' : '<span class="pl-gate-fail">&#10007;</span>';
-		}
-
-		function gateStatus(s) {
-			if (s.gate_open) return '<span class="pl-gate-ok" style="font-weight:700">&#10003; OPEN</span>';
-			return '<span class="pl-gate-fail">&#10007; CLOSED</span>';
 		}
 
 		function fmtTime(seconds) {
@@ -565,6 +559,10 @@ function pl_live_sessions_page() {
 			// Overlays compact: A=anchor, I=interstitial, T=top-anchor.
 			var overlays = fmtStatus(s.anchor_status) + ' ' + fmtStatus(s.interstitial_status) + ' ' + fmtStatus(s.top_anchor_status || 'off');
 
+			// Filled: total_filled from heartbeat, or compute from active_ads
+			var filledCount = s.total_filled || s.active_ads || 0;
+			var filledColor = filledCount > 0 ? '#00a32a' : '#d63638';
+
 			var html = '<tr class="' + rowClass + '" data-sid="' + s.sid + '">' +
 				'<td><code>' + s.sid + '</code></td>' +
 				'<td title="' + (s.post_title || s.post_slug) + '">' + title + '</td>' +
@@ -573,7 +571,7 @@ function pl_live_sessions_page() {
 				'<td>' + Math.round(s.scroll_pct) + '%</td>' +
 				'<td>' + s.scroll_speed + '</td>' +
 				'<td>' + (s.scroll_pattern || '-') + '</td>' +
-				'<td style="white-space:nowrap">' + gateStatus(s) + '</td>' +
+				'<td style="font-weight:700;color:' + filledColor + '">' + filledCount + '</td>' +
 				'<td>' + (s.active_ads || 0) + '</td>' +
 				'<td>' + (s.viewable_ads || 0) + '</td>' +
 				'<td>' + rate + '%</td>' +
@@ -600,7 +598,6 @@ function pl_live_sessions_page() {
 			h += '<div>';
 			h += '<h4>Session Overview' + (isRecent ? ' (Final State)' : '') + '</h4>';
 			h += '<table><tr><th>Metric</th><th>Value</th></tr>';
-			h += '<tr><td>Gate</td><td>' + (s.gate_open ? '<span class="pl-gate-ok" style="font-weight:700">OPEN</span>' : '<span class="pl-gate-fail">CLOSED</span>') + '</td></tr>';
 			h += '<tr><td>Scroll</td><td>' + Math.round(s.scroll_pct) + '%</td></tr>';
 			h += '<tr><td>Time on page</td><td>' + fmtTime(s.time_on_page_s) + '</td></tr>';
 			h += '<tr><td>Scroll Speed</td><td>' + s.scroll_speed + ' px/s</td></tr>';
@@ -658,7 +655,7 @@ function pl_live_sessions_page() {
 					h += '<td>' + (e.speed_at_inj || 0) + '</td>';
 					h += '<td>' + (e.pattern || '-') + '</td>';
 					h += '<td>' + ((e.visible_ms || 0) / 1000).toFixed(1) + 's</td>';
-					h += '<td>' + (e.viewable > 0 ? gateIcon(true) : gateIcon(false)) + '</td>';
+					h += '<td>' + (e.viewable > 0 ? statusIcon(true) : statusIcon(false)) + '</td>';
 					h += '<td>' + (e.is_pause ? '&#10003;' : '-') + '</td>';
 					h += '<td>' + (e.refresh_count || 0) + '</td>';
 					h += '</tr>';

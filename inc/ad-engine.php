@@ -32,11 +32,6 @@ function pl_ad_defaults() {
 		'debug_overlay'         => false,
 		'record_data'           => true,
 
-		// Engagement Gate.
-		'gate_scroll_pct'       => 3,
-		'gate_time_sec'         => 2,
-		'gate_dir_changes'      => 0,
-
 		// v5: Dynamic injection — no artificial cap, behavior is the cap.
 		'injection_mode'        => 'dynamic',
 		'max_display_ads'       => 50,
@@ -142,23 +137,16 @@ function pl_ad_migrate_slot_names() {
 		$dirty = true;
 	}
 
-	// Migrate gate_dir_changes from 1 to 0 (removed as gate requirement).
-	if ( isset( $saved['gate_dir_changes'] ) && (int) $saved['gate_dir_changes'] === 1 ) {
-		$saved['gate_dir_changes'] = 0;
-		$dirty = true;
-	}
-
 	// Migrate pause_min_ads from 4 to 2 (speed-gated system produces 1-3 ads, not 4).
 	if ( isset( $saved['pause_min_ads'] ) && (int) $saved['pause_min_ads'] === 4 ) {
 		$saved['pause_min_ads'] = 2;
 		$dirty = true;
 	}
 
-	// V5 migration: update density/gate settings for dynamic injection.
+	// V5 migration: update density settings for dynamic injection.
 	$v5_migrations = array(
 		'max_display_ads' => array( 'old_max' => 35, 'new' => 50 ),
 		'min_spacing_px'  => array( 'old_max' => 200, 'new' => 400 ),
-		'gate_scroll_pct' => array( 'old_min' => 10, 'new' => 3 ),
 	);
 	foreach ( $v5_migrations as $key => $m ) {
 		if ( isset( $saved[ $key ] ) ) {
@@ -251,9 +239,6 @@ function pl_ad_sanitize_settings( $input ) {
 
 	// Integers with min/max clamping.
 	$ints = array(
-		'gate_scroll_pct'       => array( 0, 100 ),
-		'gate_time_sec'         => array( 0, 60 ),
-		'gate_dir_changes'      => array( 0, 10 ),
 		'max_display_ads'       => array( 0, 50 ),
 		'min_spacing_px'        => array( 200, 2000 ),
 		'min_paragraphs_before' => array( 0, 20 ),
@@ -403,29 +388,6 @@ function pl_ad_render_global_tab( $s ) {
 			</td>
 		</tr>
 
-		<tr><th colspan="2"><h2>Engagement Gate</h2></th></tr>
-		<tr>
-			<th>Scroll Threshold (%)</th>
-			<td>
-				<input type="number" name="pl_ad_settings[gate_scroll_pct]" value="<?php echo esc_attr( $s['gate_scroll_pct'] ); ?>" min="0" max="100" class="small-text">
-				<p class="description">User must scroll this % before ads load. Proves engagement.</p>
-			</td>
-		</tr>
-		<tr>
-			<th>Time on Page (seconds)</th>
-			<td>
-				<input type="number" name="pl_ad_settings[gate_time_sec]" value="<?php echo esc_attr( $s['gate_time_sec'] ); ?>" min="0" max="60" class="small-text">
-				<p class="description">Minimum seconds on page before ads load.</p>
-			</td>
-		</tr>
-		<tr>
-			<th>Direction Changes</th>
-			<td>
-				<input type="number" name="pl_ad_settings[gate_dir_changes]" value="<?php echo esc_attr( $s['gate_dir_changes'] ); ?>" min="0" max="10" class="small-text">
-				<p class="description">Required scroll direction changes (proves active reading).</p>
-			</td>
-		</tr>
-
 		<tr><th colspan="2"><h2>Density Controls</h2></th></tr>
 		<tr>
 			<th>Max Display Ads</th>
@@ -532,7 +494,7 @@ function pl_ad_render_global_tab( $s ) {
 function pl_ad_render_codes_tab( $s ) {
 	?>
 	<h3>Primary Network (Ad.Plus / Google Ad Manager)</h3>
-	<p class="description">These codes are used for the primary ad auction. Ads load after the engagement gate opens.</p>
+	<p class="description">These codes are used for the primary ad auction. Ads load via Layer 1 (initial viewport) and Layer 2 (scroll-behavior injection).</p>
 
 	<table class="form-table">
 		<tr>
@@ -967,11 +929,6 @@ function pinlightning_ads_enqueue() {
 		// v5: Injection mode.
 		'injectionMode'   => $s['injection_mode'],
 
-		// Engagement Gate.
-		'gateScrollPct'   => (int) $s['gate_scroll_pct'],
-		'gateTimeSec'     => (int) $s['gate_time_sec'],
-		'gateDirChanges'  => (int) $s['gate_dir_changes'],
-
 		// Density.
 		'maxAds'          => (int) $s['max_display_ads'],
 		'minSpacingPx'    => (int) $s['min_spacing_px'],
@@ -1032,6 +989,7 @@ function pinlightning_ads_enqueue() {
 		'nonce'             => wp_create_nonce( 'wp_rest' ),
 		'postId'            => is_singular() ? get_the_ID() : 0,
 		'postSlug'          => is_singular() ? get_post_field( 'post_name', get_the_ID() ) : '',
+		'postTitle'         => is_singular() ? get_the_title() : '',
 		'ajaxUrl'           => admin_url( 'admin-ajax.php' ),
 	);
 

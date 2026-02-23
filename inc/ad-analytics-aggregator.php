@@ -41,9 +41,6 @@ function pl_ad_empty_day_stats() {
 		// Engagement.
 		'total_time_s'     => 0,
 		'total_scroll_pct' => 0,
-		'gate_opens'       => 0,
-		'gate_checks'      => 0,
-
 		// Ad performance.
 		'total_zones_activated' => 0,
 		'total_viewable_ads'    => 0,
@@ -156,12 +153,6 @@ function pl_ad_aggregate_session( $session ) {
 	}
 	$stats['total_time_s']     += $time_s;
 	$stats['total_scroll_pct'] += floatval( $session['scroll_pct'] ?? $session['max_scroll_depth_pct'] ?? 0 );
-
-	// Gate.
-	if ( ! empty( $session['gate_open'] ) ) {
-		$stats['gate_opens']++;
-	}
-	$stats['gate_checks']++;
 
 	// --- Ad Performance ---
 	// Handle both naming conventions: live sessions vs recorder.
@@ -284,7 +275,6 @@ function pl_ad_aggregate_session( $session ) {
 	if ( ! isset( $stats['by_post'][ $post_slug ] ) ) {
 		$stats['by_post'][ $post_slug ] = array(
 			'sessions'     => 0,
-			'gate_opens'   => 0,
 			'ads_filled'   => 0,
 			'ads_viewable' => 0,
 			'clicks'       => 0,
@@ -293,9 +283,6 @@ function pl_ad_aggregate_session( $session ) {
 	}
 	$p = &$stats['by_post'][ $post_slug ];
 	$p['sessions']++;
-	if ( ! empty( $session['gate_open'] ) ) {
-		$p['gate_opens']++;
-	}
 	$p['ads_filled']   += $total_filled;
 	$p['ads_viewable'] += $viewable;
 	$p['clicks']       += intval( $session['total_display_clicks'] ?? 0 );

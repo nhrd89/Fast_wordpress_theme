@@ -94,10 +94,6 @@ function pinlightning_record_ad_data($request) {
         'scroll_pattern' => sanitize_text_field($body['scrollPattern'] ?? ''),
         'items_seen' => intval($body['itemsSeen'] ?? 0),
         'total_items' => intval($body['totalItems'] ?? 0),
-        'gate_open' => !empty($body['gateOpen']),
-        'gate_scroll' => !empty($body['gateOpen']), // v5: single gate check
-        'gate_time' => !empty($body['gateOpen']),
-        'gate_direction' => true, // v5: no direction gate
         'dir_changes' => intval($body['dirChanges'] ?? 0),
         // v5: dynamic injection stats.
         'viewport_ads_injected' => intval($body['viewportAdsInjected'] ?? 0),
@@ -254,7 +250,7 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'ts'               => $session['unix'],
         'post_id'          => $session['post_id'],
         'post_slug'        => $session['post_slug'],
-        'post_title'       => $session['post_slug'],
+        'post_title'       => $session['post_id'] ? get_the_title( $session['post_id'] ) : $session['post_slug'],
         'device'           => $session['device'],
         'viewport_w'       => $session['viewport_w'],
         'viewport_h'       => $session['viewport_h'],
@@ -263,7 +259,6 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'scroll_speed'     => intval( $session['avg_scroll_speed'] ),
         'scroll_pattern'   => $session['scroll_pattern'],
         'dir_changes'      => $session['dir_changes'] ?? 0,
-        'gate_open'        => $session['gate_open'],
         'active_ads'       => $session['total_ads_injected'],
         'viewable_ads'     => $session['total_viewable'],
         'viewability_rate' => $session['viewability_rate'],
@@ -383,20 +378,11 @@ function pinlightning_summarize_ad_data($sessions) {
     $devices = array('mobile' => 0, 'desktop' => 0, 'tablet' => 0);
     $patterns = array('reader' => 0, 'scanner' => 0, 'bouncer' => 0);
     $zone_stats = array();
-    $gate_funnel = array('loaded' => $total, 'scroll' => 0, 'time' => 0, 'direction' => 0, 'open' => 0, 'ads_shown' => 0);
-
     foreach ($sessions as $s) {
         $total_time += $s['time_on_page_ms'] ?? 0;
         $total_depth += $s['max_scroll_depth_pct'] ?? 0;
         $total_ads += $s['total_ads_injected'] ?? 0;
         $total_viewable += $s['total_viewable'] ?? 0;
-
-        // Gate funnel tracking.
-        if (!empty($s['gate_scroll'])) $gate_funnel['scroll']++;
-        if (!empty($s['gate_time'])) $gate_funnel['time']++;
-        if (!empty($s['gate_direction'])) $gate_funnel['direction']++;
-        if (!empty($s['gate_open'])) $gate_funnel['open']++;
-        if (($s['total_ads_injected'] ?? 0) > 0) $gate_funnel['ads_shown']++;
 
         $dev = $s['device'] ?? 'unknown';
         if (isset($devices[$dev])) $devices[$dev]++;
@@ -425,7 +411,6 @@ function pinlightning_summarize_ad_data($sessions) {
         'avg_scroll_depth_pct' => round($total_depth / $total, 1),
         'avg_ads_per_session' => round($total_ads / $total, 1),
         'overall_viewability_pct' => $total_ads > 0 ? round(($total_viewable / $total_ads) * 100, 1) : 0,
-        'gate_funnel' => $gate_funnel,
         'devices' => $devices,
         'scroll_patterns' => $patterns,
         'zone_performance' => $zone_stats,
