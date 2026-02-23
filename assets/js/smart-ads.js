@@ -56,6 +56,10 @@ var _maxScrollDepth  = 0;    // max scroll depth as percentage
 var _dirChanges      = 0;    // scroll direction change count
 var _lastScrollDir   = 0;    // 1=down, -1=up, 0=initial
 
+// Tab visibility tracking
+var _hiddenTime      = 0;    // cumulative ms tab was hidden
+var _hiddenSince     = 0;    // timestamp when tab became hidden (0 = visible)
+
 // Engagement bridge
 var _timeOnPage     = 0;
 var _sessionStart   = Date.now();
@@ -69,6 +73,14 @@ function log() {
 	var args = ['[SmartAds]'];
 	for (var i = 0; i < arguments.length; i++) args.push(arguments[i]);
 	console.log.apply(console, args);
+}
+
+/** Compute active time (tab visible) in seconds. */
+function getActiveTime() {
+	var hidden = _hiddenTime;
+	if (_hiddenSince > 0) hidden += Date.now() - _hiddenSince;
+	var total = (Date.now() - _sessionStart) / 1000;
+	return Math.max(0, Math.round(total - hidden / 1000));
 }
 
 function pushEvent(name, data) {
@@ -716,6 +728,7 @@ function sendBeacon() {
 		viewportW:       window.innerWidth,
 		viewportH:       window.innerHeight,
 		timeOnPage:      Math.round(_timeOnPage),
+		activeTime:      getActiveTime(),
 		maxDepth:        _maxScrollDepth,
 		scrollPct:       _maxScrollDepth,
 		scrollSpeed:     _scrollSpeed,
@@ -805,6 +818,7 @@ function sendHeartbeat() {
 		viewportW:       window.innerWidth,
 		viewportH:       window.innerHeight,
 		timeOnPage:      Math.round(_timeOnPage),
+		activeTime:      getActiveTime(),
 		maxDepth:        _maxScrollDepth,
 		scrollPct:       _maxScrollDepth,
 		scrollSpeed:     _scrollSpeed,
@@ -905,9 +919,17 @@ function init() {
 		// Update dashboard every 5s
 		setInterval(updateDashboard, 5000);
 
-		// Send analytics on page exit
+		// Track tab visibility for active time
 		document.addEventListener('visibilitychange', function() {
-			if (document.visibilityState === 'hidden') sendBeacon();
+			if (document.visibilityState === 'hidden') {
+				_hiddenSince = Date.now();
+				sendBeacon();
+			} else {
+				if (_hiddenSince > 0) {
+					_hiddenTime += Date.now() - _hiddenSince;
+					_hiddenSince = 0;
+				}
+			}
 		});
 		window.addEventListener('pagehide', sendBeacon);
 
@@ -956,7 +978,15 @@ function init() {
 				setInterval(checkRefreshes, 10000);
 				setInterval(updateDashboard, 5000);
 				document.addEventListener('visibilitychange', function() {
-					if (document.visibilityState === 'hidden') sendBeacon();
+					if (document.visibilityState === 'hidden') {
+						_hiddenSince = Date.now();
+						sendBeacon();
+					} else {
+						if (_hiddenSince > 0) {
+							_hiddenTime += Date.now() - _hiddenSince;
+							_hiddenSince = 0;
+						}
+					}
 				});
 				window.addEventListener('pagehide', sendBeacon);
 			}

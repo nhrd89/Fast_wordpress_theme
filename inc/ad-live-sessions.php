@@ -2,8 +2,8 @@
 /**
  * PinLightning Ad Live Sessions — Real-Time Debugging Dashboard
  *
- * Admin page showing active visitor sessions with live-updating gate status,
- * scroll depth, ad viewability, and zone activation data.
+ * Admin page showing active visitor sessions with live-updating scroll depth,
+ * ad viewability, active/hidden time tracking, and zone activation data.
  *
  * Architecture:
  * - Browser: smart-ads.js heartbeat module POSTs to /pl-ads/v1/heartbeat every 3s
@@ -105,6 +105,7 @@ function pl_live_sessions_heartbeat( $request ) {
 		'viewport_w'       => intval( $body['viewportW'] ?? 0 ),
 		'viewport_h'       => intval( $body['viewportH'] ?? 0 ),
 		'time_on_page_s'   => floatval( $body['timeOnPage'] ?? 0 ),
+		'active_time_s'    => floatval( $body['activeTime'] ?? $body['timeOnPage'] ?? 0 ),
 		'scroll_pct'       => floatval( $body['maxDepth'] ?? $body['scrollPct'] ?? 0 ),
 		'scroll_speed'     => intval( $body['scrollSpeed'] ?? 0 ),
 		'scroll_pattern'   => sanitize_text_field( $body['scrollPattern'] ?? '' ),
@@ -270,12 +271,19 @@ function pl_live_sessions_get( $request ) {
 		$stale       = array();
 		$clean_index = array();
 
+		$thirty_min_ago = $now - 1800;
+
 		foreach ( $index as $sid => $s_data ) {
 			if ( ! is_array( $s_data ) ) {
 				// Legacy format (just timestamp) — discard.
 				continue;
 			}
-			if ( ( $s_data['ts'] ?? 0 ) < $cutoff ) {
+			// Stale: no heartbeat for >60s, OR >30min with 0% viewability.
+			$is_stale    = ( $s_data['ts'] ?? 0 ) < $cutoff;
+			$is_zombie   = ( $s_data['ts'] ?? 0 ) < $thirty_min_ago
+				&& ( $s_data['viewability_rate'] ?? 0 ) == 0
+				&& ( $s_data['viewable_ads'] ?? 0 ) == 0;
+			if ( $is_stale || $is_zombie ) {
 				$stale[ $sid ] = $s_data;
 			} else {
 				$clean_index[ $sid ] = $s_data;
@@ -563,14 +571,25 @@ function pl_live_sessions_page() {
 			var filledCount = s.total_filled || s.active_ads || 0;
 			var filledColor = filledCount > 0 ? '#00a32a' : '#d63638';
 
+			// Active time vs total time — show active in column, total in tooltip
+			var activeT = s.active_time_s != null ? s.active_time_s : s.time_on_page_s;
+			var totalT  = s.time_on_page_s || 0;
+			var timeTitle = 'Total: ' + fmtTime(totalT) + ' | Active: ' + fmtTime(activeT);
+
+			// Detect background tab: hidden time >80% of total
+			var pattern = s.scroll_pattern || '-';
+			if (totalT > 10 && activeT < totalT * 0.2) {
+				pattern = '<span style="color:#dba617" title="Tab hidden >80% of session">background</span>';
+			}
+
 			var html = '<tr class="' + rowClass + '" data-sid="' + s.sid + '">' +
 				'<td><code>' + s.sid + '</code></td>' +
 				'<td title="' + (s.post_title || s.post_slug) + '">' + title + '</td>' +
 				'<td>' + s.device + '</td>' +
-				'<td>' + fmtTime(s.time_on_page_s) + '</td>' +
+				'<td title="' + timeTitle + '">' + fmtTime(activeT) + '</td>' +
 				'<td>' + Math.round(s.scroll_pct) + '%</td>' +
 				'<td>' + s.scroll_speed + '</td>' +
-				'<td>' + (s.scroll_pattern || '-') + '</td>' +
+				'<td>' + pattern + '</td>' +
 				'<td style="font-weight:700;color:' + filledColor + '">' + filledCount + '</td>' +
 				'<td>' + (s.active_ads || 0) + '</td>' +
 				'<td>' + (s.viewable_ads || 0) + '</td>' +
@@ -598,11 +617,19 @@ function pl_live_sessions_page() {
 			h += '<div>';
 			h += '<h4>Session Overview' + (isRecent ? ' (Final State)' : '') + '</h4>';
 			h += '<table><tr><th>Metric</th><th>Value</th></tr>';
+			var detailActiveT = s.active_time_s != null ? s.active_time_s : s.time_on_page_s;
+			var detailTotalT = s.time_on_page_s || 0;
+			var hiddenPct = detailTotalT > 0 ? Math.round((1 - detailActiveT / detailTotalT) * 100) : 0;
+			var detailPattern = s.scroll_pattern || '-';
+			if (detailTotalT > 10 && detailActiveT < detailTotalT * 0.2) {
+				detailPattern = '<span style="color:#dba617;font-weight:600">background tab</span> (was: ' + (s.scroll_pattern || '-') + ')';
+			}
 			h += '<tr><td>Scroll</td><td>' + Math.round(s.scroll_pct) + '%</td></tr>';
-			h += '<tr><td>Time on page</td><td>' + fmtTime(s.time_on_page_s) + '</td></tr>';
+			h += '<tr><td>Active time</td><td>' + fmtTime(detailActiveT) + '</td></tr>';
+			h += '<tr><td>Total time</td><td>' + fmtTime(detailTotalT) + ' (' + hiddenPct + '% hidden)</td></tr>';
 			h += '<tr><td>Scroll Speed</td><td>' + s.scroll_speed + ' px/s</td></tr>';
 			h += '<tr><td>Direction Changes</td><td>' + (s.dir_changes || 0) + '</td></tr>';
-			h += '<tr><td>Pattern</td><td>' + (s.scroll_pattern || '-') + '</td></tr>';
+			h += '<tr><td>Pattern</td><td>' + detailPattern + '</td></tr>';
 			h += '</table>';
 			h += '<p style="font-size:12px;color:#646970;margin-top:8px">';
 			h += 'Viewport: ' + s.viewport_w + 'x' + s.viewport_h + '<br>';
@@ -662,7 +689,7 @@ function pl_live_sessions_page() {
 				}
 				h += '</table>';
 			} else {
-				h += '<p style="color:#646970;font-size:12px">No ads injected' + (isRecent ? '.' : ' yet (gate may be closed).') + '</p>';
+				h += '<p style="color:#646970;font-size:12px">No ads injected' + (isRecent ? '.' : ' yet.') + '</p>';
 			}
 			h += '</div>';
 
