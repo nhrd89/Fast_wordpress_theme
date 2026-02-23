@@ -1025,6 +1025,7 @@ function pinlightning_ads_enqueue() {
 		'nonce'             => wp_create_nonce( 'wp_rest' ),
 		'postId'            => is_singular() ? get_the_ID() : 0,
 		'postSlug'          => is_singular() ? get_post_field( 'post_name', get_the_ID() ) : '',
+		'ajaxUrl'           => admin_url( 'admin-ajax.php' ),
 	);
 
 	// Output as inline global in footer (before post-load scripts at p100).

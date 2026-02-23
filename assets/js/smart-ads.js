@@ -281,6 +281,9 @@ function injectDynamicAd(afterElement) {
 		visitorType: _visitorType,
 		slotCount:   _dynamicSlots.length
 	});
+	if (window.__plAdTracker) {
+		window.__plAdTracker.track('dynamic_inject', divId, { slotType: 'dynamic' });
+	}
 
 	return record;
 }
@@ -385,6 +388,9 @@ function checkRefreshes() {
 			divId:        rec.divId,
 			refreshCount: rec.refreshCount
 		});
+		if (window.__plAdTracker) {
+			window.__plAdTracker.track('refresh', rec.divId, { slotType: 'dynamic' });
+		}
 	}
 }
 
@@ -413,6 +419,9 @@ function onDynamicSlotRenderEnded(event) {
 		rec.filled = false;
 		log('Dynamic empty:', divId);
 		pushEvent('dynamic_ad_empty', { divId: divId });
+		if (window.__plAdTracker) {
+			window.__plAdTracker.track('empty', divId, { slotType: 'dynamic' });
+		}
 		return;
 	}
 
@@ -427,6 +436,9 @@ function onDynamicSlotRenderEnded(event) {
 
 	log('Dynamic filled:', divId, size);
 	pushEvent('dynamic_ad_filled', { divId: divId, size: size });
+	if (window.__plAdTracker) {
+		window.__plAdTracker.track('impression', divId, { slotType: 'dynamic', creativeSize: size ? size[0] + 'x' + size[1] : '' });
+	}
 }
 
 function onDynamicImpressionViewable(event) {
@@ -436,6 +448,9 @@ function onDynamicImpressionViewable(event) {
 		if (_dynamicSlots[i].divId === divId) {
 			_dynamicSlots[i].viewable = true;
 			pushEvent('dynamic_ad_viewable', { divId: divId });
+			if (window.__plAdTracker) {
+				window.__plAdTracker.track('viewable', divId, { slotType: 'dynamic' });
+			}
 			break;
 		}
 	}
@@ -587,6 +602,9 @@ function checkVideoInjection() {
 		scrollPct:   scrollPct,
 		filledAds:   filledCount
 	});
+	if (window.__plAdTracker) {
+		window.__plAdTracker.track('video_inject', 'video-ad-1', { slotType: 'video' });
+	}
 }
 
 /* ================================================================

@@ -29,6 +29,14 @@ var _readyCallbacks = [];
 var _slotMap        = {};  // divId → {slot, type, refreshCount, lastRefresh, maxRefresh, renderedSize, viewable}
 var _overlaySlots   = {};
 
+// Event tracking
+var _bootTime   = Date.now();
+var _sessionId  = 'pl_' + Math.random().toString(36).substr(2, 12);
+var _device     = window.innerWidth >= 1025 ? 'desktop' : (window.innerWidth >= 768 ? 'tablet' : 'mobile');
+var _pageType   = document.body && document.body.classList.contains('single') ? 'single' : (document.body && document.body.classList.contains('home') ? 'home' : 'archive');
+var _unitMap    = {};
+var _eventBatch = [];
+
 /* ================================================================
  * PUBLIC API — consumed by smart-ads.js (Layer 2)
  * ================================================================ */
@@ -99,6 +107,56 @@ function pushEvent(name, data) {
 	data.event     = name;
 	window.__plAdEvents.push(data);
 }
+
+function trackAdEvent(eventType, slotId, extra) {
+	extra = extra || {};
+	var info = _slotMap[slotId] || {};
+	_eventBatch.push({
+		e:  eventType,
+		s:  slotId,
+		u:  _unitMap[slotId] || '',
+		t:  info.type || extra.slotType || '',
+		cs: extra.creativeSize || (info.renderedSize ? info.renderedSize[0] + 'x' + info.renderedSize[1] : ''),
+		rc: info.refreshCount || 0,
+		ts: Date.now()
+	});
+}
+
+function flushEvents() {
+	if (!_eventBatch.length) return;
+	if (typeof plAds === 'undefined' || !plAds.ajaxUrl) return;
+
+	var scrollY = window.pageYOffset || 0;
+	var docH    = document.documentElement.scrollHeight || 1;
+	var vt      = window.__plAdDashboard && window.__plAdDashboard.layer2
+	            ? window.__plAdDashboard.layer2.visitorType : 'unknown';
+	var payload = JSON.stringify({
+		sid:         _sessionId,
+		device:      _device,
+		pageType:    _pageType,
+		postId:      plAds.postId || 0,
+		scrollPct:   Math.round((scrollY + window.innerHeight) / docH * 100),
+		timeOnPage:  Math.round((Date.now() - _bootTime) / 1000),
+		visitorType: vt,
+		events:      _eventBatch
+	});
+
+	if (navigator.sendBeacon) {
+		navigator.sendBeacon(
+			plAds.ajaxUrl + '?action=pl_ad_event',
+			new Blob([payload], { type: 'application/json' })
+		);
+	}
+	_eventBatch = [];
+}
+
+window.__plAdTracker = {
+	track:     trackAdEvent,
+	flush:     flushEvents,
+	sessionId: _sessionId,
+	device:    _device,
+	pageType:  _pageType
+};
 
 /* ================================================================
  * BOOT
@@ -412,6 +470,19 @@ function initSlots() {
 			}
 		}
 
+		/* --- Unit Map for Event Tracking --- */
+		_unitMap['__interstitial']  = 'Ad.Plus-Interstitial';
+		_unitMap['__anchor']        = 'Ad.Plus-Anchor';
+		_unitMap['__topAnchor']     = 'Ad.Plus-AnchorSmall';
+		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
+		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
+		_unitMap['nav-ad-1']        = 'Ad.Plus-970x90';
+		_unitMap['initial-ad-1']    = 'Ad.Plus-300x250';
+		_unitMap['initial-ad-2']    = 'Ad.Plus-336x280';
+		_unitMap['300x600-1']       = 'Ad.Plus-300x600';
+		_unitMap['300x250-sidebar'] = 'Ad.Plus-250x250';
+		_unitMap['pause-ad-1']      = 'Ad.Plus-Pause-300x250';
+
 		/* --- Event Listeners --- */
 
 		// Container resize on fill / collapse on empty
@@ -445,6 +516,13 @@ function initSlots() {
 			try { _readyCallbacks[j](); } catch (e) { /* swallow */ }
 		}
 		_readyCallbacks = [];
+
+		// Start event flush: every 10s + on page hide
+		setInterval(flushEvents, 10000);
+		document.addEventListener('visibilitychange', function() {
+			if (document.visibilityState === 'hidden') flushEvents();
+		});
+		window.addEventListener('pagehide', flushEvents);
 	});
 }
 
@@ -467,6 +545,7 @@ function onSlotRenderEnded(event) {
 		}
 		log('Empty:', divId);
 		pushEvent('ad_empty', { divId: divId, isInitial: true });
+		trackAdEvent('empty', divId);
 		return;
 	}
 
@@ -501,6 +580,7 @@ function onSlotRenderEnded(event) {
 
 	log('Filled:', divId, size);
 	pushEvent('ad_filled', { divId: divId, size: size, isInitial: true });
+	trackAdEvent('impression', divId, { creativeSize: size ? size[0] + 'x' + size[1] : '' });
 }
 
 function onImpressionViewable(event) {
@@ -513,6 +593,7 @@ function onImpressionViewable(event) {
 	log('impressionViewable fired:', divId, 'type:', info.type,
 		'refreshCount:', info.refreshCount, '/', info.maxRefresh);
 	pushEvent('ad_viewable', { divId: divId, type: info.type });
+	trackAdEvent('viewable', divId);
 
 	// Schedule refresh based on format type
 	// maxRefresh: -1 = unlimited (overlays), 0 = never (interstitial), N = cap
@@ -534,6 +615,7 @@ function onImpressionViewable(event) {
 		// Double-check: tab visible, user engaged
 		if (document.hidden) {
 			log('Refresh ABORTED:', divId, '— tab hidden');
+			trackAdEvent('refresh_skip', divId);
 			return;
 		}
 
@@ -548,6 +630,7 @@ function onImpressionViewable(event) {
 					var visH = Math.max(0, Math.min(rRect.bottom, vpH) - Math.max(rRect.top, 0));
 					if (visH / rRect.height < 0.5) {
 						log('Refresh ABORTED:', divId, '— not in viewport');
+						trackAdEvent('refresh_skip', divId);
 						return;
 					}
 				}
@@ -567,6 +650,7 @@ function onImpressionViewable(event) {
 			refreshCount: info.refreshCount,
 			type:         info.type
 		});
+		trackAdEvent('refresh', divId);
 	}, delay);
 }
 

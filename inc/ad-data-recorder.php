@@ -431,3 +431,180 @@ function pinlightning_summarize_ad_data($sessions) {
         'zone_performance' => $zone_stats,
     );
 }
+
+/* ================================================================
+ * EVENT-LEVEL TRACKING — AJAX ENDPOINT + DB TABLES
+ * ================================================================ */
+
+/**
+ * Ensure event tracking DB tables exist.
+ * Called on admin_init — uses dbDelta for safe idempotent creation.
+ */
+function pl_ad_ensure_tables() {
+    $installed_ver = get_option( 'pl_ad_tables_ver', '0' );
+    if ( '1' === $installed_ver ) {
+        return;
+    }
+
+    global $wpdb;
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $charset = $wpdb->get_charset_collate();
+
+    // Granular event log.
+    $sql1 = "CREATE TABLE {$wpdb->prefix}pl_ad_events (
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        session_id varchar(32) NOT NULL DEFAULT '',
+        event_type varchar(20) NOT NULL DEFAULT '',
+        slot_id varchar(30) NOT NULL DEFAULT '',
+        unit_name varchar(50) NOT NULL DEFAULT '',
+        slot_type varchar(20) NOT NULL DEFAULT '',
+        creative_size varchar(15) NOT NULL DEFAULT '',
+        refresh_count tinyint(3) unsigned NOT NULL DEFAULT 0,
+        visitor_type varchar(15) NOT NULL DEFAULT '',
+        scroll_percent tinyint(3) unsigned NOT NULL DEFAULT 0,
+        time_on_page int(10) unsigned NOT NULL DEFAULT 0,
+        device varchar(10) NOT NULL DEFAULT '',
+        page_type varchar(10) NOT NULL DEFAULT '',
+        post_id int(10) unsigned NOT NULL DEFAULT 0,
+        created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY  (id),
+        KEY idx_created (created_at),
+        KEY idx_slot_created (slot_type, created_at),
+        KEY idx_event_created (event_type, created_at)
+    ) $charset;";
+
+    // Hourly rollup for dashboard queries.
+    $sql2 = "CREATE TABLE {$wpdb->prefix}pl_ad_hourly_stats (
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        hour datetime NOT NULL,
+        slot_type varchar(20) NOT NULL DEFAULT '',
+        slot_id varchar(30) NOT NULL DEFAULT '',
+        device varchar(10) NOT NULL DEFAULT '',
+        impressions int(10) unsigned NOT NULL DEFAULT 0,
+        empties int(10) unsigned NOT NULL DEFAULT 0,
+        viewables int(10) unsigned NOT NULL DEFAULT 0,
+        refreshes int(10) unsigned NOT NULL DEFAULT 0,
+        refresh_skips int(10) unsigned NOT NULL DEFAULT 0,
+        clicks int(10) unsigned NOT NULL DEFAULT 0,
+        PRIMARY KEY  (id),
+        UNIQUE KEY idx_hourly (hour, slot_type, slot_id, device)
+    ) $charset;";
+
+    dbDelta( $sql1 );
+    dbDelta( $sql2 );
+
+    update_option( 'pl_ad_tables_ver', '1' );
+}
+add_action( 'admin_init', 'pl_ad_ensure_tables' );
+
+/**
+ * AJAX handler: receive batched ad events from the browser.
+ * Fires on wp_ajax_pl_ad_event and wp_ajax_nopriv_pl_ad_event.
+ */
+function pl_ad_handle_event_batch() {
+    // Read JSON body (sendBeacon sends as blob).
+    $raw  = file_get_contents( 'php://input' );
+    $data = json_decode( $raw, true );
+
+    if ( empty( $data ) || empty( $data['events'] ) || ! is_array( $data['events'] ) ) {
+        wp_send_json( array( 'ok' => false ), 400 );
+    }
+
+    // Bot detection.
+    $ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '';
+    if ( preg_match( '/bot|crawl|spider|lighthouse|pagespeed|headlesschrome|phantomjs/i', $ua ) ) {
+        wp_send_json( array( 'ok' => true ) );
+    }
+
+    // Rate limit: max 1 batch per 5s per IP.
+    $ip      = isset( $_SERVER['REMOTE_ADDR'] ) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0';
+    $ip_hash = md5( $ip . floor( time() / 5 ) );
+    $rate_key = 'pl_evt_' . substr( $ip_hash, 0, 12 );
+    if ( get_transient( $rate_key ) ) {
+        wp_send_json( array( 'ok' => true, 'msg' => 'rate-limited' ) );
+    }
+    set_transient( $rate_key, 1, 5 );
+
+    global $wpdb;
+    $table_events = $wpdb->prefix . 'pl_ad_events';
+    $table_hourly = $wpdb->prefix . 'pl_ad_hourly_stats';
+
+    // Shared fields from envelope.
+    $sid         = sanitize_text_field( substr( $data['sid'] ?? '', 0, 32 ) );
+    $device      = sanitize_text_field( substr( $data['device'] ?? '', 0, 10 ) );
+    $pageType    = sanitize_text_field( substr( $data['pageType'] ?? '', 0, 10 ) );
+    $postId      = absint( $data['postId'] ?? 0 );
+    $scrollPct   = min( 100, absint( $data['scrollPct'] ?? 0 ) );
+    $timeOnPage  = absint( $data['timeOnPage'] ?? 0 );
+    $visitorType = sanitize_text_field( substr( $data['visitorType'] ?? '', 0, 15 ) );
+    $hour        = current_time( 'Y-m-d H:00:00' );
+
+    // Cap events per batch to prevent abuse.
+    $events = array_slice( $data['events'], 0, 50 );
+
+    foreach ( $events as $evt ) {
+        $eventType    = sanitize_text_field( substr( $evt['e'] ?? '', 0, 20 ) );
+        $slotId       = sanitize_text_field( substr( $evt['s'] ?? '', 0, 30 ) );
+        $unitName     = sanitize_text_field( substr( $evt['u'] ?? '', 0, 50 ) );
+        $slotType     = sanitize_text_field( substr( $evt['t'] ?? '', 0, 20 ) );
+        $creativeSize = sanitize_text_field( substr( $evt['cs'] ?? '', 0, 15 ) );
+        $refreshCount = min( 255, absint( $evt['rc'] ?? 0 ) );
+
+        // Insert event row.
+        $wpdb->insert( $table_events, array(
+            'session_id'     => $sid,
+            'event_type'     => $eventType,
+            'slot_id'        => $slotId,
+            'unit_name'      => $unitName,
+            'slot_type'      => $slotType,
+            'creative_size'  => $creativeSize,
+            'refresh_count'  => $refreshCount,
+            'visitor_type'   => $visitorType,
+            'scroll_percent' => $scrollPct,
+            'time_on_page'   => $timeOnPage,
+            'device'         => $device,
+            'page_type'      => $pageType,
+            'post_id'        => $postId,
+            'created_at'     => current_time( 'mysql' ),
+        ) );
+
+        // Hourly aggregation via INSERT ... ON DUPLICATE KEY UPDATE.
+        $col = '';
+        switch ( $eventType ) {
+            case 'impression':   $col = 'impressions'; break;
+            case 'empty':        $col = 'empties'; break;
+            case 'viewable':     $col = 'viewables'; break;
+            case 'refresh':      $col = 'refreshes'; break;
+            case 'refresh_skip': $col = 'refresh_skips'; break;
+            case 'click':        $col = 'clicks'; break;
+        }
+
+        if ( $col ) {
+            $wpdb->query( $wpdb->prepare(
+                "INSERT INTO {$table_hourly} (hour, slot_type, slot_id, device, {$col})
+                 VALUES (%s, %s, %s, %s, 1)
+                 ON DUPLICATE KEY UPDATE {$col} = {$col} + 1",
+                $hour, $slotType, $slotId, $device
+            ) );
+        }
+    }
+
+    wp_send_json( array( 'ok' => true, 'processed' => count( $events ) ) );
+}
+add_action( 'wp_ajax_pl_ad_event', 'pl_ad_handle_event_batch' );
+add_action( 'wp_ajax_nopriv_pl_ad_event', 'pl_ad_handle_event_batch' );
+
+/**
+ * Cleanup: purge event rows older than 90 days.
+ * Runs once daily on admin_init via transient guard.
+ */
+function pl_ad_cleanup_old_events() {
+    if ( get_transient( 'pl_ad_events_cleaned' ) ) {
+        return;
+    }
+    global $wpdb;
+    $wpdb->query( "DELETE FROM {$wpdb->prefix}pl_ad_events WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY) LIMIT 10000" );
+    $wpdb->query( "DELETE FROM {$wpdb->prefix}pl_ad_hourly_stats WHERE hour < DATE_SUB(NOW(), INTERVAL 90 DAY) LIMIT 10000" );
+    set_transient( 'pl_ad_events_cleaned', 1, DAY_IN_SECONDS );
+}
+add_action( 'admin_init', 'pl_ad_cleanup_old_events' );
