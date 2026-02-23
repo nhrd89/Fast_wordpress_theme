@@ -75,6 +75,11 @@ function log() {
 	console.log.apply(console, args);
 }
 
+/** Check if an overlay status means it rendered successfully. */
+function oFilled(status) {
+	return status === 'filled' || status === 'viewable';
+}
+
 /** Compute active time (tab visible) in seconds. */
 function getActiveTime() {
 	var hidden = _hiddenTime;
@@ -686,16 +691,17 @@ function sendBeacon() {
 		});
 	}
 
-	// Gather Layer 1 overlay status from __initialAds
+	// Gather Layer 1 data — slotMap for counts, __plOverlayStatus for overlay state
 	var slotMap = (window.__initialAds && window.__initialAds.getSlotMap) ? window.__initialAds.getSlotMap() : {};
-	var anchorStatus       = slotMap['__anchor']       ? (slotMap['__anchor'].viewable ? 'fired' : 'waiting') : 'off';
-	var interstitialStatus = slotMap['__interstitial']  ? (slotMap['__interstitial'].viewable ? 'fired' : 'waiting') : 'off';
-	var topAnchorStatus    = slotMap['__topAnchor']     ? (slotMap['__topAnchor'].viewable ? 'fired' : 'waiting') : 'off';
-	var anchorFilled       = !!(slotMap['__anchor'] && slotMap['__anchor'].renderedSize);
-	var intFilled          = !!(slotMap['__interstitial'] && slotMap['__interstitial'].renderedSize);
-	var topFilled          = !!(slotMap['__topAnchor'] && slotMap['__topAnchor'].renderedSize);
-	var leftFilled         = !!(slotMap['__leftRail'] && slotMap['__leftRail'].renderedSize);
-	var rightFilled        = !!(slotMap['__rightRail'] && slotMap['__rightRail'].renderedSize);
+	var OVS = window.__plOverlayStatus || {};
+	var anchorStatus       = OVS.bottomAnchor || 'off';
+	var interstitialStatus = OVS.interstitial || 'off';
+	var topAnchorStatus    = OVS.topAnchor || 'off';
+	var anchorFilled       = oFilled(OVS.bottomAnchor);
+	var intFilled          = oFilled(OVS.interstitial);
+	var topFilled          = oFilled(OVS.topAnchor);
+	var leftFilled         = oFilled(OVS.leftRail);
+	var rightFilled        = oFilled(OVS.rightRail);
 
 	// Count Layer 1 totals
 	var l1Filled = 0, l1Empty = 0, l1Viewable = 0, l1Refreshes = 0;
@@ -835,15 +841,15 @@ function sendHeartbeat() {
 		totalFilled:         allFilled,
 		fillRate:            fillRate,
 		totalRefreshes:      l1Refreshes + totalRefreshes,
-		// Overlay status
-		anchorStatus:        slotMap['__anchor'] ? (slotMap['__anchor'].viewable ? 'fired' : (slotMap['__anchor'].renderedSize ? 'firing' : 'waiting')) : 'off',
-		interstitialStatus:  slotMap['__interstitial'] ? (slotMap['__interstitial'].viewable ? 'fired' : (slotMap['__interstitial'].renderedSize ? 'firing' : 'waiting')) : 'off',
-		topAnchorStatus:     slotMap['__topAnchor'] ? (slotMap['__topAnchor'].viewable ? 'fired' : (slotMap['__topAnchor'].renderedSize ? 'firing' : 'waiting')) : 'off',
-		anchorFilled:        !!(slotMap['__anchor'] && slotMap['__anchor'].renderedSize),
-		interstitialFilled:  !!(slotMap['__interstitial'] && slotMap['__interstitial'].renderedSize),
-		topAnchorFilled:     !!(slotMap['__topAnchor'] && slotMap['__topAnchor'].renderedSize),
-		leftSideRailFilled:  !!(slotMap['__leftRail'] && slotMap['__leftRail'].renderedSize),
-		rightSideRailFilled: !!(slotMap['__rightRail'] && slotMap['__rightRail'].renderedSize),
+		// Overlay status — event-driven from __plOverlayStatus (set by initial-ads.js GPT handlers)
+		anchorStatus:        (window.__plOverlayStatus || {}).bottomAnchor || 'off',
+		interstitialStatus:  (window.__plOverlayStatus || {}).interstitial || 'off',
+		topAnchorStatus:     (window.__plOverlayStatus || {}).topAnchor || 'off',
+		anchorFilled:        oFilled((window.__plOverlayStatus || {}).bottomAnchor),
+		interstitialFilled:  oFilled((window.__plOverlayStatus || {}).interstitial),
+		topAnchorFilled:     oFilled((window.__plOverlayStatus || {}).topAnchor),
+		leftSideRailFilled:  oFilled((window.__plOverlayStatus || {}).leftRail),
+		rightSideRailFilled: oFilled((window.__plOverlayStatus || {}).rightRail),
 		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
 		videoInjected:       !!window.__plVideoInjected
 	};

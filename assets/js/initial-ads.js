@@ -32,6 +32,24 @@ var _readyCallbacks = [];
 var _slotMap        = {};  // divId → {slot, type, refreshCount, lastRefresh, maxRefresh, renderedSize, viewable}
 var _overlaySlots   = {};
 
+// Overlay status tracking — event-driven, read by smart-ads.js heartbeat/beacon.
+// States: 'off' (format disabled) → 'pending' (slot defined, waiting for GPT) →
+//         'empty' (slotRenderEnded isEmpty) | 'filled' (rendered) → 'viewable' (impressionViewable)
+window.__plOverlayStatus = {
+	interstitial: 'off',
+	bottomAnchor: 'off',
+	topAnchor:    'off',
+	leftRail:     'off',
+	rightRail:    'off'
+};
+var _overlayDivMap = {
+	'__interstitial': 'interstitial',
+	'__anchor':       'bottomAnchor',
+	'__topAnchor':    'topAnchor',
+	'__leftRail':     'leftRail',
+	'__rightRail':    'rightRail'
+};
+
 // Event tracking
 var _bootTime   = Date.now();
 var _sessionId  = 'pl_' + Math.random().toString(36).substr(2, 12);
@@ -281,6 +299,7 @@ function initSlots() {
 					refreshCount: 0, lastRefresh: 0, maxRefresh: 0,
 					renderedSize: null, viewable: false
 				};
+				window.__plOverlayStatus.interstitial = 'pending';
 			}
 		} else { log('Interstitial SKIPPED — disabled'); }
 
@@ -298,6 +317,7 @@ function initSlots() {
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('anchor', -1),
 					renderedSize: null, viewable: false
 				};
+				window.__plOverlayStatus.bottomAnchor = 'pending';
 			}
 		} else { log('Anchor SKIPPED — disabled'); }
 
@@ -315,6 +335,7 @@ function initSlots() {
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('topAnchor', -1),
 					renderedSize: null, viewable: false
 				};
+				window.__plOverlayStatus.topAnchor = 'pending';
 			}
 		} else { log('Top Anchor SKIPPED — disabled'); }
 
@@ -332,6 +353,7 @@ function initSlots() {
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sideRails', -1),
 					renderedSize: null, viewable: false
 				};
+				window.__plOverlayStatus.leftRail = 'pending';
 			}
 
 			var rightRail = googletag.defineOutOfPageSlot(
@@ -346,6 +368,7 @@ function initSlots() {
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sideRails', -1),
 					renderedSize: null, viewable: false
 				};
+				window.__plOverlayStatus.rightRail = 'pending';
 			}
 		}
 
@@ -567,6 +590,11 @@ function onSlotRenderEnded(event) {
 	if (!el) return;
 	var container = el.parentElement;
 
+	// Update overlay status from GPT event
+	if (_overlayDivMap[divId]) {
+		window.__plOverlayStatus[_overlayDivMap[divId]] = event.isEmpty ? 'empty' : 'filled';
+	}
+
 	if (event.isEmpty) {
 		// Collapse — shrink container to 0
 		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad') || container.classList.contains('pl-nav-ad') || container.classList.contains('pl-pause-ad'))) {
@@ -621,6 +649,9 @@ function onImpressionViewable(event) {
 	if (!info) return;
 
 	info.viewable = true;
+	if (_overlayDivMap[divId]) {
+		window.__plOverlayStatus[_overlayDivMap[divId]] = 'viewable';
+	}
 	log('impressionViewable fired:', divId, 'type:', info.type,
 		'refreshCount:', info.refreshCount, '/', info.maxRefresh);
 	pushEvent('ad_viewable', { divId: divId, type: info.type });

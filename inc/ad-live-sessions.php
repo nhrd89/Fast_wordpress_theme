@@ -540,8 +540,13 @@ function pl_live_sessions_page() {
 		}
 
 		function fmtStatus(status) {
-			if (status === 'firing' || status === 'fired') return '<span class="pl-gate-ok" title="' + status + '">&#10003;</span>';
-			if (status === 'waiting') return '<span style="color:#dba617" title="waiting">&#9203;</span>';
+			// Event-driven statuses from __plOverlayStatus
+			if (status === 'viewable' || status === 'filled' || status === 'fired' || status === 'firing')
+				return '<span class="pl-gate-ok" title="' + status + '">&#10003;</span>';
+			if (status === 'pending' || status === 'waiting')
+				return '<span style="color:#dba617" title="' + status + '">&#9203;</span>';
+			if (status === 'empty')
+				return '<span class="pl-gate-fail" title="empty — no demand">&#10007;</span>';
 			return '<span class="pl-gate-fail" title="off">&#10007;</span>';
 		}
 
