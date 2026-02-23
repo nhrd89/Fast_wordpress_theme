@@ -58,7 +58,7 @@ function pl_inject_initial_ads( $content ) {
 		return $content; // Too few paragraphs — skip injection.
 	}
 
-	$ad1 = '<div class="pl-initial-ad" style="text-align:center;min-height:250px;margin:12px auto;">'
+	$ad1 = '<div class="pl-initial-ad" style="text-align:center;min-height:280px;margin:12px auto;">'
 		. '<div id="initial-ad-1"></div></div>';
 	$ad2 = '<div class="pl-initial-ad" style="text-align:center;min-height:250px;margin:12px auto;">'
 		. '<div id="initial-ad-2"></div></div>';
@@ -135,7 +135,7 @@ function pl_ad_system_css() {
 	}
 	?>
 <style>
-.pl-initial-ad{position:relative;overflow:hidden;clear:both}
+.pl-initial-ad{position:relative;overflow:hidden;clear:both;contain:layout size}
 .pl-dynamic-ad{position:relative;overflow:hidden;clear:both;contain:layout}
 .pl-sidebar-ads{display:none}
 @media(min-width:1025px){.pl-sidebar-ads{display:block;position:sticky;top:80px}}

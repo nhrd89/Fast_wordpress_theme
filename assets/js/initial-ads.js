@@ -365,15 +365,22 @@ function onSlotRenderEnded(event) {
 		return;
 	}
 
-	// Resize container to match actual creative size
+	// Resize container: only GROW, never shrink below original min-height.
+	// initial-ad-1 starts at 280px, initial-ad-2 at 250px — shrinking causes CLS.
 	var size = event.size;
 	if (size && container && container.classList.contains('pl-initial-ad')) {
-		container.style.minHeight = size[1] + 'px';
-		container.style.maxWidth  = size[0] + 'px';
+		var origMin = parseInt(container.style.minHeight, 10) || 250;
+		if (size[1] > origMin) {
+			container.style.minHeight = size[1] + 'px';
+		}
+		container.style.maxWidth = size[0] + 'px';
 	}
-	// Also resize sidebar containers
+	// Sidebar containers: same logic — only grow
 	if (size && container && container.classList.contains('pl-sidebar-ad')) {
-		container.style.minHeight = size[1] + 'px';
+		var origSbMin = parseInt(container.style.minHeight, 10) || 250;
+		if (size[1] > origSbMin) {
+			container.style.minHeight = size[1] + 'px';
+		}
 	}
 
 	if (_slotMap[divId]) {
