@@ -718,7 +718,8 @@ function sendBeacon() {
 
 	var totalRequested = l1keys.length + _dynamicSlots.length;
 	var allFilled      = l1Filled + totalFilled;
-	var allViewable    = l1Viewable + totalViewable;
+	var sharedViewable = window.__plViewableCount || 0;
+	var allViewable    = Math.max(l1Viewable + totalViewable, sharedViewable);
 	var allRefreshes   = l1Refreshes + totalRefreshes;
 	var fillRate       = totalRequested > 0 ? Math.round((allFilled / totalRequested) * 100) : 0;
 	var viewRate       = allFilled > 0 ? Math.round((allViewable / allFilled) * 100) : 0;
@@ -811,7 +812,8 @@ function sendHeartbeat() {
 	}
 
 	var allFilled   = l1Filled + totalFilled;
-	var allViewable = l1Viewable + totalViewable;
+	var hbSharedViewable = window.__plViewableCount || 0;
+	var allViewable = Math.max(l1Viewable + totalViewable, hbSharedViewable);
 	var totalReq    = l1keys.length + _dynamicSlots.length;
 	var fillRate    = totalReq > 0 ? Math.round((allFilled / totalReq) * 100) : 0;
 	var viewRate    = allFilled > 0 ? Math.round((allViewable / allFilled) * 100) : 0;

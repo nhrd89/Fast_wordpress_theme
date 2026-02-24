@@ -8,7 +8,7 @@
  *         injection + smart in-view refresh + slot recycling.
  *
  * This file handles:
- * - Content filter: inject 2 initial ad containers (before para 1, after para 2)
+ * - Content filter: inject 2 initial ad containers (after para 1, after para 3)
  * - Sidebar rendering function for single.php
  * - Inline CSS for ad containers (CLS prevention)
  *
@@ -27,8 +27,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Inject 2 fixed ad container divs into single post content.
  *
- * - initial-ad-1: after paragraph 2 (users see 2 paras of content first)
- * - initial-ad-2: after paragraph 4 (deep enough for taller formats)
+ * - initial-ad-1: after paragraph 1 (intro). Engagement-breaks inserts
+ *   the hero mosaic after para 1 at priority 95, so in the final DOM
+ *   the ad sits right after the social proof bar.
+ * - initial-ad-2: after paragraph 3 (3 items deep, user is engaged).
  *
  * These are the only PHP-injected in-content ads. Everything below
  * the fold is handled dynamically by smart-ads.js (Layer 2).
@@ -71,7 +73,9 @@ function pl_inject_initial_ads( $content ) {
 			. '<div id="pause-ad-1"></div></div>'
 		: '';
 
-	// Build output: ad1 after paragraph 2, ad2 after paragraph 4, pause after paragraph 7.
+	// Build output: ad1 after paragraph 1, ad2 after paragraph 3, pause after paragraph 6.
+	// After engagement-breaks (p95) inserts hero mosaic after para 1, final DOM order:
+	// Para 1 (intro) → hero mosaic + social proof → ad1 → listicle items → ad2 after item 2.
 	$output         = '';
 	$p_count        = 0;
 	$ad1_inserted   = false;
@@ -83,30 +87,30 @@ function pl_inject_initial_ads( $content ) {
 
 		if ( strtolower( trim( $parts[ $i ] ) ) === '</p>' ) {
 			$p_count++;
-			if ( 2 === $p_count && ! $ad1_inserted ) {
+			if ( 1 === $p_count && ! $ad1_inserted ) {
 				$output      .= $ad1;
 				$ad1_inserted = true;
 			}
-			if ( 4 === $p_count && ! $ad2_inserted ) {
+			if ( 3 === $p_count && ! $ad2_inserted ) {
 				$output      .= $ad2;
 				$ad2_inserted = true;
 			}
-			if ( 7 === $p_count && ! $pause_inserted ) {
+			if ( 6 === $p_count && ! $pause_inserted ) {
 				$output         .= $pause;
 				$pause_inserted  = true;
 			}
 		}
 	}
 
-	// Fallback: if fewer than 2 paragraphs, append ad1 at end.
+	// Fallback: if fewer than 1 paragraph, append ad1 at end.
 	if ( ! $ad1_inserted ) {
 		$output .= $ad1;
 	}
-	// Fallback: if fewer than 4 paragraphs, append ad2 at end.
+	// Fallback: if fewer than 3 paragraphs, append ad2 at end.
 	if ( ! $ad2_inserted ) {
 		$output .= $ad2;
 	}
-	// Fallback: if fewer than 7 paragraphs, append pause ad at end.
+	// Fallback: if fewer than 6 paragraphs, append pause ad at end.
 	if ( ! $pause_inserted && $pause ) {
 		$output .= $pause;
 	}

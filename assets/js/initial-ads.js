@@ -32,6 +32,16 @@ var _readyCallbacks = [];
 var _slotMap        = {};  // divId → {slot, type, refreshCount, lastRefresh, maxRefresh, renderedSize, viewable}
 var _overlaySlots   = {};
 
+// Module-scope overlay slot references (FIX A: accessible by setInterval, event handlers)
+var _anchorSlot     = null;
+var _topAnchorSlot  = null;
+var _leftRailSlot   = null;
+var _rightRailSlot  = null;
+var _interstitialSlot = null;
+
+// Shared viewable counter (FIX D: read by smart-ads.js heartbeat/beacon)
+window.__plViewableCount = 0;
+
 // Overlay status tracking — event-driven, read by smart-ads.js heartbeat/beacon.
 // States: 'off' (format disabled) → 'pending' (slot defined, waiting for GPT) →
 //         'empty' (slotRenderEnded isEmpty) | 'filled' (rendered) → 'viewable' (impressionViewable)
@@ -215,6 +225,7 @@ function boot() {
 		log('No ad containers found — ads disabled');
 		return;
 	}
+	console.log('[InitialAds] Format toggles:', JSON.stringify(FMT));
 	log('Booting — loading GPT');
 	loadGPT();
 }
@@ -294,6 +305,7 @@ function initSlots() {
 			if (interstitial) {
 				interstitial.addService(googletag.pubads());
 				_overlaySlots.interstitial = interstitial;
+				_interstitialSlot = interstitial;
 				_slotMap['__interstitial'] = {
 					slot: interstitial, type: 'interstitial',
 					refreshCount: 0, lastRefresh: 0, maxRefresh: 0,
@@ -312,6 +324,7 @@ function initSlots() {
 			if (anchor) {
 				anchor.addService(googletag.pubads());
 				_overlaySlots.anchor = anchor;
+				_anchorSlot = anchor;
 				_slotMap['__anchor'] = {
 					slot: anchor, type: 'anchor',
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('anchor', -1),
@@ -330,6 +343,7 @@ function initSlots() {
 			if (topAnchor) {
 				topAnchor.addService(googletag.pubads());
 				_overlaySlots.topAnchor = topAnchor;
+				_topAnchorSlot = topAnchor;
 				_slotMap['__topAnchor'] = {
 					slot: topAnchor, type: 'topAnchor',
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('topAnchor', -1),
@@ -348,6 +362,7 @@ function initSlots() {
 			if (leftRail) {
 				leftRail.addService(googletag.pubads());
 				_overlaySlots.leftRail = leftRail;
+				_leftRailSlot = leftRail;
 				_slotMap['__leftRail'] = {
 					slot: leftRail, type: 'sideRail',
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sideRails', -1),
@@ -363,6 +378,7 @@ function initSlots() {
 			if (rightRail) {
 				rightRail.addService(googletag.pubads());
 				_overlaySlots.rightRail = rightRail;
+				_rightRailSlot = rightRail;
 				_slotMap['__rightRail'] = {
 					slot: rightRail, type: 'sideRail',
 					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('sideRails', -1),
@@ -547,43 +563,37 @@ function initSlots() {
 		window.addEventListener('pagehide', flushEvents);
 
 		// Overlay refresh via setInterval (replaces impressionViewable for overlays).
-		// Overlays manage their own visibility — no viewport check needed.
-		var overlayRefreshKeys = ['anchor', 'topAnchor', 'leftRail', 'rightRail'];
-		for (var oi = 0; oi < overlayRefreshKeys.length; oi++) {
-			(function(key) {
-				var oSlot = _overlaySlots[key];
-				if (!oSlot) return;
-				var oDivId = key === 'anchor' ? '__anchor' : ('__' + key);
-				var oInfo = _slotMap[oDivId];
+		// Uses module-scope slot refs — accessible from setInterval closures.
+		var overlayDefs = [
+			{ key: 'anchor',    slotRef: _anchorSlot,    divId: '__anchor',    statusKey: 'bottomAnchor' },
+			{ key: 'topAnchor', slotRef: _topAnchorSlot, divId: '__topAnchor', statusKey: 'topAnchor' },
+			{ key: 'leftRail',  slotRef: _leftRailSlot,  divId: '__leftRail',  statusKey: 'leftRail' },
+			{ key: 'rightRail', slotRef: _rightRailSlot, divId: '__rightRail', statusKey: 'rightRail' }
+		];
+		for (var oi = 0; oi < overlayDefs.length; oi++) {
+			(function(def) {
+				if (!def.slotRef) return;
+				var oInfo = _slotMap[def.divId];
 				if (!oInfo) return;
 				var oDelay = refDelay(oInfo.type);
 				if (oDelay === 0) {
-					log('Overlay refresh DISABLED:', key);
+					log('Overlay refresh DISABLED:', def.key);
 					return;
 				}
 				setInterval(function() {
-					if (VW_CFG.skipTabHidden !== 'false' && VW_CFG.skipTabHidden !== false && document.hidden) {
-						log('Overlay refresh SKIP:', key, '— tab hidden');
-						return;
-					}
-					if (oInfo.maxRefresh !== -1 && oInfo.refreshCount >= oInfo.maxRefresh) {
-						log('Overlay refresh SKIP:', key, '— max reached');
-						return;
-					}
-					var oStatus = window.__plOverlayStatus[_overlayDivMap[oDivId] || ''];
-					if (oStatus !== 'filled' && oStatus !== 'viewable') {
-						log('Overlay refresh SKIP:', key, '— status:', oStatus);
-						return;
-					}
-					log('Overlay refresh:', key, '#' + (oInfo.refreshCount + 1));
-					googletag.pubads().refresh([oSlot]);
+					if (document.hidden) return;
+					if (oInfo.maxRefresh !== -1 && oInfo.refreshCount >= oInfo.maxRefresh) return;
+					var oStatus = window.__plOverlayStatus[def.statusKey];
+					if (oStatus !== 'filled' && oStatus !== 'viewable') return;
+					googletag.pubads().refresh([def.slotRef]);
 					oInfo.refreshCount++;
 					oInfo.lastRefresh = Date.now();
-					trackAdEvent('refresh', oDivId);
-					pushEvent('ad_refreshed', { divId: oDivId, refreshCount: oInfo.refreshCount, type: oInfo.type });
+					trackAdEvent('refresh', def.divId);
+					pushEvent('ad_refreshed', { divId: def.divId, refreshCount: oInfo.refreshCount, type: oInfo.type });
+					console.log('[InitialAds] Overlay refresh:', def.key, '#' + oInfo.refreshCount);
 				}, oDelay);
-				log('Overlay setInterval:', key, 'every', oDelay / 1000 + 's');
-			})(overlayRefreshKeys[oi]);
+				console.log('[InitialAds]', def.key, 'setInterval REGISTERED, every', oDelay / 1000 + 's');
+			})(overlayDefs[oi]);
 		}
 	});
 }
@@ -594,14 +604,25 @@ function initSlots() {
 
 function onSlotRenderEnded(event) {
 	var divId     = event.slot.getSlotElementId();
+	console.log('[InitialAds] slotRenderEnded:', {
+		divId: divId, isEmpty: event.isEmpty, size: event.size,
+		unitPath: event.slot.getAdUnitPath()
+	});
+
+	// Update overlay status — check by slot reference (out-of-page slots have auto-generated divIds)
+	var statusVal = event.isEmpty ? 'empty' : 'filled';
+	if (_overlayDivMap[divId]) {
+		window.__plOverlayStatus[_overlayDivMap[divId]] = statusVal;
+	}
+	if (event.slot === _anchorSlot)       window.__plOverlayStatus.bottomAnchor = statusVal;
+	if (event.slot === _topAnchorSlot)    window.__plOverlayStatus.topAnchor    = statusVal;
+	if (event.slot === _leftRailSlot)     window.__plOverlayStatus.leftRail     = statusVal;
+	if (event.slot === _rightRailSlot)    window.__plOverlayStatus.rightRail    = statusVal;
+	if (event.slot === _interstitialSlot) window.__plOverlayStatus.interstitial = statusVal;
+
 	var el        = document.getElementById(divId);
 	if (!el) return;
 	var container = el.parentElement;
-
-	// Update overlay status from GPT event
-	if (_overlayDivMap[divId]) {
-		window.__plOverlayStatus[_overlayDivMap[divId]] = event.isEmpty ? 'empty' : 'filled';
-	}
 
 	if (event.isEmpty) {
 		// Collapse — shrink container to 0
@@ -645,13 +666,32 @@ function onSlotRenderEnded(event) {
 function onImpressionViewable(event) {
 	var slot  = event.slot;
 	var divId = slot.getSlotElementId();
+	console.log('[InitialAds] impressionViewable:', {
+		divId: divId, unitPath: slot.getAdUnitPath()
+	});
+
+	// Update overlay status by slot reference (out-of-page divIds are auto-generated)
+	if (_overlayDivMap[divId])            window.__plOverlayStatus[_overlayDivMap[divId]] = 'viewable';
+	if (slot === _anchorSlot)             window.__plOverlayStatus.bottomAnchor = 'viewable';
+	if (slot === _topAnchorSlot)          window.__plOverlayStatus.topAnchor    = 'viewable';
+	if (slot === _leftRailSlot)           window.__plOverlayStatus.leftRail     = 'viewable';
+	if (slot === _rightRailSlot)          window.__plOverlayStatus.rightRail    = 'viewable';
+	if (slot === _interstitialSlot)       window.__plOverlayStatus.interstitial = 'viewable';
+
+	// Shared viewable counter for heartbeat/beacon
+	window.__plViewableCount = (window.__plViewableCount || 0) + 1;
+
 	var info  = _slotMap[divId];
+	if (!info) {
+		// Out-of-page slot — find info by slot reference
+		var keys = Object.keys(_slotMap);
+		for (var si = 0; si < keys.length; si++) {
+			if (_slotMap[keys[si]].slot === slot) { info = _slotMap[keys[si]]; divId = keys[si]; break; }
+		}
+	}
 	if (!info) return;
 
 	info.viewable = true;
-	if (_overlayDivMap[divId]) {
-		window.__plOverlayStatus[_overlayDivMap[divId]] = 'viewable';
-	}
 	log('impressionViewable fired:', divId, 'type:', info.type,
 		'refreshCount:', info.refreshCount, '/', info.maxRefresh);
 	pushEvent('ad_viewable', { divId: divId, type: info.type });
@@ -660,7 +700,7 @@ function onImpressionViewable(event) {
 	// Overlays use setInterval for refresh — skip impressionViewable scheduling
 	var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'topAnchor' || info.type === 'sideRail');
 	if (isOverlay) {
-		log('impressionViewable — overlay skip (uses setInterval):', divId);
+		console.log('[InitialAds] Skipping impressionViewable refresh for overlay:', divId);
 		return;
 	}
 
