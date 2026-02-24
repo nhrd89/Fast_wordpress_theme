@@ -496,6 +496,7 @@ function injectDynamicAd(afterElement, injectionType) {
 		adSpacing:         Math.round(adSpacing),
 		predictedDistance: predDist,
 		viewable:          false,
+		viewableEver:      false,
 		refreshCount:      0,
 		lastRefresh:       0,
 		renderedSize:      null,
@@ -798,6 +799,7 @@ function onDynamicImpressionViewable(event) {
 		if (_dynamicSlots[i].divId === divId) {
 			var rec = _dynamicSlots[i];
 			rec.viewable = true;
+			rec.viewableEver = true;
 			window.__plViewableCount = (window.__plViewableCount || 0) + 1;
 			log('VIEWABLE: dynamic', divId, '__plViewableCount now=' + window.__plViewableCount);
 			var ttv = Date.now() - rec.injectedAt;
@@ -971,14 +973,14 @@ function sendBeacon() {
 	var zones = [];
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		var s = _dynamicSlots[i];
-		if (s.viewable) totalViewable++;
+		if (s.viewableEver) totalViewable++;
 		if (s.filled) totalFilled++;
 		if (!s.filled && !s.destroyed) totalEmpty++;
 		totalRefreshes += s.refreshCount;
 		zones.push({
 			divId:             s.divId,
 			filled:            s.filled,
-			viewable:          s.viewable,
+			viewable:          s.viewableEver,
 			refreshCount:      s.refreshCount,
 			destroyed:         s.destroyed,
 			renderedSize:      s.renderedSize,
@@ -1093,7 +1095,7 @@ function sendHeartbeat() {
 	// Compute same totals as sendBeacon
 	var totalViewable = 0, totalFilled = 0, totalRefreshes = 0;
 	for (var i = 0; i < _dynamicSlots.length; i++) {
-		if (_dynamicSlots[i].viewable) totalViewable++;
+		if (_dynamicSlots[i].viewableEver) totalViewable++;
 		if (_dynamicSlots[i].filled) totalFilled++;
 		totalRefreshes += _dynamicSlots[i].refreshCount;
 	}
@@ -1169,7 +1171,7 @@ function sendHeartbeat() {
 			zoneId:            ds.divId,
 			slot:              'Ad.Plus-300x250',
 			size:              ds.renderedSize ? ds.renderedSize[0] + 'x' + ds.renderedSize[1] : '',
-			viewable:          ds.viewable,
+			viewable:          ds.viewableEver,
 			filled:            ds.filled,
 			refreshCount:      ds.refreshCount,
 			injectionType:     ds.injectionType,
