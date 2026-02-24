@@ -148,10 +148,10 @@ function getSpacing() {
 	return Math.max(MIN_PIXEL_SPACING, Math.min(MAX_PIXEL_SPACING, spacing));
 }
 
-/** Get directional spacing — 20% tighter on scroll-up (users re-read = higher intent). */
+/** Get directional spacing — 30% wider on scroll-up (users scan back too fast for viewability). */
 function getDirectionalSpacing() {
 	var base = getSpacing();
-	return _scrollDirection === 'up' ? Math.round(base * 0.8) : base;
+	return _scrollDirection === 'up' ? Math.round(base * 1.3) : base;
 }
 
 /** Get distance to nearest existing ad from a Y position. */
