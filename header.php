@@ -17,6 +17,11 @@
 // starting the hero image fetch immediately instead of after parsing CSS.
 pinlightning_early_preconnect();
 pinlightning_preload_lcp_image();
+// CMP consent tag — MUST be the first <script> in <head>, before GPT.
+// __tcfapi stub runs sync; choice.js loads async. GPT detects CMP immediately.
+if ( function_exists( 'pinlightning_output_cmp_tag' ) ) {
+	pinlightning_output_cmp_tag();
+}
 ?>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
