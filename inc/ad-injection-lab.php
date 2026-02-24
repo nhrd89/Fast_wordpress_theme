@@ -31,18 +31,11 @@ function pl_injection_lab_menu() {
 add_action( 'admin_menu', 'pl_injection_lab_menu' );
 
 /* ================================================================
- * AJAX: Fetch injection lab data (auto-refresh every 30s)
+ * SHARED: Fetch all injection lab data for a given range.
+ * Used by both the auto-refresh AJAX handler and the export endpoint.
  * ================================================================ */
 
-function pl_injection_lab_ajax() {
-	check_ajax_referer( 'pl_injection_lab_nonce', 'nonce' );
-	if ( ! current_user_can( 'manage_options' ) ) {
-		wp_send_json_error( 'Unauthorized' );
-	}
-
-	$range = sanitize_text_field( $_POST['range'] ?? '1h' );
-
-	// Map range to SQL interval.
+function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 	$intervals = array(
 		'1h'  => '1 HOUR',
 		'6h'  => '6 HOUR',
@@ -60,7 +53,7 @@ function pl_injection_lab_ajax() {
 		DB_NAME, $te
 	) );
 	if ( ! $exists ) {
-		wp_send_json_success( array( 'empty' => true, 'msg' => 'Events table does not exist yet.' ) );
+		return array( 'empty' => true, 'msg' => 'Events table does not exist yet.' );
 	}
 
 	$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( 'HOUR' === substr( $interval, -4 ) ? intval( $interval ) * 3600 : intval( $interval ) * 86400 ) );
@@ -204,8 +197,7 @@ function pl_injection_lab_ajax() {
 		$cutoff
 	), ARRAY_A );
 
-	// 8. Last 20 injections (live feed).
-	// (renumbered: was section 6)
+	// 8. Live feed (recent injections grouped by slot).
 	$recent = $wpdb->get_results( $wpdb->prepare(
 		"SELECT
 			created_at,
@@ -224,8 +216,9 @@ function pl_injection_lab_ajax() {
 			AND slot_type = 'dynamic'
 			AND event_type IN ('dynamic_inject', 'impression', 'viewable', 'empty')
 		ORDER BY created_at DESC
-		LIMIT 60",
-		$cutoff
+		LIMIT %d",
+		$cutoff,
+		$feed_limit * 3 // fetch 3x to account for merging inject+impression+viewable
 	), ARRAY_A );
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
@@ -267,9 +260,9 @@ function pl_injection_lab_ajax() {
 			$g['ttv']      = (int) $row['time_to_viewable'];
 		}
 	}
-	$live_feed = array_values( array_slice( $grouped, 0, 20 ) );
+	$live_feed = array_values( array_slice( $grouped, 0, $feed_limit ) );
 
-	// 9. Generate recommendations.
+	// 9. Recommendations.
 	$recommendations = pl_injection_lab_recommendations( $type_comparison, $speed_brackets, $spacing_ranges, $visitor_types, $direction_perf );
 
 	// 10. Overview totals.
@@ -300,7 +293,7 @@ function pl_injection_lab_ajax() {
 		}
 	}
 
-	wp_send_json_success( array(
+	return array(
 		'totals'          => $totals,
 		'typeComparison'  => $type_comparison,
 		'speedBrackets'   => $speed_brackets,
@@ -312,9 +305,77 @@ function pl_injection_lab_ajax() {
 		'liveFeed'        => $live_feed,
 		'recommendations' => $recommendations,
 		'range'           => $range,
-	) );
+	);
+}
+
+/* ================================================================
+ * AJAX: Fetch injection lab data (auto-refresh every 30s)
+ * ================================================================ */
+
+function pl_injection_lab_ajax() {
+	check_ajax_referer( 'pl_injection_lab_nonce', 'nonce' );
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( 'Unauthorized' );
+	}
+
+	$range = sanitize_text_field( $_POST['range'] ?? '1h' );
+	$data  = pl_injection_lab_fetch_data( $range );
+
+	wp_send_json_success( $data );
 }
 add_action( 'wp_ajax_pl_injection_lab', 'pl_injection_lab_ajax' );
+
+/* ================================================================
+ * AJAX: Export all injection lab data as JSON download
+ * ================================================================ */
+
+function pl_injection_lab_export() {
+	check_ajax_referer( 'pl_injection_lab_nonce', 'nonce' );
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( 'Unauthorized' );
+	}
+
+	$range = sanitize_text_field( $_POST['range'] ?? '1h' );
+	$data  = pl_injection_lab_fetch_data( $range, 50 );
+
+	if ( ! empty( $data['empty'] ) ) {
+		wp_send_json_success( $data );
+		return;
+	}
+
+	$totals   = $data['totals'];
+	$fill_rate     = $totals['total_injections'] > 0 ? round( $totals['total_filled'] / $totals['total_injections'] * 100, 1 ) : 0;
+	$viewability   = $totals['total_filled'] > 0 ? round( $totals['total_viewable'] / $totals['total_filled'] * 100, 1 ) : 0;
+
+	$export = array(
+		'exported_at'     => current_time( 'Y-m-d H:i:s' ),
+		'range'           => $range,
+		'overview'        => array(
+			'total_injections'   => $totals['total_injections'],
+			'pause_count'        => $totals['pause_count'],
+			'predictive_count'   => $totals['predictive_count'],
+			'total_filled'       => $totals['total_filled'],
+			'fill_rate'          => $fill_rate,
+			'total_viewable'     => $totals['total_viewable'],
+			'viewability'        => $viewability,
+			'viewport_refreshes' => $totals['total_refreshes'],
+			'avg_ttv_pause'      => $totals['avg_ttv_pause'],
+			'avg_ttv_predictive' => $totals['avg_ttv_predict'],
+		),
+		'by_type'         => $data['typeComparison'],
+		'by_speed'        => $data['speedBrackets'],
+		'by_spacing'      => $data['spacingRanges'],
+		'by_direction'    => $data['directionPerf'],
+		'by_image'        => $data['imageProximity'],
+		'by_density'      => $data['densityBrackets'],
+		'by_visitor'      => $data['visitorTypes'],
+		'live_feed'       => $data['liveFeed'],
+		'recommendations' => $data['recommendations'],
+	);
+
+	wp_send_json_success( $export );
+}
+add_action( 'wp_ajax_pl_injection_lab_export', 'pl_injection_lab_export' );
 
 /* ================================================================
  * AUTO-GENERATED RECOMMENDATIONS
@@ -451,6 +512,7 @@ function pl_injection_lab_render() {
 				<option value="7d">Last 7 Days</option>
 			</select>
 			<button type="button" id="labRefresh" class="button button-primary">Refresh Now</button>
+			<button type="button" id="labExport" class="button">Export Data</button>
 			<span id="labStatus" style="font-size:12px;color:#888;"></span>
 			<label style="margin-left:auto;font-size:12px;color:#666;">
 				<input type="checkbox" id="labAutoRefresh" checked> Auto-refresh (30s)
@@ -753,6 +815,42 @@ function pl_injection_lab_render() {
 			}
 		}
 
+		function exportData() {
+			var range = document.getElementById('labRange').value;
+			var btn = document.getElementById('labExport');
+			btn.disabled = true;
+			btn.textContent = 'Exporting...';
+
+			var fd = new FormData();
+			fd.append('action', 'pl_injection_lab_export');
+			fd.append('nonce', NONCE);
+			fd.append('range', range);
+
+			fetch(AJAX_URL, { method: 'POST', body: fd, credentials: 'same-origin' })
+				.then(function(r) { return r.json(); })
+				.then(function(res) {
+					btn.disabled = false;
+					btn.textContent = 'Export Data';
+					if (!res.success) {
+						document.getElementById('labStatus').textContent = 'Export error: ' + (res.data || 'Unknown');
+						return;
+					}
+					var blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+					var a = document.createElement('a');
+					a.href = URL.createObjectURL(blob);
+					a.download = 'pl-injection-lab-' + new Date().toISOString().slice(0, 10) + '.json';
+					a.click();
+					URL.revokeObjectURL(a.href);
+					document.getElementById('labStatus').textContent = 'Exported ' + new Date().toLocaleTimeString();
+				})
+				.catch(function() {
+					btn.disabled = false;
+					btn.textContent = 'Export Data';
+					document.getElementById('labStatus').textContent = 'Export network error';
+				});
+		}
+
+		document.getElementById('labExport').addEventListener('click', exportData);
 		document.getElementById('labRefresh').addEventListener('click', load);
 		document.getElementById('labRange').addEventListener('change', load);
 		document.getElementById('labAutoRefresh').addEventListener('change', startTimer);
