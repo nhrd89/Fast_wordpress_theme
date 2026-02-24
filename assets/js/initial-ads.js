@@ -346,9 +346,10 @@ function initSlots() {
 		} else { log('Anchor SKIPPED — disabled'); }
 
 		// Top Anchor (guard: plAds.formats.topAnchor)
+		// Uses same Ad.Plus-Anchor unit as bottom — GPT enum controls position (TOP_ANCHOR vs BOTTOM_ANCHOR)
 		if (fmtOn('topAnchor')) {
 			var topAnchor = googletag.defineOutOfPageSlot(
-				SLOT_PATH + 'Ad.Plus-Anchor-Small',
+				SLOT_PATH + 'Ad.Plus-Anchor',
 				googletag.enums.OutOfPageFormat.TOP_ANCHOR
 			);
 			if (topAnchor) {
@@ -361,6 +362,8 @@ function initSlots() {
 					renderedSize: null, viewable: false
 				};
 				window.__plOverlayStatus.topAnchor = 'pending';
+			} else {
+				console.log('[InitialAds] Top Anchor slot returned null — GPT does not support TOP_ANCHOR on this page/device');
 			}
 		} else { log('Top Anchor SKIPPED — disabled'); }
 
@@ -523,7 +526,7 @@ function initSlots() {
 		/* --- Unit Map for Event Tracking --- */
 		_unitMap['__interstitial']  = 'Ad.Plus-Interstitial';
 		_unitMap['__anchor']        = 'Ad.Plus-Anchor';
-		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor-Small';
+		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor';
 		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
 		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
 		_unitMap['initial-ad-1']    = 'Ad.Plus-336x280';
@@ -703,6 +706,8 @@ function onImpressionViewable(event) {
 
 	// Shared viewable counter — Layer 1 only (Layer 2 increments in smart-ads.js)
 	window.__plViewableCount = (window.__plViewableCount || 0) + 1;
+	console.log('[InitialAds] VIEWABLE:', divId, 'type:', info.type,
+		'__plViewableCount now=' + window.__plViewableCount);
 	log('impressionViewable fired:', divId, 'type:', info.type,
 		'refreshCount:', info.refreshCount, '/', info.maxRefresh);
 	pushEvent('ad_viewable', { divId: divId, type: info.type });

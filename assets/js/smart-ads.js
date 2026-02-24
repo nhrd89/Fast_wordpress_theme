@@ -348,17 +348,15 @@ function findTargetNear(targetY, searchRadius) {
 	var content = document.querySelector('.single-content');
 	if (!content) return null;
 
-	var candidates = content.querySelectorAll('p, .wp-block-image, figure, .wp-block-gallery');
+	var candidates = content.querySelectorAll('p');
 	if (!candidates.length) return null;
 
 	var scrollY   = window.pageYOffset || 0;
 	var bestScore = -Infinity;
 	var bestEl    = null;
-	var bestIsImg = false;
 
 	for (var i = 0; i < candidates.length; i++) {
 		var el   = candidates[i];
-		var tag  = el.tagName.toLowerCase();
 		var rect = el.getBoundingClientRect();
 		var elY  = rect.top + scrollY + rect.height;
 
@@ -370,55 +368,36 @@ function findTargetNear(targetY, searchRadius) {
 		if (!checkSpacing(elY)) continue;
 
 		// Score: closer to target = better (inverse distance)
-		var score  = searchRadius - dist;
-		var isImage = false;
+		var score = searchRadius - dist;
 
-		// Image elements get a +200 bonus (high-attention break points)
-		if (tag === 'figure' || el.classList.contains('wp-block-image') || el.classList.contains('wp-block-gallery')) {
-			score += 200;
-			isImage = true;
-		} else {
-			// Paragraph scoring
-			var prev = el.previousElementSibling;
+		var prev = el.previousElementSibling;
 
-			// Bonus: after images (natural content break)
-			if (prev && (prev.tagName === 'IMG' || prev.querySelector('img'))) {
-				score += 100;
-			}
+		// Bonus: after images — #1 priority (natural content break, high attention)
+		if (prev && (prev.tagName === 'IMG' || prev.tagName === 'FIGURE'
+			|| (prev.classList && (prev.classList.contains('wp-block-image') || prev.classList.contains('wp-block-gallery')))
+			|| (prev.querySelector && prev.querySelector('img')))) {
+			score += 300;
+		}
 
-			// Bonus: after headings (section break)
-			if (prev && /^H[2-4]$/.test(prev.tagName)) {
-				score += 150;
-			}
+		// Bonus: after headings (section break)
+		if (prev && /^H[2-4]$/.test(prev.tagName)) {
+			score += 150;
+		}
 
-			// Bonus: paragraph has substantial text
-			if (el.textContent.length > 80) {
-				score += 50;
-			}
+		// Bonus: paragraph has substantial text
+		if (el.textContent.length > 80) {
+			score += 50;
+		}
 
-			// Penalty: very short paragraph
-			if (el.textContent.length < 20) {
-				score -= 200;
-			}
+		// Penalty: very short paragraph
+		if (el.textContent.length < 20) {
+			score -= 200;
 		}
 
 		if (score > bestScore) {
 			bestScore = score;
 			bestEl    = el;
-			bestIsImg = isImage;
 		}
-	}
-
-	if (!bestEl) return null;
-
-	// For image containers, find the outermost container to insert after
-	if (bestIsImg) {
-		var outer = bestEl;
-		while (outer.parentNode && outer.parentNode !== content && outer.parentNode.children.length === 1) {
-			outer = outer.parentNode;
-		}
-		bestEl = outer;
-		bestEl._nearImage = true;
 	}
 
 	return bestEl;
@@ -468,31 +447,8 @@ function injectDynamicAd(afterElement, injectionType) {
 	adDiv.id = divId;
 	container.appendChild(adDiv);
 
-	// Determine correct insertion point
-	var insertAfter = afterElement;
-
-	// If image target, walk UP to outermost image wrapper
-	if (nearImage) {
-		var imgContent = document.querySelector('.single-content');
-		var el = afterElement;
-		while (el.parentNode && el.parentNode !== imgContent) {
-			var parentTag = el.parentNode.tagName.toLowerCase();
-			var parentClass = el.parentNode.className || '';
-			if (parentTag === 'figure' ||
-				parentClass.indexOf('wp-block-image') !== -1 ||
-				parentClass.indexOf('wp-block-gallery') !== -1 ||
-				el.parentNode.children.length === 1) {
-				el = el.parentNode;
-			} else {
-				break;
-			}
-		}
-		insertAfter = el;
-		log('Image inject: inserting after', insertAfter.tagName, insertAfter.className, 'parent=', insertAfter.parentNode.tagName);
-	}
-
 	// Insert as NEXT SIBLING, never inside
-	insertAfter.parentNode.insertBefore(container, insertAfter.nextSibling);
+	afterElement.parentNode.insertBefore(container, afterElement.nextSibling);
 
 	// Multi-size: let GPT auction pick highest-paying creative
 	var sizes = IS_DESKTOP
@@ -520,7 +476,7 @@ function injectDynamicAd(afterElement, injectionType) {
 	var vpBottom  = scrollY + window.innerHeight;
 	var predDist  = (injectionType === 'predictive') ? Math.round(adY - vpBottom) : 0;
 
-	var nearImage = !!afterElement._nearImage;
+	var nearImage = false;
 	var densityAtInject = getViewportDensity();
 
 	var record = {
@@ -746,22 +702,20 @@ function engineLoop() {
 		}
 	}
 
-	// Strategy 1.5: SLOW SCROLL — consistent reading pace (20-80px/s)
+	// Strategy 1.5: SLOW SCROLL — consistent reading pace (PAUSE_VELOCITY to 120px/s)
 	// Users scrolling slowly and consistently should get ads even without a full pause.
-	if (activeCount < MAX_DYNAMIC_SLOTS && _speed >= 20 && _speed <= 80
+	if (activeCount < MAX_DYNAMIC_SLOTS && _speed > PAUSE_VELOCITY && _speed <= 120
 		&& !_isPaused && !_isDecelerating) {
-		// Verify sustained slow speed (last 10 samples all under 100px/s)
-		var sustainedSlow = true;
-		if (_velocitySamples.length >= 10) {
-			for (var ss = _velocitySamples.length - 10; ss < _velocitySamples.length; ss++) {
-				if (Math.abs(_velocitySamples[ss]) > 100) {
-					sustainedSlow = false;
-					break;
-				}
+		// Verify sustained slow speed: at least 4 of last 6 samples under 120px/s
+		var slowCount = 0;
+		var checkLen  = Math.min(_velocitySamples.length, 6);
+		if (checkLen >= 6) {
+			for (var ss = _velocitySamples.length - 6; ss < _velocitySamples.length; ss++) {
+				if (Math.abs(_velocitySamples[ss]) <= 120) slowCount++;
 			}
-		} else {
-			sustainedSlow = false; // not enough data yet
 		}
+		var sustainedSlow = (checkLen >= 6 && slowCount >= 4);
+		log('SLOW CHECK: speed=' + Math.round(_speed) + ' sustained=' + sustainedSlow + ' (' + slowCount + '/6 under 120)');
 
 		if (sustainedSlow) {
 			var slowTarget = findScrollTarget();
@@ -845,6 +799,7 @@ function onDynamicImpressionViewable(event) {
 			var rec = _dynamicSlots[i];
 			rec.viewable = true;
 			window.__plViewableCount = (window.__plViewableCount || 0) + 1;
+			log('VIEWABLE: dynamic', divId, '__plViewableCount now=' + window.__plViewableCount);
 			var ttv = Date.now() - rec.injectedAt;
 			pushEvent('dynamic_ad_viewable', {
 				divId:           divId,
@@ -1159,6 +1114,10 @@ function sendHeartbeat() {
 	var totalReq    = l1keys.length + _dynamicSlots.length;
 	var fillRate    = totalReq > 0 ? Math.round((allFilled / totalReq) * 100) : 0;
 	var viewRate    = allFilled > 0 ? Math.round((allViewable / allFilled) * 100) : 0;
+
+	log('HEARTBEAT viewable: __plViewableCount=' + hbSharedViewable,
+		'l1Viewable=' + l1Viewable, 'dynViewable=' + totalViewable,
+		'allViewable=' + allViewable, 'allFilled=' + allFilled);
 
 	var sid = (window.__plAdTracker && window.__plAdTracker.sessionId) ? window.__plAdTracker.sessionId : '';
 
