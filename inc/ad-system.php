@@ -27,8 +27,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Inject 2 fixed ad container divs into single post content.
  *
- * - initial-ad-1: before first paragraph (top of content)
- * - initial-ad-2: after second paragraph
+ * - initial-ad-1: after paragraph 2 (users see 2 paras of content first)
+ * - initial-ad-2: after paragraph 4 (deep enough for taller formats)
  *
  * These are the only PHP-injected in-content ads. Everything below
  * the fold is handled dynamically by smart-ads.js (Layer 2).
@@ -58,7 +58,7 @@ function pl_inject_initial_ads( $content ) {
 		return $content; // Too few paragraphs — skip injection.
 	}
 
-	$ad1 = '<div class="pl-initial-ad" style="text-align:center;min-height:280px;margin:12px auto;">'
+	$ad1 = '<div class="pl-initial-ad" style="text-align:center;min-height:250px;margin:12px auto;">'
 		. '<div id="initial-ad-1"></div></div>';
 	$ad2 = '<div class="pl-initial-ad" style="text-align:center;min-height:250px;margin:12px auto;">'
 		. '<div id="initial-ad-2"></div></div>';
@@ -71,9 +71,10 @@ function pl_inject_initial_ads( $content ) {
 			. '<div id="pause-ad-1"></div></div>'
 		: '';
 
-	// Build output: ad1 before first paragraph, ad2 after paragraph 2, pause after paragraph 5.
-	$output         = $ad1;
+	// Build output: ad1 after paragraph 2, ad2 after paragraph 4, pause after paragraph 7.
+	$output         = '';
 	$p_count        = 0;
+	$ad1_inserted   = false;
 	$ad2_inserted   = false;
 	$pause_inserted = false;
 
@@ -82,22 +83,30 @@ function pl_inject_initial_ads( $content ) {
 
 		if ( strtolower( trim( $parts[ $i ] ) ) === '</p>' ) {
 			$p_count++;
-			if ( 2 === $p_count && ! $ad2_inserted ) {
+			if ( 2 === $p_count && ! $ad1_inserted ) {
+				$output      .= $ad1;
+				$ad1_inserted = true;
+			}
+			if ( 4 === $p_count && ! $ad2_inserted ) {
 				$output      .= $ad2;
 				$ad2_inserted = true;
 			}
-			if ( 5 === $p_count && ! $pause_inserted ) {
+			if ( 7 === $p_count && ! $pause_inserted ) {
 				$output         .= $pause;
 				$pause_inserted  = true;
 			}
 		}
 	}
 
-	// Fallback: if fewer than 2 paragraphs found, append ad2 at end.
+	// Fallback: if fewer than 2 paragraphs, append ad1 at end.
+	if ( ! $ad1_inserted ) {
+		$output .= $ad1;
+	}
+	// Fallback: if fewer than 4 paragraphs, append ad2 at end.
 	if ( ! $ad2_inserted ) {
 		$output .= $ad2;
 	}
-	// Fallback: if fewer than 5 paragraphs, append pause ad at end.
+	// Fallback: if fewer than 7 paragraphs, append pause ad at end.
 	if ( ! $pause_inserted && $pause ) {
 		$output .= $pause;
 	}

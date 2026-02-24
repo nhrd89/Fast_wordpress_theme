@@ -253,16 +253,16 @@ function initSlots() {
 
 		/* --- Size Mappings --- */
 
-		// In-content slot 1: includes 970x250 on desktop
+		// In-content slot 1 (after para 2): medium formats only, no 300x600 (too tall between paragraphs)
 		var contentSizeMap1 = googletag.sizeMapping()
-			.addSize([1025, 0], [[336, 280], [300, 250], [970, 250], [300, 600]])
-			.addSize([768, 0],  [[336, 280], [300, 250], [300, 600]])
+			.addSize([1025, 0], [[336, 280], [300, 250], [250, 250]])
+			.addSize([768, 0],  [[336, 280], [300, 250], [250, 250]])
 			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
 			.addSize([320, 0],  [[300, 250], [250, 250]])
 			.addSize([0, 0],    [[250, 250], [300, 100]])
 			.build();
 
-		// In-content slot 2: no 970x250 (too aggressive for 2nd slot)
+		// In-content slot 2 (after para 4): includes 300x600 — user engaged, taller ad acceptable
 		var contentSizeMap2 = googletag.sizeMapping()
 			.addSize([1025, 0], [[336, 280], [300, 250], [300, 600]])
 			.addSize([768, 0],  [[336, 280], [300, 250], [300, 600]])
@@ -374,11 +374,11 @@ function initSlots() {
 
 		/* --- Initial In-Content Slots (only on single posts) --- */
 
-		// Slot 1 — before paragraph 1
+		// Slot 1 — after paragraph 2 (medium formats, no tall)
 		if (fmtOn('initial1') && document.getElementById('initial-ad-1')) {
 			var slot1 = googletag.defineSlot(
-				SLOT_PATH + 'Ad.Plus-300x250',
-				[[336, 280], [300, 250], [970, 250], [300, 600], [250, 250], [300, 100]],
+				SLOT_PATH + 'Ad.Plus-336x280',
+				[[336, 280], [300, 250], [250, 250], [300, 100]],
 				'initial-ad-1'
 			);
 			if (slot1) {
@@ -394,7 +394,7 @@ function initSlots() {
 			}
 		}
 
-		// Slot 2 — after paragraph 2
+		// Slot 2 — after paragraph 4 (taller formats allowed)
 		if (fmtOn('initial2') && document.getElementById('initial-ad-2')) {
 			var slot2 = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-336x280',
@@ -499,7 +499,7 @@ function initSlots() {
 		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor';
 		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
 		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
-		_unitMap['initial-ad-1']    = 'Ad.Plus-300x250';
+		_unitMap['initial-ad-1']    = 'Ad.Plus-336x280';
 		_unitMap['initial-ad-2']    = 'Ad.Plus-336x280';
 		_unitMap['300x600-1']       = 'Ad.Plus-300x600';
 		_unitMap['300x250-sidebar'] = 'Ad.Plus-250x250';
