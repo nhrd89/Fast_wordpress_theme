@@ -54,11 +54,11 @@ var MOBILE_MAX_IN_VIEW      = L2.mobileMaxInView ? parseInt(L2.mobileMaxInView, 
 var MAX_AD_DENSITY_PERCENT  = L2.maxAdDensityPercent ? parseInt(L2.maxAdDensityPercent, 10) : 30;
 
 // Pause detection
-var PAUSE_VELOCITY       = 30;   // px/s — below this = paused
-var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 300;
+var PAUSE_VELOCITY       = 50;   // px/s — below this = paused
+var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 200;
 
 // Viewport refresh
-var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDelay, 10) : 5000;
+var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDelay, 10) : 3000;
 
 // Predictive window (seconds to look ahead)
 var PREDICTIVE_WINDOW = L2.predictiveWindow ? parseFloat(L2.predictiveWindow) : 1.0;
@@ -465,8 +465,31 @@ function injectDynamicAd(afterElement, injectionType) {
 	adDiv.id = divId;
 	container.appendChild(adDiv);
 
-	// Insert after the target element
-	afterElement.parentNode.insertBefore(container, afterElement.nextSibling);
+	// Determine correct insertion point
+	var insertAfter = afterElement;
+
+	// If image target, walk UP to outermost image wrapper
+	if (nearImage) {
+		var imgContent = document.querySelector('.single-content');
+		var el = afterElement;
+		while (el.parentNode && el.parentNode !== imgContent) {
+			var parentTag = el.parentNode.tagName.toLowerCase();
+			var parentClass = el.parentNode.className || '';
+			if (parentTag === 'figure' ||
+				parentClass.indexOf('wp-block-image') !== -1 ||
+				parentClass.indexOf('wp-block-gallery') !== -1 ||
+				el.parentNode.children.length === 1) {
+				el = el.parentNode;
+			} else {
+				break;
+			}
+		}
+		insertAfter = el;
+		log('Image inject: inserting after', insertAfter.tagName, insertAfter.className, 'parent=', insertAfter.parentNode.tagName);
+	}
+
+	// Insert as NEXT SIBLING, never inside
+	insertAfter.parentNode.insertBefore(container, insertAfter.nextSibling);
 
 	// Multi-size: let GPT auction pick highest-paying creative
 	var sizes = IS_DESKTOP
@@ -720,8 +743,38 @@ function engineLoop() {
 		}
 	}
 
-	// Strategy 2: PREDICTIVE — user is decelerating (either direction)
-	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating) {
+	// Strategy 1.5: SLOW SCROLL — consistent reading pace (20-80px/s)
+	// Users scrolling slowly and consistently should get ads even without a full pause.
+	if (activeCount < MAX_DYNAMIC_SLOTS && _speed >= 20 && _speed <= 80
+		&& !_isPaused && !_isDecelerating) {
+		// Verify sustained slow speed (last 10 samples all under 100px/s)
+		var sustainedSlow = true;
+		if (_velocitySamples.length >= 10) {
+			for (var ss = _velocitySamples.length - 10; ss < _velocitySamples.length; ss++) {
+				if (Math.abs(_velocitySamples[ss]) > 100) {
+					sustainedSlow = false;
+					break;
+				}
+			}
+		} else {
+			sustainedSlow = false; // not enough data yet
+		}
+
+		if (sustainedSlow) {
+			var slowTarget = findScrollTarget();
+			if (slowTarget) {
+				recycleSlots();
+				injectDynamicAd(slowTarget, 'slow_scroll');
+				log('SLOW SCROLL inject at speed=' + Math.round(_speed));
+				return;
+			}
+		}
+	}
+
+	// Strategy 2: PREDICTIVE — user is decelerating AND below 300px/s
+	// At 300px/s a 250px ad is visible for 0.83s — near viewable threshold (1s).
+	// Above 300px/s the ad flashes by too fast to ever be viewable.
+	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating && _speed < 300) {
 		var scrollTarget = findScrollTarget();
 		if (scrollTarget) {
 			recycleSlots();
@@ -788,6 +841,7 @@ function onDynamicImpressionViewable(event) {
 		if (_dynamicSlots[i].divId === divId) {
 			var rec = _dynamicSlots[i];
 			rec.viewable = true;
+			window.__plViewableCount = (window.__plViewableCount || 0) + 1;
 			var ttv = Date.now() - rec.injectedAt;
 			pushEvent('dynamic_ad_viewable', {
 				divId:           divId,
@@ -819,7 +873,7 @@ function updateDashboard() {
 	var viewableSlots = 0;
 	var totalRefreshes = 0;
 	var filledSlots = 0;
-	var byStrategy = { pause: 0, predictive: 0 };
+	var byStrategy = { pause: 0, slow_scroll: 0, predictive: 0 };
 
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		var s = _dynamicSlots[i];

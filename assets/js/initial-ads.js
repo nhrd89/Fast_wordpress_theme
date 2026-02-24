@@ -689,9 +689,6 @@ function onImpressionViewable(event) {
 	if (slot === _rightRailSlot)          window.__plOverlayStatus.rightRail    = 'viewable';
 	if (slot === _interstitialSlot)       window.__plOverlayStatus.interstitial = 'viewable';
 
-	// Shared viewable counter for heartbeat/beacon
-	window.__plViewableCount = (window.__plViewableCount || 0) + 1;
-
 	var info  = _slotMap[divId];
 	if (!info) {
 		// Out-of-page slot — find info by slot reference
@@ -700,9 +697,12 @@ function onImpressionViewable(event) {
 			if (_slotMap[keys[si]].slot === slot) { info = _slotMap[keys[si]]; divId = keys[si]; break; }
 		}
 	}
-	if (!info) return;
+	if (!info) return; // Dynamic slots handled by smart-ads.js onDynamicImpressionViewable
 
 	info.viewable = true;
+
+	// Shared viewable counter — Layer 1 only (Layer 2 increments in smart-ads.js)
+	window.__plViewableCount = (window.__plViewableCount || 0) + 1;
 	log('impressionViewable fired:', divId, 'type:', info.type,
 		'refreshCount:', info.refreshCount, '/', info.maxRefresh);
 	pushEvent('ad_viewable', { divId: divId, type: info.type });

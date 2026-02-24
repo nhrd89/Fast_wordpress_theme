@@ -319,9 +319,9 @@ function pl_opt_layer2_defaults() {
 	return array(
 		'density'              => 'normal',
 		'maxSlots'             => 20,
-		'pauseThreshold'       => 300,
+		'pauseThreshold'       => 200,
 		'predictiveWindow'     => 1.0,
-		'viewportRefreshDelay' => 5000,
+		'viewportRefreshDelay' => 3000,
 		'minPixelSpacing'      => 200,
 		'maxPixelSpacing'      => 1000,
 		'desktopMaxInView'     => 2,
