@@ -63,6 +63,9 @@ var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDela
 // Predictive window (seconds to look ahead)
 var PREDICTIVE_WINDOW = L2.predictiveWindow ? parseFloat(L2.predictiveWindow) : 1.0;
 
+// Max speed for predictive injection (above this, ads flash by too fast to be viewable)
+var PREDICTIVE_SPEED_CAP = L2.predictiveSpeedCap ? parseInt(L2.predictiveSpeedCap, 10) : 300;
+
 // Visitor classification thresholds
 var READER_SPEED_MAX  = L2.readerSpeed ? parseInt(L2.readerSpeed, 10) : 100;
 var SCANNER_SPEED_MAX = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) : 400;
@@ -771,10 +774,10 @@ function engineLoop() {
 		}
 	}
 
-	// Strategy 2: PREDICTIVE — user is decelerating AND below 300px/s
+	// Strategy 2: PREDICTIVE — user is decelerating AND below speed cap
 	// At 300px/s a 250px ad is visible for 0.83s — near viewable threshold (1s).
-	// Above 300px/s the ad flashes by too fast to ever be viewable.
-	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating && _speed < 300) {
+	// Above the cap, ads flash by too fast to ever be viewable.
+	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating && _speed < PREDICTIVE_SPEED_CAP) {
 		var scrollTarget = findScrollTarget();
 		if (scrollTarget) {
 			recycleSlots();

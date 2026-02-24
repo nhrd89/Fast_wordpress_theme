@@ -327,6 +327,7 @@ function pl_opt_layer2_defaults() {
 		'desktopMaxInView'     => 2,
 		'mobileMaxInView'      => 1,
 		'maxAdDensityPercent'  => 30,
+		'predictiveSpeedCap'   => 300,
 		'readerSpeed'          => 100,
 		'fastScannerSpeed'     => 400,
 	);
@@ -484,6 +485,7 @@ function pl_opt_ajax_save() {
 			'desktopMaxInView'     => max( 1, min( 5, (int) ( $l['desktopMaxInView'] ?? $d['desktopMaxInView'] ) ) ),
 			'mobileMaxInView'      => max( 1, min( 3, (int) ( $l['mobileMaxInView'] ?? $d['mobileMaxInView'] ) ) ),
 			'maxAdDensityPercent'  => max( 10, min( 60, (int) ( $l['maxAdDensityPercent'] ?? $d['maxAdDensityPercent'] ) ) ),
+			'predictiveSpeedCap'   => max( 100, min( 1000, (int) ( $l['predictiveSpeedCap'] ?? $d['predictiveSpeedCap'] ) ) ),
 			'readerSpeed'          => max( 10, min( 500, (int) ( $l['readerSpeed'] ?? $d['readerSpeed'] ) ) ),
 			'fastScannerSpeed'     => max( 100, min( 2000, (int) ( $l['fastScannerSpeed'] ?? $d['fastScannerSpeed'] ) ) ),
 		) );
@@ -756,6 +758,7 @@ function pl_ad_render_optimizer() {
 					<tr><th>Pause detection threshold</th><td><input type="number" id="opt_l2_pauseThreshold" value="<?php echo (int) $l2['pauseThreshold']; ?>" min="100" max="3000" class="small-text"> ms <p class="description">Time scrolling must stop before injecting an ad</p></td></tr>
 					<tr><th>Predictive window</th><td><input type="number" id="opt_l2_predictiveWindow" value="<?php echo esc_attr( $l2['predictiveWindow'] ); ?>" min="0.1" max="5.0" step="0.1" class="small-text"> s <p class="description">How far ahead to predict scroll stop position</p></td></tr>
 					<tr><th>Viewport refresh delay</th><td><input type="number" id="opt_l2_viewportRefreshDelay" value="<?php echo (int) $l2['viewportRefreshDelay']; ?>" min="1000" max="30000" step="1000" class="small-text"> ms <p class="description">Pause duration before refreshing in-view ads</p></td></tr>
+					<tr><th>Max speed for predictive injection</th><td><input type="number" id="opt_l2_predictiveSpeedCap" value="<?php echo (int) $l2['predictiveSpeedCap']; ?>" min="100" max="1000" class="small-text"> px/s <p class="description">Predictive injection only fires when speed is below this cap (prevents injecting at speeds too fast for viewability)</p></td></tr>
 					<tr>
 						<th>Spacing bounds (speed-based)</th>
 						<td>
@@ -973,6 +976,7 @@ function pl_ad_render_optimizer() {
 				pauseThreshold:       parseInt(document.getElementById('opt_l2_pauseThreshold').value, 10),
 				predictiveWindow:     parseFloat(document.getElementById('opt_l2_predictiveWindow').value),
 				viewportRefreshDelay: parseInt(document.getElementById('opt_l2_viewportRefreshDelay').value, 10),
+				predictiveSpeedCap:   parseInt(document.getElementById('opt_l2_predictiveSpeedCap').value, 10),
 				minPixelSpacing:      parseInt(document.getElementById('opt_l2_minPixelSpacing').value, 10),
 				maxPixelSpacing:      parseInt(document.getElementById('opt_l2_maxPixelSpacing').value, 10),
 				desktopMaxInView:     parseInt(document.getElementById('opt_l2_desktopMaxInView').value, 10),
@@ -1029,9 +1033,9 @@ function pl_ad_render_optimizer() {
 		// Density preset auto-fill
 		document.getElementById('opt_density').addEventListener('change', function() {
 			var presets = {
-				light:      { minPixelSpacing: 300, maxPixelSpacing: 1200, desktopMaxInView: 1, mobileMaxInView: 1, maxAdDensityPercent: 20, maxSlots: 10 },
-				normal:     { minPixelSpacing: 200, maxPixelSpacing: 1000, desktopMaxInView: 2, mobileMaxInView: 1, maxAdDensityPercent: 30, maxSlots: 20 },
-				aggressive: { minPixelSpacing: 150, maxPixelSpacing: 800,  desktopMaxInView: 3, mobileMaxInView: 2, maxAdDensityPercent: 40, maxSlots: 20 },
+				light:      { minPixelSpacing: 300, maxPixelSpacing: 1200, desktopMaxInView: 1, mobileMaxInView: 1, maxAdDensityPercent: 20, maxSlots: 10, predictiveSpeedCap: 250 },
+				normal:     { minPixelSpacing: 200, maxPixelSpacing: 1000, desktopMaxInView: 2, mobileMaxInView: 1, maxAdDensityPercent: 30, maxSlots: 20, predictiveSpeedCap: 300 },
+				aggressive: { minPixelSpacing: 150, maxPixelSpacing: 800,  desktopMaxInView: 3, mobileMaxInView: 2, maxAdDensityPercent: 40, maxSlots: 20, predictiveSpeedCap: 400 },
 			};
 			var p = presets[this.value];
 			if (p) {
@@ -1041,6 +1045,7 @@ function pl_ad_render_optimizer() {
 				document.getElementById('opt_l2_mobileMaxInView').value      = p.mobileMaxInView;
 				document.getElementById('opt_l2_maxAdDensityPercent').value  = p.maxAdDensityPercent;
 				document.getElementById('opt_l2_maxSlots').value             = p.maxSlots;
+				document.getElementById('opt_l2_predictiveSpeedCap').value   = p.predictiveSpeedCap;
 			}
 		});
 

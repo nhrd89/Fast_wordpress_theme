@@ -131,6 +131,7 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 			COUNT(CASE WHEN event_type = 'dynamic_inject' THEN 1 END) AS injections,
 			COUNT(CASE WHEN event_type = 'viewable' THEN 1 END) AS viewable,
 			SUM(CASE WHEN event_type = 'dynamic_inject' AND injection_type = 'pause' THEN 1 ELSE 0 END) AS pause_count,
+			SUM(CASE WHEN event_type = 'dynamic_inject' AND injection_type = 'slow_scroll' THEN 1 ELSE 0 END) AS slow_scroll_count,
 			SUM(CASE WHEN event_type = 'dynamic_inject' AND injection_type = 'predictive' THEN 1 ELSE 0 END) AS predictive_count
 		FROM {$te}
 		WHERE created_at >= %s
@@ -267,14 +268,16 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 
 	// 10. Overview totals.
 	$totals = array(
-		'total_injections' => 0,
-		'pause_count'      => 0,
-		'predictive_count' => 0,
-		'total_filled'     => 0,
-		'total_viewable'   => 0,
-		'total_refreshes'  => 0,
-		'avg_ttv_pause'    => 0,
-		'avg_ttv_predict'  => 0,
+		'total_injections'   => 0,
+		'pause_count'        => 0,
+		'slow_scroll_count'  => 0,
+		'predictive_count'   => 0,
+		'total_filled'       => 0,
+		'total_viewable'     => 0,
+		'total_refreshes'    => 0,
+		'avg_ttv_pause'      => 0,
+		'avg_ttv_slow'       => 0,
+		'avg_ttv_predict'    => 0,
 	);
 	foreach ( $type_comparison as $row ) {
 		$totals['total_injections'] += (int) $row['injections'];
@@ -283,6 +286,10 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 		if ( $row['injection_type'] === 'pause' ) {
 			$totals['pause_count']   = (int) $row['injections'];
 			$totals['avg_ttv_pause'] = round( (float) $row['avg_ttv'] );
+		}
+		if ( $row['injection_type'] === 'slow_scroll' ) {
+			$totals['slow_scroll_count'] = (int) $row['injections'];
+			$totals['avg_ttv_slow']      = round( (float) $row['avg_ttv'] );
 		}
 		if ( $row['injection_type'] === 'predictive' ) {
 			$totals['predictive_count']   = (int) $row['injections'];
@@ -353,6 +360,7 @@ function pl_injection_lab_export() {
 		'overview'        => array(
 			'total_injections'   => $totals['total_injections'],
 			'pause_count'        => $totals['pause_count'],
+			'slow_scroll_count'  => $totals['slow_scroll_count'],
 			'predictive_count'   => $totals['predictive_count'],
 			'total_filled'       => $totals['total_filled'],
 			'fill_rate'          => $fill_rate,
@@ -384,20 +392,29 @@ add_action( 'wp_ajax_pl_injection_lab_export', 'pl_injection_lab_export' );
 function pl_injection_lab_recommendations( $type_cmp, $speed, $spacing, $visitors, $direction = array() ) {
 	$recs = array();
 
-	// Compare pause vs predictive viewability.
+	// Compare pause vs slow_scroll vs predictive viewability.
 	$pause_view   = 0;
+	$slow_view    = 0;
 	$predict_view = 0;
 	$pause_inj    = 0;
+	$slow_inj     = 0;
 	$predict_inj  = 0;
 	foreach ( $type_cmp as $row ) {
 		if ( $row['injection_type'] === 'pause' ) {
 			$pause_inj  = (int) $row['injections'];
 			$pause_view = $pause_inj > 0 ? round( (int) $row['viewable'] / $pause_inj * 100 ) : 0;
 		}
+		if ( $row['injection_type'] === 'slow_scroll' ) {
+			$slow_inj  = (int) $row['injections'];
+			$slow_view = $slow_inj > 0 ? round( (int) $row['viewable'] / $slow_inj * 100 ) : 0;
+		}
 		if ( $row['injection_type'] === 'predictive' ) {
 			$predict_inj  = (int) $row['injections'];
 			$predict_view = $predict_inj > 0 ? round( (int) $row['viewable'] / $predict_inj * 100 ) : 0;
 		}
+	}
+	if ( $slow_inj >= 5 ) {
+		$recs[] = "Slow scroll strategy: {$slow_inj} injections at {$slow_view}% viewability — " . ( $slow_view > 30 ? 'performing well for reading-pace users.' : 'low viewability, consider tightening speed range.' );
 	}
 	if ( $pause_inj >= 5 && $predict_inj >= 5 ) {
 		$diff = $pause_view - $predict_view;
@@ -580,7 +597,7 @@ function pl_injection_lab_render() {
 		<div class="lab-section">
 			<h3>Visitor Type Breakdown</h3>
 			<table class="widefat striped" style="font-size:13px;">
-				<thead><tr><th>Visitor Type</th><th class="num">Sessions</th><th class="num">Injections</th><th class="num">Inj/Session</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Pause%</th><th class="num">Predictive%</th></tr></thead>
+				<thead><tr><th>Visitor Type</th><th class="num">Sessions</th><th class="num">Injections</th><th class="num">Inj/Session</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Pause%</th><th class="num">Slow%</th><th class="num">Predictive%</th></tr></thead>
 				<tbody id="labVisitorTable"><tr><td colspan="8" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
 			</table>
 		</div>
@@ -613,6 +630,7 @@ function pl_injection_lab_render() {
 	.lab-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; }
 	.badge-pause { background: #d4edda; color: #155724; }
 	.badge-predictive { background: #cce5ff; color: #004085; }
+	.badge-slow { background: #e0f2f1; color: #00695c; }
 	.badge-refresh { background: #fff3cd; color: #856404; }
 	.badge-yes { color: #00a32a; }
 	.badge-no { color: #d63638; }
@@ -631,6 +649,7 @@ function pl_injection_lab_render() {
 		function fmtMs(n) { return n > 0 ? (n / 1000).toFixed(1) + 's' : '-'; }
 		function badgeType(t) {
 			if (t === 'pause') return '<span class="lab-badge badge-pause">pause</span>';
+			if (t === 'slow_scroll') return '<span class="lab-badge badge-slow">slow scroll</span>';
 			if (t === 'predictive') return '<span class="lab-badge badge-predictive">predictive</span>';
 			if (t === 'viewport_refresh') return '<span class="lab-badge badge-refresh">refresh</span>';
 			return t || '-';
@@ -684,12 +703,14 @@ function pl_injection_lab_render() {
 			var fillRate = pct(t.total_filled, t.total_injections);
 			var viewRate = pct(t.total_viewable, t.total_filled);
 			var pausePct = pct(t.pause_count, t.total_injections);
+			var slowPct = pct(t.slow_scroll_count || 0, t.total_injections);
 			var predictPct = pct(t.predictive_count, t.total_injections);
 			var html = '';
-			html += card('Total Injections', t.total_injections, 'Pause: ' + t.pause_count + ' (' + pausePct + '%) | Predictive: ' + t.predictive_count + ' (' + predictPct + '%)');
+			html += card('Total Injections', t.total_injections, 'Pause: ' + t.pause_count + ' (' + pausePct + '%) | Slow: ' + (t.slow_scroll_count || 0) + ' (' + slowPct + '%) | Predictive: ' + t.predictive_count + ' (' + predictPct + '%)');
 			html += card('Fill Rate', fillRate + '%', t.total_filled + ' / ' + t.total_injections + ' filled');
 			html += card('Viewability', viewRate + '%', t.total_viewable + ' / ' + t.total_filled + ' viewable');
 			html += card('Avg TTV (Pause)', fmtMs(t.avg_ttv_pause), 'Time to viewable');
+			html += card('Avg TTV (Slow Scroll)', fmtMs(t.avg_ttv_slow || 0), 'Time to viewable');
 			html += card('Avg TTV (Predictive)', fmtMs(t.avg_ttv_predict), 'Time to viewable');
 			html += card('Viewport Refreshes', t.total_refreshes, 'In-view ad refreshes');
 			document.getElementById('labCards').innerHTML = html;
@@ -781,8 +802,9 @@ function pl_injection_lab_render() {
 				var inj = parseInt(r.injections) || 0;
 				var vw = parseInt(r.viewable) || 0;
 				var pc = parseInt(r.pause_count) || 0;
+				var sc = parseInt(r.slow_scroll_count) || 0;
 				var pr = parseInt(r.predictive_count) || 0;
-				html += '<tr><td><strong>' + (r.visitor_type || '-') + '</strong></td><td class="num">' + fmt(sess) + '</td><td class="num">' + fmt(inj) + '</td><td class="num">' + (sess > 0 ? (inj / sess).toFixed(1) : '-') + '</td><td class="num">' + fmt(vw) + '</td><td class="num">' + pct(vw, inj) + '%</td><td class="num">' + pct(pc, inj) + '%</td><td class="num">' + pct(pr, inj) + '%</td></tr>';
+				html += '<tr><td><strong>' + (r.visitor_type || '-') + '</strong></td><td class="num">' + fmt(sess) + '</td><td class="num">' + fmt(inj) + '</td><td class="num">' + (sess > 0 ? (inj / sess).toFixed(1) : '-') + '</td><td class="num">' + fmt(vw) + '</td><td class="num">' + pct(vw, inj) + '%</td><td class="num">' + pct(pc, inj) + '%</td><td class="num">' + pct(sc, inj) + '%</td><td class="num">' + pct(pr, inj) + '%</td></tr>';
 			});
 			document.getElementById('labVisitorTable').innerHTML = html;
 		}
