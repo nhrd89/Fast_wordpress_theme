@@ -41,10 +41,17 @@ var ENGINE_LOOP_MS     = 100;    // predictive engine loop
 // Recycling
 var RECYCLE_DISTANCE   = 1000;   // px above viewport to recycle
 
-// Per-visitor-type spacing (px between ads)
-var READER_SPACING       = L2.readerSpacing ? parseInt(L2.readerSpacing, 10) : 400;
-var SCANNER_SPACING      = L2.scannerSpacing ? parseInt(L2.scannerSpacing, 10) : 500;
-var FAST_SCANNER_SPACING = L2.fastScannerSpacing ? parseInt(L2.fastScannerSpacing, 10) : 600;
+// Speed-based spacing: spacing = speed × timeBetween, clamped [MIN, MAX]
+var MIN_PIXEL_SPACING    = L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 200;
+var MAX_PIXEL_SPACING    = L2.maxPixelSpacing ? parseInt(L2.maxPixelSpacing, 10) : 1000;
+var READER_TIME          = 2.5;   // seconds between ads for readers
+var SCANNER_TIME         = 3.0;   // seconds between ads for scanners
+var FAST_SCANNER_TIME    = 3.5;   // seconds between ads for fast-scanners
+
+// Viewport ad density limits
+var DESKTOP_MAX_IN_VIEW     = L2.desktopMaxInView ? parseInt(L2.desktopMaxInView, 10) : 2;
+var MOBILE_MAX_IN_VIEW      = L2.mobileMaxInView ? parseInt(L2.mobileMaxInView, 10) : 1;
+var MAX_AD_DENSITY_PERCENT  = L2.maxAdDensityPercent ? parseInt(L2.maxAdDensityPercent, 10) : 30;
 
 // Pause detection
 var PAUSE_VELOCITY       = 30;   // px/s — below this = paused
@@ -128,11 +135,14 @@ function pushEvent(name, data) {
 	window.__plAdEvents.push(data);
 }
 
-/** Get minimum spacing for current visitor type. */
+/** Get minimum spacing based on current scroll speed × time between ads.
+ *  Faster scrollers get wider spacing (more time = more px before next ad). */
 function getSpacing() {
-	if (_visitorType === 'reader') return READER_SPACING;
-	if (_visitorType === 'fast-scanner') return FAST_SCANNER_SPACING;
-	return SCANNER_SPACING;
+	var timeBetween = SCANNER_TIME;
+	if (_visitorType === 'reader') timeBetween = READER_TIME;
+	else if (_visitorType === 'fast-scanner') timeBetween = FAST_SCANNER_TIME;
+	var spacing = Math.round(_speed * timeBetween);
+	return Math.max(MIN_PIXEL_SPACING, Math.min(MAX_PIXEL_SPACING, spacing));
 }
 
 /** Get directional spacing — 20% tighter on scroll-up (users re-read = higher intent). */
@@ -170,6 +180,44 @@ function getScrollPercent() {
 	var docH = document.documentElement.scrollHeight || 1;
 	var y = window.pageYOffset || 0;
 	return Math.round((y + window.innerHeight) / docH * 100);
+}
+
+/** Get viewport ad density: count ads visible + percentage of viewport height occupied by ads. */
+function getViewportDensity() {
+	var vpH = window.innerHeight;
+	var adsInView = 0;
+	var totalAdHeight = 0;
+
+	// Layer 1 ads
+	if (window.__initialAds) {
+		var zones = window.__initialAds.getExclusionZones();
+		for (var z = 0; z < zones.length; z++) {
+			var zt = zones[z].top;
+			var zb = zones[z].bottom;
+			var visH = Math.max(0, Math.min(zb, vpH) - Math.max(zt, 0));
+			if (visH > 10) {
+				adsInView++;
+				totalAdHeight += visH;
+			}
+		}
+	}
+
+	// Layer 2 dynamic ads
+	for (var i = 0; i < _dynamicSlots.length; i++) {
+		var rec = _dynamicSlots[i];
+		if (rec.destroyed || !rec.el || !rec.el.parentNode) continue;
+		var rect = rec.el.getBoundingClientRect();
+		var visH = Math.max(0, Math.min(rect.bottom, vpH) - Math.max(rect.top, 0));
+		if (visH > 10) {
+			adsInView++;
+			totalAdHeight += visH;
+		}
+	}
+
+	return {
+		adsInView: adsInView,
+		adPercent: vpH > 0 ? Math.round(totalAdHeight / vpH * 100) : 0
+	};
 }
 
 /* ================================================================
@@ -297,56 +345,80 @@ function findTargetNear(targetY, searchRadius) {
 	var content = document.querySelector('.single-content');
 	if (!content) return null;
 
-	var paragraphs = content.querySelectorAll('p');
-	if (!paragraphs.length) return null;
+	var candidates = content.querySelectorAll('p, .wp-block-image, figure, .wp-block-gallery');
+	if (!candidates.length) return null;
 
 	var scrollY   = window.pageYOffset || 0;
 	var bestScore = -Infinity;
-	var bestPara  = null;
+	var bestEl    = null;
+	var bestIsImg = false;
 
-	for (var i = 0; i < paragraphs.length; i++) {
-		var p    = paragraphs[i];
-		var rect = p.getBoundingClientRect();
-		var pY   = rect.top + scrollY + rect.height;
+	for (var i = 0; i < candidates.length; i++) {
+		var el   = candidates[i];
+		var tag  = el.tagName.toLowerCase();
+		var rect = el.getBoundingClientRect();
+		var elY  = rect.top + scrollY + rect.height;
 
 		// Must be within search radius of target
-		var dist = Math.abs(pY - targetY);
+		var dist = Math.abs(elY - targetY);
 		if (dist > searchRadius) continue;
 
 		// Must pass spacing guard
-		if (!checkSpacing(pY)) continue;
+		if (!checkSpacing(elY)) continue;
 
 		// Score: closer to target = better (inverse distance)
-		var score = searchRadius - dist;
+		var score  = searchRadius - dist;
+		var isImage = false;
 
-		// Bonus: after images (natural content break)
-		var prev = p.previousElementSibling;
-		if (prev && (prev.tagName === 'IMG' || prev.querySelector('img'))) {
-			score += 100;
-		}
+		// Image elements get a +200 bonus (high-attention break points)
+		if (tag === 'figure' || el.classList.contains('wp-block-image') || el.classList.contains('wp-block-gallery')) {
+			score += 200;
+			isImage = true;
+		} else {
+			// Paragraph scoring
+			var prev = el.previousElementSibling;
 
-		// Bonus: after headings (section break)
-		if (prev && /^H[2-4]$/.test(prev.tagName)) {
-			score += 150;
-		}
+			// Bonus: after images (natural content break)
+			if (prev && (prev.tagName === 'IMG' || prev.querySelector('img'))) {
+				score += 100;
+			}
 
-		// Bonus: paragraph has substantial text
-		if (p.textContent.length > 80) {
-			score += 50;
-		}
+			// Bonus: after headings (section break)
+			if (prev && /^H[2-4]$/.test(prev.tagName)) {
+				score += 150;
+			}
 
-		// Penalty: very short paragraph
-		if (p.textContent.length < 20) {
-			score -= 200;
+			// Bonus: paragraph has substantial text
+			if (el.textContent.length > 80) {
+				score += 50;
+			}
+
+			// Penalty: very short paragraph
+			if (el.textContent.length < 20) {
+				score -= 200;
+			}
 		}
 
 		if (score > bestScore) {
 			bestScore = score;
-			bestPara  = p;
+			bestEl    = el;
+			bestIsImg = isImage;
 		}
 	}
 
-	return bestPara;
+	if (!bestEl) return null;
+
+	// For image containers, find the outermost container to insert after
+	if (bestIsImg) {
+		var outer = bestEl;
+		while (outer.parentNode && outer.parentNode !== content && outer.parentNode.children.length === 1) {
+			outer = outer.parentNode;
+		}
+		bestEl = outer;
+		bestEl._nearImage = true;
+	}
+
+	return bestEl;
 }
 
 /** PAUSE TARGET: Find injection point at center of current viewport. */
@@ -422,6 +494,9 @@ function injectDynamicAd(afterElement, injectionType) {
 	var vpBottom  = scrollY + window.innerHeight;
 	var predDist  = (injectionType === 'predictive') ? Math.round(adY - vpBottom) : 0;
 
+	var nearImage = !!afterElement._nearImage;
+	var densityAtInject = getViewportDensity();
+
 	var record = {
 		divId:             divId,
 		slot:              null,
@@ -433,6 +508,9 @@ function injectDynamicAd(afterElement, injectionType) {
 		injectionType:     injectionType || 'unknown',
 		injectionSpeed:    _scrollSpeed,
 		scrollDirection:   _scrollDirection,
+		nearImage:         nearImage,
+		adsInViewport:     densityAtInject.adsInView,
+		adDensityPercent:  densityAtInject.adPercent,
 		adSpacing:         Math.round(adSpacing),
 		predictedDistance: predDist,
 		viewable:          false,
@@ -470,6 +548,9 @@ function injectDynamicAd(afterElement, injectionType) {
 		visitorType:       _visitorType,
 		injectionType:     injectionType,
 		scrollDirection:   _scrollDirection,
+		nearImage:         nearImage,
+		adsInViewport:     densityAtInject.adsInView,
+		adDensityPercent:  densityAtInject.adPercent,
 		slotCount:         _dynamicSlots.length,
 		adSpacing:         Math.round(adSpacing),
 		predictedDistance: predDist
@@ -481,7 +562,10 @@ function injectDynamicAd(afterElement, injectionType) {
 			scrollDirection:   _scrollDirection,
 			scrollSpeed:       _scrollSpeed,
 			predictedDistance: predDist,
-			adSpacing:         Math.round(adSpacing)
+			adSpacing:         Math.round(adSpacing),
+			nearImage:         nearImage,
+			adsInViewport:     densityAtInject.adsInView,
+			adDensityPercent:  densityAtInject.adPercent
 		});
 	}
 
@@ -617,6 +701,15 @@ function engineLoop() {
 		if (!_dynamicSlots[i].destroyed) activeCount++;
 	}
 
+	// Viewport density guard — skip injection if too many ads already visible
+	var density = getViewportDensity();
+	var maxInView = IS_DESKTOP ? DESKTOP_MAX_IN_VIEW : MOBILE_MAX_IN_VIEW;
+	if (density.adsInView >= maxInView || density.adPercent >= MAX_AD_DENSITY_PERCENT) {
+		// Too dense — skip to viewport refresh only
+		checkViewportRefresh();
+		return;
+	}
+
 	// Strategy 1: PAUSE — user has stopped scrolling for PAUSE_THRESHOLD_MS
 	if (activeCount < MAX_DYNAMIC_SLOTS && _isPaused && (Date.now() - _pauseStartT) >= PAUSE_THRESHOLD_MS) {
 		var pauseTarget = findPauseTarget();
@@ -740,6 +833,7 @@ function updateDashboard() {
 		}
 	}
 
+	var dashDensity = getViewportDensity();
 	window.__plAdDashboard = window.__plAdDashboard || {};
 	window.__plAdDashboard.layer2 = {
 		activeSlots:     activeSlots,
@@ -754,6 +848,8 @@ function updateDashboard() {
 		isPaused:        _isPaused,
 		isDecelerating:  _isDecelerating,
 		spacing:         getDirectionalSpacing(),
+		adsInViewport:   dashDensity.adsInView,
+		adDensityPercent: dashDensity.adPercent,
 		byStrategy:      byStrategy
 	};
 }
@@ -877,6 +973,7 @@ function sendBeacon() {
 			injectionType:     s.injectionType,
 			injectionSpeed:    s.injectionSpeed,
 			scrollDirection:   s.scrollDirection || 'down',
+			nearImage:         s.nearImage || false,
 			adSpacing:         s.adSpacing || 0,
 			predictedDistance: s.predictedDistance || 0
 		});

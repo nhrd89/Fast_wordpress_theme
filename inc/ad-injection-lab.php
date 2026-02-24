@@ -165,7 +165,47 @@ function pl_injection_lab_ajax() {
 		$cutoff
 	), ARRAY_A );
 
-	// 6. Last 20 injections (live feed).
+	// 6. Image proximity performance.
+	$image_proximity = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			near_image,
+			COUNT(CASE WHEN event_type = 'dynamic_inject' THEN 1 END) AS injections,
+			COUNT(CASE WHEN event_type = 'impression' THEN 1 END) AS filled,
+			COUNT(CASE WHEN event_type = 'viewable' THEN 1 END) AS viewable,
+			AVG(CASE WHEN event_type = 'viewable' AND time_to_viewable > 0 THEN time_to_viewable END) AS avg_ttv,
+			AVG(CASE WHEN event_type = 'dynamic_inject' THEN ad_spacing END) AS avg_spacing
+		FROM {$te}
+		WHERE created_at >= %s
+			AND slot_type = 'dynamic'
+		GROUP BY near_image",
+		$cutoff
+	), ARRAY_A );
+
+	// 7. Viewport density at injection.
+	$density_brackets = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			CASE
+				WHEN ad_density_percent = 0 THEN '0%'
+				WHEN ad_density_percent < 10 THEN '1-10%'
+				WHEN ad_density_percent < 20 THEN '10-20%'
+				WHEN ad_density_percent < 30 THEN '20-30%'
+				ELSE '30%+'
+			END AS density_bracket,
+			COUNT(CASE WHEN event_type = 'dynamic_inject' THEN 1 END) AS injections,
+			COUNT(CASE WHEN event_type = 'viewable' THEN 1 END) AS viewable,
+			AVG(CASE WHEN event_type = 'viewable' AND time_to_viewable > 0 THEN time_to_viewable END) AS avg_ttv,
+			AVG(CASE WHEN event_type = 'dynamic_inject' THEN ads_in_viewport END) AS avg_ads_in_view
+		FROM {$te}
+		WHERE created_at >= %s
+			AND slot_type = 'dynamic'
+			AND event_type = 'dynamic_inject'
+		GROUP BY density_bracket
+		ORDER BY FIELD(density_bracket, '0%', '1-10%', '10-20%', '20-30%', '30%+')",
+		$cutoff
+	), ARRAY_A );
+
+	// 8. Last 20 injections (live feed).
+	// (renumbered: was section 6)
 	$recent = $wpdb->get_results( $wpdb->prepare(
 		"SELECT
 			created_at,
@@ -177,7 +217,8 @@ function pl_injection_lab_ajax() {
 			ad_spacing,
 			event_type,
 			time_to_viewable,
-			visitor_type
+			visitor_type,
+			near_image
 		FROM {$te}
 		WHERE created_at >= %s
 			AND slot_type = 'dynamic'
@@ -201,6 +242,7 @@ function pl_injection_lab_ajax() {
 				'direction'      => $row['scroll_direction'] ?: '-',
 				'speed'          => 0,
 				'spacing'        => 0,
+				'nearImage'      => false,
 				'filled'         => false,
 				'viewable'       => false,
 				'ttv'            => 0,
@@ -214,6 +256,7 @@ function pl_injection_lab_ajax() {
 			$g['spacing']   = (int) $row['ad_spacing'];
 			$g['type']      = $row['injection_type'] ?: '-';
 			$g['direction'] = $row['scroll_direction'] ?: '-';
+			$g['nearImage'] = ! empty( $row['near_image'] );
 			$g['visitor']   = $row['visitor_type'];
 		}
 		if ( $row['event_type'] === 'impression' ) {
@@ -226,10 +269,10 @@ function pl_injection_lab_ajax() {
 	}
 	$live_feed = array_values( array_slice( $grouped, 0, 20 ) );
 
-	// 7. Generate recommendations.
+	// 9. Generate recommendations.
 	$recommendations = pl_injection_lab_recommendations( $type_comparison, $speed_brackets, $spacing_ranges, $visitor_types, $direction_perf );
 
-	// 8. Overview totals.
+	// 10. Overview totals.
 	$totals = array(
 		'total_injections' => 0,
 		'pause_count'      => 0,
@@ -263,6 +306,8 @@ function pl_injection_lab_ajax() {
 		'speedBrackets'   => $speed_brackets,
 		'spacingRanges'   => $spacing_ranges,
 		'directionPerf'   => $direction_perf,
+		'imageProximity'  => $image_proximity,
+		'densityBrackets' => $density_brackets,
 		'visitorTypes'    => $visitor_types,
 		'liveFeed'        => $live_feed,
 		'recommendations' => $recommendations,
@@ -451,6 +496,24 @@ function pl_injection_lab_render() {
 			</table>
 		</div>
 
+		<!-- Image Proximity Performance -->
+		<div class="lab-section">
+			<h3>Image Proximity Performance</h3>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Near Image?</th><th class="num">Injections</th><th class="num">Filled</th><th class="num">Fill%</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Avg TTV</th><th class="num">Avg Spacing</th></tr></thead>
+				<tbody id="labImageTable"><tr><td colspan="8" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+		</div>
+
+		<!-- Viewport Density at Injection -->
+		<div class="lab-section">
+			<h3>Viewport Density at Injection</h3>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Density Bracket</th><th class="num">Injections</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Avg TTV</th><th class="num">Avg Ads in View</th></tr></thead>
+				<tbody id="labDensityTable"><tr><td colspan="6" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+		</div>
+
 		<!-- Visitor Type Table -->
 		<div class="lab-section">
 			<h3>Visitor Type Breakdown</h3>
@@ -464,8 +527,8 @@ function pl_injection_lab_render() {
 		<div class="lab-section">
 			<h3>Last 20 Injections (Live Feed)</h3>
 			<table class="widefat striped" style="font-size:12px;">
-				<thead><tr><th>Time</th><th>Session</th><th>Slot</th><th>Type</th><th>Dir</th><th>Visitor</th><th class="num">Speed</th><th class="num">Spacing</th><th>Filled</th><th>Viewable</th><th class="num">TTV</th></tr></thead>
-				<tbody id="labFeedTable"><tr><td colspan="11" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+				<thead><tr><th>Time</th><th>Session</th><th>Slot</th><th>Type</th><th>Dir</th><th>Img</th><th>Visitor</th><th class="num">Speed</th><th class="num">Spacing</th><th>Filled</th><th>Viewable</th><th class="num">TTV</th></tr></thead>
+				<tbody id="labFeedTable"><tr><td colspan="12" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
 			</table>
 		</div>
 
@@ -543,6 +606,8 @@ function pl_injection_lab_render() {
 					renderSpeedTable(d.speedBrackets);
 					renderSpacingTable(d.spacingRanges);
 					renderDirectionTable(d.directionPerf);
+					renderImageTable(d.imageProximity);
+					renderDensityTable(d.densityBrackets);
 					renderVisitorTable(d.visitorTypes);
 					renderFeed(d.liveFeed);
 					renderRecs(d.recommendations);
@@ -622,6 +687,30 @@ function pl_injection_lab_render() {
 			document.getElementById('labDirectionTable').innerHTML = html;
 		}
 
+		function renderImageTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labImageTable').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;">No data</td></tr>'; return; }
+			var html = '';
+			rows.forEach(function(r) {
+				var inj = parseInt(r.injections) || 0;
+				var filled = parseInt(r.filled) || 0;
+				var viewable = parseInt(r.viewable) || 0;
+				var label = parseInt(r.near_image) ? '<span class="badge-yes">&#128247; Near Image</span>' : 'Standard (paragraph)';
+				html += '<tr><td>' + label + '</td><td class="num">' + fmt(inj) + '</td><td class="num">' + fmt(filled) + '</td><td class="num">' + pct(filled, inj) + '%</td><td class="num">' + fmt(viewable) + '</td><td class="num">' + pct(viewable, inj) + '%</td><td class="num">' + fmtMs(r.avg_ttv) + '</td><td class="num">' + fmt(r.avg_spacing) + 'px</td></tr>';
+			});
+			document.getElementById('labImageTable').innerHTML = html;
+		}
+
+		function renderDensityTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labDensityTable').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">No data</td></tr>'; return; }
+			var html = '';
+			rows.forEach(function(r) {
+				var inj = parseInt(r.injections) || 0;
+				var vw = parseInt(r.viewable) || 0;
+				html += '<tr><td>' + (r.density_bracket || '-') + '</td><td class="num">' + fmt(inj) + '</td><td class="num">' + fmt(vw) + '</td><td class="num">' + pct(vw, inj) + '%</td><td class="num">' + fmtMs(r.avg_ttv) + '</td><td class="num">' + (r.avg_ads_in_view ? parseFloat(r.avg_ads_in_view).toFixed(1) : '-') + '</td></tr>';
+			});
+			document.getElementById('labDensityTable').innerHTML = html;
+		}
+
 		function renderVisitorTable(rows) {
 			if (!rows || !rows.length) { document.getElementById('labVisitorTable').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;">No data</td></tr>'; return; }
 			var html = '';
@@ -637,11 +726,12 @@ function pl_injection_lab_render() {
 		}
 
 		function renderFeed(rows) {
-			if (!rows || !rows.length) { document.getElementById('labFeedTable').innerHTML = '<tr><td colspan="11" style="text-align:center;color:#888;">No recent injections</td></tr>'; return; }
+			if (!rows || !rows.length) { document.getElementById('labFeedTable').innerHTML = '<tr><td colspan="12" style="text-align:center;color:#888;">No recent injections</td></tr>'; return; }
 			var html = '';
 			rows.forEach(function(r) {
 				var timeStr = r.time ? r.time.split(' ')[1] || r.time : '-';
-				html += '<tr><td style="white-space:nowrap">' + timeStr + '</td><td><code>' + (r.session || '-') + '</code></td><td><code>' + (r.slot || '-') + '</code></td><td>' + badgeType(r.type) + '</td><td>' + badgeDir(r.direction) + '</td><td>' + (r.visitor || '-') + '</td><td class="num">' + (r.speed || '-') + '</td><td class="num">' + (r.spacing || '-') + '</td><td>' + yn(r.filled) + '</td><td>' + yn(r.viewable) + '</td><td class="num">' + fmtMs(r.ttv) + '</td></tr>';
+				var imgBadge = r.nearImage ? '<span class="badge-yes" title="Near image">&#128247;</span>' : '-';
+				html += '<tr><td style="white-space:nowrap">' + timeStr + '</td><td><code>' + (r.session || '-') + '</code></td><td><code>' + (r.slot || '-') + '</code></td><td>' + badgeType(r.type) + '</td><td>' + badgeDir(r.direction) + '</td><td>' + imgBadge + '</td><td>' + (r.visitor || '-') + '</td><td class="num">' + (r.speed || '-') + '</td><td class="num">' + (r.spacing || '-') + '</td><td>' + yn(r.filled) + '</td><td>' + yn(r.viewable) + '</td><td class="num">' + fmtMs(r.ttv) + '</td></tr>';
 			});
 			document.getElementById('labFeedTable').innerHTML = html;
 		}

@@ -180,6 +180,9 @@ function trackAdEvent(eventType, slotId, extra) {
 	if (extra.adSpacing !== undefined)      evt.sp  = Math.round(extra.adSpacing);
 	if (extra.timeToViewable !== undefined) evt.ttv = Math.round(extra.timeToViewable);
 	if (extra.scrollDirection)             evt.sd  = extra.scrollDirection;
+	if (extra.nearImage)                   evt.ni  = 1;
+	if (extra.adsInViewport !== undefined) evt.aiv = extra.adsInViewport;
+	if (extra.adDensityPercent !== undefined) evt.adp = extra.adDensityPercent;
 	_eventBatch.push(evt);
 }
 

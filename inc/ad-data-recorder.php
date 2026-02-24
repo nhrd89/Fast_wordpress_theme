@@ -427,7 +427,7 @@ function pinlightning_summarize_ad_data($sessions) {
  */
 function pl_ad_ensure_tables() {
     $installed_ver = get_option( 'pl_ad_tables_ver', '0' );
-    if ( '3' === $installed_ver ) {
+    if ( '4' === $installed_ver ) {
         return;
     }
 
@@ -457,6 +457,9 @@ function pl_ad_ensure_tables() {
         ad_spacing int(10) unsigned NOT NULL DEFAULT 0,
         time_to_viewable int(10) unsigned NOT NULL DEFAULT 0,
         scroll_direction varchar(4) NOT NULL DEFAULT '',
+        near_image tinyint(1) unsigned NOT NULL DEFAULT 0,
+        ads_in_viewport tinyint(3) unsigned NOT NULL DEFAULT 0,
+        ad_density_percent tinyint(3) unsigned NOT NULL DEFAULT 0,
         created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY  (id),
         KEY idx_created (created_at),
@@ -510,7 +513,19 @@ function pl_ad_ensure_tables() {
         }
     }
 
-    update_option( 'pl_ad_tables_ver', '3' );
+    // v3→v4 migration: add near_image, ads_in_viewport, ad_density_percent columns.
+    if ( in_array( $installed_ver, array( '1', '2', '3' ), true ) ) {
+        $te = $wpdb->prefix . 'pl_ad_events';
+        $cols = $wpdb->get_col( "SHOW COLUMNS FROM {$te}", 0 );
+        if ( ! in_array( 'near_image', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$te}
+                ADD COLUMN near_image tinyint(1) unsigned NOT NULL DEFAULT 0 AFTER scroll_direction,
+                ADD COLUMN ads_in_viewport tinyint(3) unsigned NOT NULL DEFAULT 0 AFTER near_image,
+                ADD COLUMN ad_density_percent tinyint(3) unsigned NOT NULL DEFAULT 0 AFTER ads_in_viewport" );
+        }
+    }
+
+    update_option( 'pl_ad_tables_ver', '4' );
 }
 add_action( 'admin_init', 'pl_ad_ensure_tables' );
 
@@ -575,6 +590,10 @@ function pl_ad_handle_event_batch() {
         $timeToViewable   = absint( $evt['ttv'] ?? 0 );
         // Direction tracking (v3).
         $scrollDirection  = sanitize_text_field( substr( $evt['sd'] ?? '', 0, 4 ) );
+        // Image proximity + density tracking (v4).
+        $nearImage        = ! empty( $evt['ni'] ) ? 1 : 0;
+        $adsInViewport    = min( 255, absint( $evt['aiv'] ?? 0 ) );
+        $adDensityPercent = min( 100, absint( $evt['adp'] ?? 0 ) );
 
         // Insert event row.
         $wpdb->insert( $table_events, array(
@@ -597,6 +616,9 @@ function pl_ad_handle_event_batch() {
             'ad_spacing'         => $adSpacing,
             'time_to_viewable'   => $timeToViewable,
             'scroll_direction'   => $scrollDirection,
+            'near_image'         => $nearImage,
+            'ads_in_viewport'    => $adsInViewport,
+            'ad_density_percent' => $adDensityPercent,
             'created_at'         => current_time( 'mysql' ),
         ) );
 

@@ -322,9 +322,11 @@ function pl_opt_layer2_defaults() {
 		'pauseThreshold'       => 300,
 		'predictiveWindow'     => 1.0,
 		'viewportRefreshDelay' => 5000,
-		'readerSpacing'        => 400,
-		'scannerSpacing'       => 500,
-		'fastScannerSpacing'   => 600,
+		'minPixelSpacing'      => 200,
+		'maxPixelSpacing'      => 1000,
+		'desktopMaxInView'     => 2,
+		'mobileMaxInView'      => 1,
+		'maxAdDensityPercent'  => 30,
 		'readerSpeed'          => 100,
 		'fastScannerSpeed'     => 400,
 	);
@@ -477,9 +479,11 @@ function pl_opt_ajax_save() {
 			'pauseThreshold'       => max( 100, min( 3000, (int) ( $l['pauseThreshold'] ?? $d['pauseThreshold'] ) ) ),
 			'predictiveWindow'     => max( 0.1, min( 5.0, round( (float) ( $l['predictiveWindow'] ?? $d['predictiveWindow'] ), 1 ) ) ),
 			'viewportRefreshDelay' => max( 1000, min( 30000, (int) ( $l['viewportRefreshDelay'] ?? $d['viewportRefreshDelay'] ) ) ),
-			'readerSpacing'        => max( 100, min( 2000, (int) ( $l['readerSpacing'] ?? $d['readerSpacing'] ) ) ),
-			'scannerSpacing'       => max( 100, min( 2000, (int) ( $l['scannerSpacing'] ?? $d['scannerSpacing'] ) ) ),
-			'fastScannerSpacing'   => max( 100, min( 2000, (int) ( $l['fastScannerSpacing'] ?? $d['fastScannerSpacing'] ) ) ),
+			'minPixelSpacing'      => max( 50, min( 1000, (int) ( $l['minPixelSpacing'] ?? $d['minPixelSpacing'] ) ) ),
+			'maxPixelSpacing'      => max( 200, min( 3000, (int) ( $l['maxPixelSpacing'] ?? $d['maxPixelSpacing'] ) ) ),
+			'desktopMaxInView'     => max( 1, min( 5, (int) ( $l['desktopMaxInView'] ?? $d['desktopMaxInView'] ) ) ),
+			'mobileMaxInView'      => max( 1, min( 3, (int) ( $l['mobileMaxInView'] ?? $d['mobileMaxInView'] ) ) ),
+			'maxAdDensityPercent'  => max( 10, min( 60, (int) ( $l['maxAdDensityPercent'] ?? $d['maxAdDensityPercent'] ) ) ),
 			'readerSpeed'          => max( 10, min( 500, (int) ( $l['readerSpeed'] ?? $d['readerSpeed'] ) ) ),
 			'fastScannerSpeed'     => max( 100, min( 2000, (int) ( $l['fastScannerSpeed'] ?? $d['fastScannerSpeed'] ) ) ),
 		) );
@@ -656,11 +660,11 @@ function pl_ad_render_optimizer() {
 						<th>Ad Density Level</th>
 						<td>
 							<select id="opt_density">
-								<option value="light" <?php selected( $l2['density'], 'light' ); ?>>Light (600-800px spacing, max 10)</option>
-								<option value="normal" <?php selected( $l2['density'], 'normal' ); ?>>Normal (400-600px spacing, max 20)</option>
-								<option value="aggressive" <?php selected( $l2['density'], 'aggressive' ); ?>>Aggressive (300-500px spacing, max 20)</option>
+								<option value="light" <?php selected( $l2['density'], 'light' ); ?>>Light (wider spacing, max 1 in view, max 10 slots)</option>
+								<option value="normal" <?php selected( $l2['density'], 'normal' ); ?>>Normal (balanced spacing, max 2 desktop / 1 mobile, max 20)</option>
+								<option value="aggressive" <?php selected( $l2['density'], 'aggressive' ); ?>>Aggressive (tighter spacing, max 3 desktop / 2 mobile, max 20)</option>
 							</select>
-							<p class="description">Presets for per-visitor-type spacing and max dynamic slots.</p>
+							<p class="description">Presets for spacing bounds, density limits, and max dynamic slots.</p>
 						</td>
 					</tr>
 				</table>
@@ -746,19 +750,27 @@ function pl_ad_render_optimizer() {
 		<details class="pl-opt-card">
 			<summary>4. Layer 2 Tuning (Predictive Engine)</summary>
 			<div class="pl-opt-body">
-				<p class="description" style="margin-bottom:12px;">Predictive injection uses real-time velocity tracking to inject ads at pause points and predicted scroll stops. Spacing is dynamic per visitor type.</p>
+				<p class="description" style="margin-bottom:12px;">Predictive injection uses real-time velocity tracking to inject ads at pause points and predicted scroll stops. Spacing is speed-based: <code>speed &times; timeBetween</code>, clamped between min/max.</p>
 				<table class="form-table">
 					<tr><th>Max active dynamic slots</th><td><input type="number" id="opt_l2_maxSlots" value="<?php echo (int) $l2['maxSlots']; ?>" min="1" max="30" class="small-text"> <p class="description">Slots are recycled when 1000px+ above viewport</p></td></tr>
 					<tr><th>Pause detection threshold</th><td><input type="number" id="opt_l2_pauseThreshold" value="<?php echo (int) $l2['pauseThreshold']; ?>" min="100" max="3000" class="small-text"> ms <p class="description">Time scrolling must stop before injecting an ad</p></td></tr>
 					<tr><th>Predictive window</th><td><input type="number" id="opt_l2_predictiveWindow" value="<?php echo esc_attr( $l2['predictiveWindow'] ); ?>" min="0.1" max="5.0" step="0.1" class="small-text"> s <p class="description">How far ahead to predict scroll stop position</p></td></tr>
 					<tr><th>Viewport refresh delay</th><td><input type="number" id="opt_l2_viewportRefreshDelay" value="<?php echo (int) $l2['viewportRefreshDelay']; ?>" min="1000" max="30000" step="1000" class="small-text"> ms <p class="description">Pause duration before refreshing in-view ads</p></td></tr>
 					<tr>
-						<th>Spacing per visitor type</th>
+						<th>Spacing bounds (speed-based)</th>
 						<td>
-							<label>Reader: <input type="number" id="opt_l2_readerSpacing" value="<?php echo (int) $l2['readerSpacing']; ?>" min="100" max="2000" class="small-text"> px</label><br>
-							<label>Scanner: <input type="number" id="opt_l2_scannerSpacing" value="<?php echo (int) $l2['scannerSpacing']; ?>" min="100" max="2000" class="small-text"> px</label><br>
-							<label>Fast-scanner: <input type="number" id="opt_l2_fastScannerSpacing" value="<?php echo (int) $l2['fastScannerSpacing']; ?>" min="100" max="2000" class="small-text"> px</label>
-							<p class="description">Minimum distance between ads, per visitor type (readers get tighter spacing for higher viewability)</p>
+							<label>Min spacing: <input type="number" id="opt_l2_minPixelSpacing" value="<?php echo (int) $l2['minPixelSpacing']; ?>" min="50" max="1000" class="small-text"> px</label><br>
+							<label>Max spacing: <input type="number" id="opt_l2_maxPixelSpacing" value="<?php echo (int) $l2['maxPixelSpacing']; ?>" min="200" max="3000" class="small-text"> px</label>
+							<p class="description">Spacing = scroll speed &times; time-between (reader 2.5s, scanner 3.0s, fast 3.5s), clamped to these bounds</p>
+						</td>
+					</tr>
+					<tr>
+						<th>Viewport density limits</th>
+						<td>
+							<label>Desktop max ads in view: <input type="number" id="opt_l2_desktopMaxInView" value="<?php echo (int) $l2['desktopMaxInView']; ?>" min="1" max="5" class="small-text"></label><br>
+							<label>Mobile max ads in view: <input type="number" id="opt_l2_mobileMaxInView" value="<?php echo (int) $l2['mobileMaxInView']; ?>" min="1" max="3" class="small-text"></label><br>
+							<label>Max ad density: <input type="number" id="opt_l2_maxAdDensityPercent" value="<?php echo (int) $l2['maxAdDensityPercent']; ?>" min="10" max="60" class="small-text">% of viewport</label>
+							<p class="description">Skip injection when viewport is already at capacity</p>
 						</td>
 					</tr>
 					<tr>
@@ -961,9 +973,11 @@ function pl_ad_render_optimizer() {
 				pauseThreshold:       parseInt(document.getElementById('opt_l2_pauseThreshold').value, 10),
 				predictiveWindow:     parseFloat(document.getElementById('opt_l2_predictiveWindow').value),
 				viewportRefreshDelay: parseInt(document.getElementById('opt_l2_viewportRefreshDelay').value, 10),
-				readerSpacing:        parseInt(document.getElementById('opt_l2_readerSpacing').value, 10),
-				scannerSpacing:       parseInt(document.getElementById('opt_l2_scannerSpacing').value, 10),
-				fastScannerSpacing:   parseInt(document.getElementById('opt_l2_fastScannerSpacing').value, 10),
+				minPixelSpacing:      parseInt(document.getElementById('opt_l2_minPixelSpacing').value, 10),
+				maxPixelSpacing:      parseInt(document.getElementById('opt_l2_maxPixelSpacing').value, 10),
+				desktopMaxInView:     parseInt(document.getElementById('opt_l2_desktopMaxInView').value, 10),
+				mobileMaxInView:      parseInt(document.getElementById('opt_l2_mobileMaxInView').value, 10),
+				maxAdDensityPercent:  parseInt(document.getElementById('opt_l2_maxAdDensityPercent').value, 10),
 				readerSpeed:          parseInt(document.getElementById('opt_l2_readerSpeed').value, 10),
 				fastScannerSpeed:     parseInt(document.getElementById('opt_l2_fastScannerSpeed').value, 10),
 			};
@@ -1015,16 +1029,18 @@ function pl_ad_render_optimizer() {
 		// Density preset auto-fill
 		document.getElementById('opt_density').addEventListener('change', function() {
 			var presets = {
-				light:      { readerSpacing: 600, scannerSpacing: 700, fastScannerSpacing: 800, maxSlots: 10 },
-				normal:     { readerSpacing: 400, scannerSpacing: 500, fastScannerSpacing: 600, maxSlots: 20 },
-				aggressive: { readerSpacing: 300, scannerSpacing: 400, fastScannerSpacing: 500, maxSlots: 20 },
+				light:      { minPixelSpacing: 300, maxPixelSpacing: 1200, desktopMaxInView: 1, mobileMaxInView: 1, maxAdDensityPercent: 20, maxSlots: 10 },
+				normal:     { minPixelSpacing: 200, maxPixelSpacing: 1000, desktopMaxInView: 2, mobileMaxInView: 1, maxAdDensityPercent: 30, maxSlots: 20 },
+				aggressive: { minPixelSpacing: 150, maxPixelSpacing: 800,  desktopMaxInView: 3, mobileMaxInView: 2, maxAdDensityPercent: 40, maxSlots: 20 },
 			};
 			var p = presets[this.value];
 			if (p) {
-				document.getElementById('opt_l2_readerSpacing').value       = p.readerSpacing;
-				document.getElementById('opt_l2_scannerSpacing').value      = p.scannerSpacing;
-				document.getElementById('opt_l2_fastScannerSpacing').value  = p.fastScannerSpacing;
-				document.getElementById('opt_l2_maxSlots').value            = p.maxSlots;
+				document.getElementById('opt_l2_minPixelSpacing').value      = p.minPixelSpacing;
+				document.getElementById('opt_l2_maxPixelSpacing').value      = p.maxPixelSpacing;
+				document.getElementById('opt_l2_desktopMaxInView').value     = p.desktopMaxInView;
+				document.getElementById('opt_l2_mobileMaxInView').value      = p.mobileMaxInView;
+				document.getElementById('opt_l2_maxAdDensityPercent').value  = p.maxAdDensityPercent;
+				document.getElementById('opt_l2_maxSlots').value             = p.maxSlots;
 			}
 		});
 
