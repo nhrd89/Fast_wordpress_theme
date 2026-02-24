@@ -42,7 +42,7 @@ var ENGINE_LOOP_MS     = 100;    // predictive engine loop
 var RECYCLE_DISTANCE   = 1000;   // px above viewport to recycle
 
 // Speed-based spacing: spacing = speed × timeBetween, clamped [MIN, MAX]
-var MIN_PIXEL_SPACING    = L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 200;
+var MIN_PIXEL_SPACING    = L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 400;
 var MAX_PIXEL_SPACING    = L2.maxPixelSpacing ? parseInt(L2.maxPixelSpacing, 10) : 1000;
 var READER_TIME          = 2.5;   // seconds between ads for readers
 var SCANNER_TIME         = 3.0;   // seconds between ads for scanners
