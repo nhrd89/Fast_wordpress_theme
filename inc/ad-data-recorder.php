@@ -427,7 +427,7 @@ function pinlightning_summarize_ad_data($sessions) {
  */
 function pl_ad_ensure_tables() {
     $installed_ver = get_option( 'pl_ad_tables_ver', '0' );
-    if ( '2' === $installed_ver ) {
+    if ( '3' === $installed_ver ) {
         return;
     }
 
@@ -456,6 +456,7 @@ function pl_ad_ensure_tables() {
         predicted_distance int(11) NOT NULL DEFAULT 0,
         ad_spacing int(10) unsigned NOT NULL DEFAULT 0,
         time_to_viewable int(10) unsigned NOT NULL DEFAULT 0,
+        scroll_direction varchar(4) NOT NULL DEFAULT '',
         created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY  (id),
         KEY idx_created (created_at),
@@ -499,7 +500,17 @@ function pl_ad_ensure_tables() {
         }
     }
 
-    update_option( 'pl_ad_tables_ver', '2' );
+    // v2→v3 migration: add scroll_direction column.
+    if ( $installed_ver === '1' || $installed_ver === '2' ) {
+        $te = $wpdb->prefix . 'pl_ad_events';
+        $cols = $wpdb->get_col( "SHOW COLUMNS FROM {$te}", 0 );
+        if ( ! in_array( 'scroll_direction', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$te}
+                ADD COLUMN scroll_direction varchar(4) NOT NULL DEFAULT '' AFTER time_to_viewable" );
+        }
+    }
+
+    update_option( 'pl_ad_tables_ver', '3' );
 }
 add_action( 'admin_init', 'pl_ad_ensure_tables' );
 
@@ -562,6 +573,8 @@ function pl_ad_handle_event_batch() {
         $predictedDist    = intval( $evt['pd'] ?? 0 );
         $adSpacing        = absint( $evt['sp'] ?? 0 );
         $timeToViewable   = absint( $evt['ttv'] ?? 0 );
+        // Direction tracking (v3).
+        $scrollDirection  = sanitize_text_field( substr( $evt['sd'] ?? '', 0, 4 ) );
 
         // Insert event row.
         $wpdb->insert( $table_events, array(
@@ -583,6 +596,7 @@ function pl_ad_handle_event_batch() {
             'predicted_distance' => $predictedDist,
             'ad_spacing'         => $adSpacing,
             'time_to_viewable'   => $timeToViewable,
+            'scroll_direction'   => $scrollDirection,
             'created_at'         => current_time( 'mysql' ),
         ) );
 

@@ -84,9 +84,10 @@ var _visitorType    = 'unknown';  // reader | scanner | fast-scanner
 var _scrollSpeed    = 0;          // dashboard compat alias
 
 // Scroll depth & direction
-var _maxScrollDepth  = 0;
-var _dirChanges      = 0;
-var _lastScrollDir   = 0;    // 1=down, -1=up, 0=initial
+var _maxScrollDepth   = 0;
+var _dirChanges       = 0;
+var _lastScrollDir    = 0;    // 1=down, -1=up, 0=initial
+var _scrollDirection  = 'down'; // current scroll direction: 'down' | 'up'
 
 // Tab visibility tracking
 var _hiddenTime      = 0;
@@ -132,6 +133,12 @@ function getSpacing() {
 	if (_visitorType === 'reader') return READER_SPACING;
 	if (_visitorType === 'fast-scanner') return FAST_SCANNER_SPACING;
 	return SCANNER_SPACING;
+}
+
+/** Get directional spacing — 20% tighter on scroll-up (users re-read = higher intent). */
+function getDirectionalSpacing() {
+	var base = getSpacing();
+	return _scrollDirection === 'up' ? Math.round(base * 0.8) : base;
 }
 
 /** Get distance to nearest existing ad from a Y position. */
@@ -195,10 +202,13 @@ function sampleVelocity() {
 		_speed = Math.abs(_velocity);
 		_scrollSpeed = Math.round(_speed);
 
-		// Track direction changes
+		// Track direction changes + current direction
 		var dir = y > _lastSampleY ? 1 : (y < _lastSampleY ? -1 : 0);
 		if (dir !== 0 && dir !== _lastScrollDir && _lastScrollDir !== 0) _dirChanges++;
-		if (dir !== 0) _lastScrollDir = dir;
+		if (dir !== 0) {
+			_lastScrollDir = dir;
+			_scrollDirection = dir > 0 ? 'down' : 'up';
+		}
 
 		// Peak speed tracking (decays after 500ms)
 		if (_speed > _peakSpeed || (now - _peakDecayT) > 500) {
@@ -249,7 +259,7 @@ function sampleVelocity() {
  * ================================================================ */
 
 function checkSpacing(targetY) {
-	var spacing = getSpacing();
+	var spacing = getDirectionalSpacing();
 	var scrollY = window.pageYOffset || 0;
 
 	// Check Layer 1 initial ads
@@ -348,12 +358,21 @@ function findPauseTarget() {
 
 /**
  * SCROLL TARGET: Find injection point at predicted scroll stop.
- * Uses current velocity + deceleration to estimate where user will stop.
+ * Works bidirectionally — uses signed velocity to predict where user will stop
+ * whether scrolling down (velocity > 0) or up (velocity < 0).
  */
 function findScrollTarget() {
 	var scrollY = window.pageYOffset || 0;
-	// Predict: current bottom + velocity * window * 0.5 (deceleration halves distance)
-	var predictedStop = scrollY + window.innerHeight + (_velocity * PREDICTIVE_WINDOW * 0.5);
+	// Predict: signed velocity * window * 0.5 (deceleration halves distance)
+	// Down: target is below viewport bottom; Up: target is above viewport top
+	var predictedStop;
+	if (_velocity > 0) {
+		// Scrolling down — predict below current viewport bottom
+		predictedStop = scrollY + window.innerHeight + (_velocity * PREDICTIVE_WINDOW * 0.5);
+	} else {
+		// Scrolling up — predict above current viewport top
+		predictedStop = scrollY + (_velocity * PREDICTIVE_WINDOW * 0.5);
+	}
 	return findTargetNear(predictedStop, window.innerHeight);
 }
 
@@ -413,6 +432,7 @@ function injectDynamicAd(afterElement, injectionType) {
 		injectedY:         scrollY,
 		injectionType:     injectionType || 'unknown',
 		injectionSpeed:    _scrollSpeed,
+		scrollDirection:   _scrollDirection,
 		adSpacing:         Math.round(adSpacing),
 		predictedDistance: predDist,
 		viewable:          false,
@@ -443,12 +463,13 @@ function injectDynamicAd(afterElement, injectionType) {
 		}
 	});
 
-	log('Injected:', divId, 'type:', injectionType, 'speed:', _scrollSpeed, 'spacing:', Math.round(adSpacing), 'visitor:', _visitorType);
+	log('Injected:', divId, 'type:', injectionType, 'dir:', _scrollDirection, 'speed:', _scrollSpeed, 'spacing:', Math.round(adSpacing), 'visitor:', _visitorType);
 	pushEvent('dynamic_ad_injected', {
 		divId:             divId,
 		speed:             _scrollSpeed,
 		visitorType:       _visitorType,
 		injectionType:     injectionType,
+		scrollDirection:   _scrollDirection,
 		slotCount:         _dynamicSlots.length,
 		adSpacing:         Math.round(adSpacing),
 		predictedDistance: predDist
@@ -457,6 +478,7 @@ function injectDynamicAd(afterElement, injectionType) {
 		window.__plAdTracker.track('dynamic_inject', divId, {
 			slotType:          'dynamic',
 			injectionType:     injectionType,
+			scrollDirection:   _scrollDirection,
 			scrollSpeed:       _scrollSpeed,
 			predictedDistance: predDist,
 			adSpacing:         Math.round(adSpacing)
@@ -563,9 +585,10 @@ function checkViewportRefresh() {
 		});
 		if (window.__plAdTracker) {
 			window.__plAdTracker.track('refresh', rec.divId, {
-				slotType:      'dynamic',
-				injectionType: 'viewport_refresh',
-				scrollSpeed:   _scrollSpeed
+				slotType:        'dynamic',
+				injectionType:   'viewport_refresh',
+				scrollDirection: _scrollDirection,
+				scrollSpeed:     _scrollSpeed
 			});
 		}
 	}
@@ -604,8 +627,8 @@ function engineLoop() {
 		}
 	}
 
-	// Strategy 2: PREDICTIVE — user is decelerating while scrolling down
-	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating && _velocity > 0) {
+	// Strategy 2: PREDICTIVE — user is decelerating (either direction)
+	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating) {
 		var scrollTarget = findScrollTarget();
 		if (scrollTarget) {
 			recycleSlots();
@@ -677,12 +700,14 @@ function onDynamicImpressionViewable(event) {
 				divId:           divId,
 				timeToViewable:  ttv,
 				injectionType:   rec.injectionType,
-				injectionSpeed:  rec.injectionSpeed
+				injectionSpeed:  rec.injectionSpeed,
+				scrollDirection: rec.scrollDirection
 			});
 			if (window.__plAdTracker) {
 				window.__plAdTracker.track('viewable', divId, {
 					slotType:        'dynamic',
 					injectionType:   rec.injectionType,
+					scrollDirection: rec.scrollDirection,
 					scrollSpeed:     rec.injectionSpeed,
 					timeToViewable:  ttv
 				});
@@ -717,18 +742,19 @@ function updateDashboard() {
 
 	window.__plAdDashboard = window.__plAdDashboard || {};
 	window.__plAdDashboard.layer2 = {
-		activeSlots:    activeSlots,
-		viewableSlots:  viewableSlots,
-		filledSlots:    filledSlots,
-		totalRefreshes: totalRefreshes,
-		totalInjected:  _dynamicSlots.length,
-		scrollSpeed:    _scrollSpeed,
-		visitorType:    _visitorType,
-		timeOnPage:     Math.round(_timeOnPage),
-		isPaused:       _isPaused,
-		isDecelerating: _isDecelerating,
-		spacing:        getSpacing(),
-		byStrategy:     byStrategy
+		activeSlots:     activeSlots,
+		viewableSlots:   viewableSlots,
+		filledSlots:     filledSlots,
+		totalRefreshes:  totalRefreshes,
+		totalInjected:   _dynamicSlots.length,
+		scrollSpeed:     _scrollSpeed,
+		scrollDirection: _scrollDirection,
+		visitorType:     _visitorType,
+		timeOnPage:      Math.round(_timeOnPage),
+		isPaused:        _isPaused,
+		isDecelerating:  _isDecelerating,
+		spacing:         getDirectionalSpacing(),
+		byStrategy:      byStrategy
 	};
 }
 
@@ -850,6 +876,7 @@ function sendBeacon() {
 			renderedSize:      s.renderedSize,
 			injectionType:     s.injectionType,
 			injectionSpeed:    s.injectionSpeed,
+			scrollDirection:   s.scrollDirection || 'down',
 			adSpacing:         s.adSpacing || 0,
 			predictedDistance: s.predictedDistance || 0
 		});
@@ -1034,6 +1061,7 @@ function sendHeartbeat() {
 			refreshCount:      ds.refreshCount,
 			injectionType:     ds.injectionType,
 			injectionSpeed:    ds.injectionSpeed,
+			scrollDirection:   ds.scrollDirection || 'down',
 			adSpacing:         ds.adSpacing || 0
 		});
 	}

@@ -179,6 +179,7 @@ function trackAdEvent(eventType, slotId, extra) {
 	if (extra.predictedDistance !== undefined) evt.pd = Math.round(extra.predictedDistance);
 	if (extra.adSpacing !== undefined)      evt.sp  = Math.round(extra.adSpacing);
 	if (extra.timeToViewable !== undefined) evt.ttv = Math.round(extra.timeToViewable);
+	if (extra.scrollDirection)             evt.sd  = extra.scrollDirection;
 	_eventBatch.push(evt);
 }
 

@@ -147,7 +147,25 @@ function pl_injection_lab_ajax() {
 		$cutoff
 	), ARRAY_A );
 
-	// 5. Last 20 injections (live feed).
+	// 5. Scroll direction performance.
+	$direction_perf = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			scroll_direction,
+			COUNT(CASE WHEN event_type = 'dynamic_inject' THEN 1 END) AS injections,
+			COUNT(CASE WHEN event_type = 'impression' THEN 1 END) AS filled,
+			COUNT(CASE WHEN event_type = 'viewable' THEN 1 END) AS viewable,
+			AVG(CASE WHEN event_type = 'dynamic_inject' THEN scroll_speed END) AS avg_speed,
+			AVG(CASE WHEN event_type = 'dynamic_inject' THEN ad_spacing END) AS avg_spacing,
+			AVG(CASE WHEN event_type = 'viewable' AND time_to_viewable > 0 THEN time_to_viewable END) AS avg_ttv
+		FROM {$te}
+		WHERE created_at >= %s
+			AND slot_type = 'dynamic'
+			AND scroll_direction != ''
+		GROUP BY scroll_direction",
+		$cutoff
+	), ARRAY_A );
+
+	// 6. Last 20 injections (live feed).
 	$recent = $wpdb->get_results( $wpdb->prepare(
 		"SELECT
 			created_at,
@@ -155,6 +173,7 @@ function pl_injection_lab_ajax() {
 			slot_id,
 			injection_type,
 			scroll_speed,
+			scroll_direction,
 			ad_spacing,
 			event_type,
 			time_to_viewable,
@@ -179,6 +198,7 @@ function pl_injection_lab_ajax() {
 				'session'        => substr( $row['session_id'], 0, 8 ),
 				'slot'           => $row['slot_id'],
 				'type'           => $row['injection_type'] ?: '-',
+				'direction'      => $row['scroll_direction'] ?: '-',
 				'speed'          => 0,
 				'spacing'        => 0,
 				'filled'         => false,
@@ -189,11 +209,12 @@ function pl_injection_lab_ajax() {
 		}
 		$g = &$grouped[ $key ];
 		if ( $row['event_type'] === 'dynamic_inject' ) {
-			$g['time']    = $row['created_at'];
-			$g['speed']   = (int) $row['scroll_speed'];
-			$g['spacing'] = (int) $row['ad_spacing'];
-			$g['type']    = $row['injection_type'] ?: '-';
-			$g['visitor'] = $row['visitor_type'];
+			$g['time']      = $row['created_at'];
+			$g['speed']     = (int) $row['scroll_speed'];
+			$g['spacing']   = (int) $row['ad_spacing'];
+			$g['type']      = $row['injection_type'] ?: '-';
+			$g['direction'] = $row['scroll_direction'] ?: '-';
+			$g['visitor']   = $row['visitor_type'];
 		}
 		if ( $row['event_type'] === 'impression' ) {
 			$g['filled'] = true;
@@ -205,10 +226,10 @@ function pl_injection_lab_ajax() {
 	}
 	$live_feed = array_values( array_slice( $grouped, 0, 20 ) );
 
-	// 6. Generate recommendations.
-	$recommendations = pl_injection_lab_recommendations( $type_comparison, $speed_brackets, $spacing_ranges, $visitor_types );
+	// 7. Generate recommendations.
+	$recommendations = pl_injection_lab_recommendations( $type_comparison, $speed_brackets, $spacing_ranges, $visitor_types, $direction_perf );
 
-	// 7. Overview totals.
+	// 8. Overview totals.
 	$totals = array(
 		'total_injections' => 0,
 		'pause_count'      => 0,
@@ -241,6 +262,7 @@ function pl_injection_lab_ajax() {
 		'typeComparison'  => $type_comparison,
 		'speedBrackets'   => $speed_brackets,
 		'spacingRanges'   => $spacing_ranges,
+		'directionPerf'   => $direction_perf,
 		'visitorTypes'    => $visitor_types,
 		'liveFeed'        => $live_feed,
 		'recommendations' => $recommendations,
@@ -253,7 +275,7 @@ add_action( 'wp_ajax_pl_injection_lab', 'pl_injection_lab_ajax' );
  * AUTO-GENERATED RECOMMENDATIONS
  * ================================================================ */
 
-function pl_injection_lab_recommendations( $type_cmp, $speed, $spacing, $visitors ) {
+function pl_injection_lab_recommendations( $type_cmp, $speed, $spacing, $visitors, $direction = array() ) {
 	$recs = array();
 
 	// Compare pause vs predictive viewability.
@@ -318,6 +340,33 @@ function pl_injection_lab_recommendations( $type_cmp, $speed, $spacing, $visitor
 		if ( $rate > 30 && $pc > 0 ) {
 			$recs[] = "Fast-scanners generate {$rate}% viewable impressions (pause={$pc}, predictive=" . (int) $row['predictive_count'] . ") — worth targeting.";
 		}
+	}
+
+	// Direction-based insights.
+	$dir_down_view = 0;
+	$dir_down_inj  = 0;
+	$dir_up_view   = 0;
+	$dir_up_inj    = 0;
+	foreach ( $direction as $row ) {
+		if ( $row['scroll_direction'] === 'down' ) {
+			$dir_down_inj  = (int) $row['injections'];
+			$dir_down_view = $dir_down_inj > 0 ? round( (int) $row['viewable'] / $dir_down_inj * 100 ) : 0;
+		}
+		if ( $row['scroll_direction'] === 'up' ) {
+			$dir_up_inj  = (int) $row['injections'];
+			$dir_up_view = $dir_up_inj > 0 ? round( (int) $row['viewable'] / $dir_up_inj * 100 ) : 0;
+		}
+	}
+	if ( $dir_up_inj >= 5 && $dir_down_inj >= 5 ) {
+		$diff = $dir_up_view - $dir_down_view;
+		if ( $diff > 5 ) {
+			$recs[] = "Scroll-up injections have {$dir_up_view}% viewability vs {$dir_down_view}% for scroll-down ({$diff}pp higher) — scroll-up users show higher intent.";
+		} elseif ( $diff < -10 ) {
+			$recs[] = "Scroll-down injections outperform scroll-up: {$dir_down_view}% vs {$dir_up_view}% viewability — consider widening scroll-up spacing.";
+		}
+	}
+	if ( $dir_up_inj > 0 && $dir_up_inj < $dir_down_inj * 0.05 ) {
+		$recs[] = "Only " . $dir_up_inj . " scroll-up injections detected (" . round( $dir_up_inj / max( 1, $dir_down_inj ) * 100, 1 ) . "% of total) — scroll-up injection is working but rare.";
 	}
 
 	if ( empty( $recs ) ) {
@@ -393,6 +442,15 @@ function pl_injection_lab_render() {
 			</table>
 		</div>
 
+		<!-- Direction Performance Table -->
+		<div class="lab-section">
+			<h3>Scroll Direction Performance</h3>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Direction</th><th class="num">Injections</th><th class="num">Filled</th><th class="num">Fill%</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Avg Speed</th><th class="num">Avg Spacing</th><th class="num">Avg TTV</th></tr></thead>
+				<tbody id="labDirectionTable"><tr><td colspan="9" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+		</div>
+
 		<!-- Visitor Type Table -->
 		<div class="lab-section">
 			<h3>Visitor Type Breakdown</h3>
@@ -406,8 +464,8 @@ function pl_injection_lab_render() {
 		<div class="lab-section">
 			<h3>Last 20 Injections (Live Feed)</h3>
 			<table class="widefat striped" style="font-size:12px;">
-				<thead><tr><th>Time</th><th>Session</th><th>Slot</th><th>Type</th><th>Visitor</th><th class="num">Speed</th><th class="num">Spacing</th><th>Filled</th><th>Viewable</th><th class="num">TTV</th></tr></thead>
-				<tbody id="labFeedTable"><tr><td colspan="10" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+				<thead><tr><th>Time</th><th>Session</th><th>Slot</th><th>Type</th><th>Dir</th><th>Visitor</th><th class="num">Speed</th><th class="num">Spacing</th><th>Filled</th><th>Viewable</th><th class="num">TTV</th></tr></thead>
+				<tbody id="labFeedTable"><tr><td colspan="11" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
 			</table>
 		</div>
 
@@ -433,6 +491,8 @@ function pl_injection_lab_render() {
 	.badge-refresh { background: #fff3cd; color: #856404; }
 	.badge-yes { color: #00a32a; }
 	.badge-no { color: #d63638; }
+	.badge-down { background: #e8f5e9; color: #2e7d32; }
+	.badge-up { background: #fce4ec; color: #c62828; }
 	</style>
 
 	<script>
@@ -449,6 +509,11 @@ function pl_injection_lab_render() {
 			if (t === 'predictive') return '<span class="lab-badge badge-predictive">predictive</span>';
 			if (t === 'viewport_refresh') return '<span class="lab-badge badge-refresh">refresh</span>';
 			return t || '-';
+		}
+		function badgeDir(d) {
+			if (d === 'down') return '<span class="lab-badge badge-down">&#x2193; down</span>';
+			if (d === 'up') return '<span class="lab-badge badge-up">&#x2191; up</span>';
+			return d || '-';
 		}
 		function yn(v) { return v ? '<span class="badge-yes">&#10003;</span>' : '<span class="badge-no">&#10007;</span>'; }
 
@@ -477,6 +542,7 @@ function pl_injection_lab_render() {
 					renderTypeTable(d.typeComparison);
 					renderSpeedTable(d.speedBrackets);
 					renderSpacingTable(d.spacingRanges);
+					renderDirectionTable(d.directionPerf);
 					renderVisitorTable(d.visitorTypes);
 					renderFeed(d.liveFeed);
 					renderRecs(d.recommendations);
@@ -544,6 +610,18 @@ function pl_injection_lab_render() {
 			document.getElementById('labSpacingTable').innerHTML = html;
 		}
 
+		function renderDirectionTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labDirectionTable').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;">No data</td></tr>'; return; }
+			var html = '';
+			rows.forEach(function(r) {
+				var inj = parseInt(r.injections) || 0;
+				var filled = parseInt(r.filled) || 0;
+				var viewable = parseInt(r.viewable) || 0;
+				html += '<tr><td>' + badgeDir(r.scroll_direction) + '</td><td class="num">' + fmt(inj) + '</td><td class="num">' + fmt(filled) + '</td><td class="num">' + pct(filled, inj) + '%</td><td class="num">' + fmt(viewable) + '</td><td class="num">' + pct(viewable, inj) + '%</td><td class="num">' + fmt(r.avg_speed) + '</td><td class="num">' + fmt(r.avg_spacing) + '</td><td class="num">' + fmtMs(r.avg_ttv) + '</td></tr>';
+			});
+			document.getElementById('labDirectionTable').innerHTML = html;
+		}
+
 		function renderVisitorTable(rows) {
 			if (!rows || !rows.length) { document.getElementById('labVisitorTable').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;">No data</td></tr>'; return; }
 			var html = '';
@@ -559,11 +637,11 @@ function pl_injection_lab_render() {
 		}
 
 		function renderFeed(rows) {
-			if (!rows || !rows.length) { document.getElementById('labFeedTable').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#888;">No recent injections</td></tr>'; return; }
+			if (!rows || !rows.length) { document.getElementById('labFeedTable').innerHTML = '<tr><td colspan="11" style="text-align:center;color:#888;">No recent injections</td></tr>'; return; }
 			var html = '';
 			rows.forEach(function(r) {
 				var timeStr = r.time ? r.time.split(' ')[1] || r.time : '-';
-				html += '<tr><td style="white-space:nowrap">' + timeStr + '</td><td><code>' + (r.session || '-') + '</code></td><td><code>' + (r.slot || '-') + '</code></td><td>' + badgeType(r.type) + '</td><td>' + (r.visitor || '-') + '</td><td class="num">' + (r.speed || '-') + '</td><td class="num">' + (r.spacing || '-') + '</td><td>' + yn(r.filled) + '</td><td>' + yn(r.viewable) + '</td><td class="num">' + fmtMs(r.ttv) + '</td></tr>';
+				html += '<tr><td style="white-space:nowrap">' + timeStr + '</td><td><code>' + (r.session || '-') + '</code></td><td><code>' + (r.slot || '-') + '</code></td><td>' + badgeType(r.type) + '</td><td>' + badgeDir(r.direction) + '</td><td>' + (r.visitor || '-') + '</td><td class="num">' + (r.speed || '-') + '</td><td class="num">' + (r.spacing || '-') + '</td><td>' + yn(r.filled) + '</td><td>' + yn(r.viewable) + '</td><td class="num">' + fmtMs(r.ttv) + '</td></tr>';
 			});
 			document.getElementById('labFeedTable').innerHTML = html;
 		}
