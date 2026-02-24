@@ -348,7 +348,7 @@ function initSlots() {
 		// Top Anchor (guard: plAds.formats.topAnchor)
 		if (fmtOn('topAnchor')) {
 			var topAnchor = googletag.defineOutOfPageSlot(
-				SLOT_PATH + 'Ad.Plus-Anchor',
+				SLOT_PATH + 'Ad.Plus-Anchor-Small',
 				googletag.enums.OutOfPageFormat.TOP_ANCHOR
 			);
 			if (topAnchor) {
@@ -523,7 +523,7 @@ function initSlots() {
 		/* --- Unit Map for Event Tracking --- */
 		_unitMap['__interstitial']  = 'Ad.Plus-Interstitial';
 		_unitMap['__anchor']        = 'Ad.Plus-Anchor';
-		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor';
+		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor-Small';
 		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
 		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
 		_unitMap['initial-ad-1']    = 'Ad.Plus-336x280';
