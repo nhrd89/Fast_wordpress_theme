@@ -1,17 +1,17 @@
 /**
- * PinLightning Ad System — Layer 2: Dynamic Below-Fold Ads
+ * PinLightning Ad System — Layer 2: Predictive Dynamic Ads
  *
  * Boots on first user interaction (invisible to Lighthouse).
  * Waits for Layer 1 (__initialAds) to be ready, then:
- * - Tracks scroll velocity and classifies visitor behavior
- * - Injects dynamic ad slots at optimal content positions
- * - Smart in-view refresh (30s minimum, viewable + engaged)
- * - Slot recycling: max 6 active dynamic slots
+ * - 50ms velocity tracker with deceleration/pause detection
+ * - Predictive injection: pause strategy + scroll prediction
+ * - Viewport-aware refresh for paused reading
+ * - Max 20 active slots with 1000px+ recycling
  *
  * Loaded post-window.load + 100ms — zero Lighthouse impact.
  *
  * @package PinLightning
- * @since   4.0.0
+ * @since   5.0.0
  */
 ;(function() {
 'use strict';
@@ -29,38 +29,70 @@ var L2  = (typeof plAds !== 'undefined' && plAds.layer2)  ? plAds.layer2  : {};
 var VID = (typeof plAds !== 'undefined' && plAds.video)   ? plAds.video   : {};
 var FMT = (typeof plAds !== 'undefined' && plAds.formats) ? plAds.formats : {};
 
-var MAX_DYNAMIC_SLOTS = L2.maxSlots ? parseInt(L2.maxSlots, 10) : 4;
+// Slot limits
+var MAX_DYNAMIC_SLOTS = L2.maxSlots ? parseInt(L2.maxSlots, 10) : 20;
 var MAX_REFRESH_DYN   = 2;       // max refreshes per dynamic slot
 var REFRESH_INTERVAL  = 30000;   // 30s minimum (Google policy)
-var MAIN_LOOP_MS      = 500;     // main loop interval
-var MIN_SPACING_PX    = L2.spacing ? parseInt(L2.spacing, 10) : 800;
+
+// Timing
+var VELOCITY_SAMPLE_MS = 50;     // velocity sampling interval
+var ENGINE_LOOP_MS     = 100;    // predictive engine loop
+
+// Recycling
+var RECYCLE_DISTANCE   = 1000;   // px above viewport to recycle
+
+// Per-visitor-type spacing (px between ads)
+var READER_SPACING       = L2.readerSpacing ? parseInt(L2.readerSpacing, 10) : 400;
+var SCANNER_SPACING      = L2.scannerSpacing ? parseInt(L2.scannerSpacing, 10) : 500;
+var FAST_SCANNER_SPACING = L2.fastScannerSpacing ? parseInt(L2.fastScannerSpacing, 10) : 600;
+
+// Pause detection
+var PAUSE_VELOCITY       = 30;   // px/s — below this = paused
+var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 300;
+
+// Viewport refresh
+var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDelay, 10) : 5000;
+
+// Predictive window (seconds to look ahead)
+var PREDICTIVE_WINDOW = L2.predictiveWindow ? parseFloat(L2.predictiveWindow) : 1.0;
+
+// Visitor classification thresholds
+var READER_SPEED_MAX  = L2.readerSpeed ? parseInt(L2.readerSpeed, 10) : 100;
+var SCANNER_SPEED_MAX = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) : 400;
 
 /* ================================================================
  * STATE
  * ================================================================ */
 
-var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable, refreshCount, lastRefresh}
+var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable, refreshCount, lastRefresh, injectionType, injectionSpeed}
 var _slotCounter    = 0;
-var _lastInjectionY = -9999;
-var _lastInjectionT = 0;
 
-// Scroll velocity
-var _scrollSamples  = [];
-var _lastSampleY    = 0;
-var _lastSampleT    = 0;
-var _scrollSpeed    = 0;
+// Velocity tracker
+var _velocitySamples = [];  // last 10 velocity readings
+var _lastSampleY     = 0;
+var _lastSampleT     = 0;
+var _velocity        = 0;   // smoothed velocity (px/s, signed: + = down)
+var _speed           = 0;   // absolute velocity
+var _peakSpeed       = 0;   // recent peak (for deceleration detection)
+var _peakDecayT      = 0;   // timestamp of last peak update
+var _isDecelerating  = false;
+var _isPaused        = false;
+var _pauseStartT     = 0;   // when current pause began
+
+// Visitor classification
 var _visitorType    = 'unknown';  // reader | scanner | fast-scanner
+var _scrollSpeed    = 0;          // dashboard compat alias
 
 // Scroll depth & direction
-var _maxScrollDepth  = 0;    // max scroll depth as percentage
-var _dirChanges      = 0;    // scroll direction change count
+var _maxScrollDepth  = 0;
+var _dirChanges      = 0;
 var _lastScrollDir   = 0;    // 1=down, -1=up, 0=initial
 
 // Tab visibility tracking
-var _hiddenTime      = 0;    // cumulative ms tab was hidden
-var _hiddenSince     = 0;    // timestamp when tab became hidden (0 = visible)
+var _hiddenTime      = 0;
+var _hiddenSince     = 0;
 
-// Engagement bridge
+// Time tracking
 var _timeOnPage     = 0;
 var _sessionStart   = Date.now();
 
@@ -95,35 +127,76 @@ function pushEvent(name, data) {
 	window.__plAdEvents.push(data);
 }
 
+/** Get minimum spacing for current visitor type. */
+function getSpacing() {
+	if (_visitorType === 'reader') return READER_SPACING;
+	if (_visitorType === 'fast-scanner') return FAST_SCANNER_SPACING;
+	return SCANNER_SPACING;
+}
+
 /* ================================================================
- * SCROLL VELOCITY TRACKER
+ * 1. VELOCITY TRACKER (50ms sampling)
+ *
+ * Tracks position, velocity, acceleration every 50ms.
+ * Detects deceleration (speed drops >50% from recent peak) and
+ * pause (velocity < 30px/s for PAUSE_THRESHOLD_MS).
+ * Classifies visitor: reader (<100), scanner (<400), fast-scanner.
  * ================================================================ */
 
-function sampleScroll() {
+function sampleVelocity() {
 	var now = Date.now();
 	var y   = window.pageYOffset || 0;
 	var dt  = (now - _lastSampleT) / 1000;
 
 	if (dt > 0 && _lastSampleT > 0) {
-		var speed = Math.abs(y - _lastSampleY) / dt;
-		_scrollSamples.push(speed);
-		if (_scrollSamples.length > 10) _scrollSamples.shift();
+		var rawVelocity = (y - _lastSampleY) / dt; // signed: + = scrolling down
+		_velocitySamples.push(rawVelocity);
+		if (_velocitySamples.length > 10) _velocitySamples.shift();
 
 		// Weighted average (newer samples heavier)
 		var total = 0, weight = 0;
-		for (var i = 0; i < _scrollSamples.length; i++) {
+		for (var i = 0; i < _velocitySamples.length; i++) {
 			var w = i + 1;
-			total += _scrollSamples[i] * w;
+			total += _velocitySamples[i] * w;
 			weight += w;
 		}
-		_scrollSpeed = Math.round(total / weight);
-	}
+		_velocity = total / weight;
+		_speed = Math.abs(_velocity);
+		_scrollSpeed = Math.round(_speed);
 
-	// Track scroll direction changes (before updating _lastSampleY)
-	if (_lastSampleT > 0) {
+		// Track direction changes
 		var dir = y > _lastSampleY ? 1 : (y < _lastSampleY ? -1 : 0);
 		if (dir !== 0 && dir !== _lastScrollDir && _lastScrollDir !== 0) _dirChanges++;
 		if (dir !== 0) _lastScrollDir = dir;
+
+		// Peak speed tracking (decays after 500ms)
+		if (_speed > _peakSpeed || (now - _peakDecayT) > 500) {
+			_peakSpeed = _speed;
+			_peakDecayT = now;
+		}
+
+		// Deceleration detection: speed dropped >50% from recent peak
+		_isDecelerating = (_peakSpeed > 100 && _speed < _peakSpeed * 0.5 && _speed > PAUSE_VELOCITY);
+
+		// Pause detection: velocity below threshold
+		if (_speed < PAUSE_VELOCITY) {
+			if (!_isPaused) {
+				_isPaused = true;
+				_pauseStartT = now;
+			}
+		} else {
+			_isPaused = false;
+			_pauseStartT = 0;
+		}
+
+		// Classify visitor
+		if (_speed < READER_SPEED_MAX) {
+			_visitorType = 'reader';
+		} else if (_speed < SCANNER_SPEED_MAX) {
+			_visitorType = 'scanner';
+		} else {
+			_visitorType = 'fast-scanner';
+		}
 	}
 
 	_lastSampleY = y;
@@ -134,82 +207,76 @@ function sampleScroll() {
 	var docH = document.documentElement.scrollHeight || 1;
 	var depthPct = Math.round((y + window.innerHeight) / docH * 100);
 	if (depthPct > _maxScrollDepth) _maxScrollDepth = Math.min(depthPct, 100);
-
-	// Classify visitor (thresholds from optimizer)
-	var readerSpeed  = L2.readerSpeed ? parseInt(L2.readerSpeed, 10) : 100;
-	var scannerSpeed = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) : 400;
-	if (_scrollSpeed < readerSpeed) {
-		_visitorType = 'reader';
-	} else if (_scrollSpeed < scannerSpeed) {
-		_visitorType = 'scanner';
-	} else {
-		_visitorType = 'fast-scanner';
-	}
 }
 
 /* ================================================================
- * CONTENT-AWARE INJECTION SCORING
+ * 2. SPACING GUARD
+ *
+ * Checks if injecting at a given Y position respects minimum
+ * spacing from ALL existing ads (Layer 1 initial + Layer 2 dynamic).
+ * Spacing is dynamic per visitor type.
  * ================================================================ */
 
-/**
- * Find the best paragraph to inject an ad after.
- * Scores each <p> tag by distance from other ads, proximity to
- * images/headings, and position relative to viewport.
+function checkSpacing(targetY) {
+	var spacing = getSpacing();
+	var scrollY = window.pageYOffset || 0;
+
+	// Check Layer 1 initial ads
+	if (window.__initialAds) {
+		var zones = window.__initialAds.getExclusionZones();
+		for (var z = 0; z < zones.length; z++) {
+			var adCenter = (zones[z].top + zones[z].bottom) / 2;
+			if (Math.abs(targetY - adCenter) < spacing) return false;
+		}
+	}
+
+	// Check Layer 2 dynamic ads
+	for (var d = 0; d < _dynamicSlots.length; d++) {
+		var rec = _dynamicSlots[d];
+		if (rec.destroyed) continue;
+		var el = rec.el;
+		if (!el || !el.parentNode) continue;
+		var rect = el.getBoundingClientRect();
+		var adY = rect.top + scrollY + rect.height / 2;
+		if (Math.abs(targetY - adY) < spacing) return false;
+	}
+
+	return true;
+}
+
+/* ================================================================
+ * 3. TARGET FINDERS
  *
- * Returns the <p> element to inject after, or null.
- */
-function findBestInjectionPoint() {
+ * Find the best paragraph to inject an ad after, near a target
+ * Y position. Scores by proximity to target, content quality,
+ * and spacing from existing ads.
+ * ================================================================ */
+
+function findTargetNear(targetY, searchRadius) {
 	var content = document.querySelector('.single-content');
 	if (!content) return null;
 
 	var paragraphs = content.querySelectorAll('p');
 	if (!paragraphs.length) return null;
 
-	var scrollY  = window.pageYOffset || 0;
-	var vpBottom = scrollY + window.innerHeight;
-	var vpH      = window.innerHeight;
-
-	// Get all existing ad positions (initial + dynamic)
-	var adPositions = [];
-
-	// Initial ads from Layer 1
-	if (window.__initialAds) {
-		var zones = window.__initialAds.getExclusionZones();
-		for (var z = 0; z < zones.length; z++) {
-			adPositions.push((zones[z].top + zones[z].bottom) / 2);
-		}
-	}
-
-	// Dynamic ads from this layer
-	for (var d = 0; d < _dynamicSlots.length; d++) {
-		var dEl = _dynamicSlots[d].el;
-		if (dEl && dEl.parentNode) {
-			var dRect = dEl.getBoundingClientRect();
-			adPositions.push(dRect.top + scrollY + dRect.height / 2);
-		}
-	}
-
+	var scrollY   = window.pageYOffset || 0;
 	var bestScore = -Infinity;
 	var bestPara  = null;
 
 	for (var i = 0; i < paragraphs.length; i++) {
 		var p    = paragraphs[i];
 		var rect = p.getBoundingClientRect();
-		var pY   = rect.top + scrollY;
+		var pY   = rect.top + scrollY + rect.height;
 
-		// Skip paragraphs above the viewport or too far below
-		if (pY < vpBottom - 200) continue;       // already scrolled past
-		if (pY > vpBottom + vpH * 2) continue;    // too far ahead
+		// Must be within search radius of target
+		var dist = Math.abs(pY - targetY);
+		if (dist > searchRadius) continue;
 
-		// Score: distance from nearest ad (higher = better)
-		var minDist = Infinity;
-		for (var a = 0; a < adPositions.length; a++) {
-			var dist = Math.abs(pY - adPositions[a]);
-			if (dist < minDist) minDist = dist;
-		}
-		if (minDist < MIN_SPACING_PX) continue;  // too close to existing ad
+		// Must pass spacing guard
+		if (!checkSpacing(pY)) continue;
 
-		var score = Math.min(minDist, 2000); // cap benefit at 2000px
+		// Score: closer to target = better (inverse distance)
+		var score = searchRadius - dist;
 
 		// Bonus: after images (natural content break)
 		var prev = p.previousElementSibling;
@@ -222,12 +289,12 @@ function findBestInjectionPoint() {
 			score += 150;
 		}
 
-		// Bonus: paragraph has substantial text (not just a caption)
+		// Bonus: paragraph has substantial text
 		if (p.textContent.length > 80) {
 			score += 50;
 		}
 
-		// Penalty: very short paragraph (caption, single line)
+		// Penalty: very short paragraph
 		if (p.textContent.length < 20) {
 			score -= 200;
 		}
@@ -241,11 +308,29 @@ function findBestInjectionPoint() {
 	return bestPara;
 }
 
+/** PAUSE TARGET: Find injection point at center of current viewport. */
+function findPauseTarget() {
+	var scrollY  = window.pageYOffset || 0;
+	var vpCenter = scrollY + window.innerHeight / 2;
+	return findTargetNear(vpCenter, window.innerHeight / 2);
+}
+
+/**
+ * SCROLL TARGET: Find injection point at predicted scroll stop.
+ * Uses current velocity + deceleration to estimate where user will stop.
+ */
+function findScrollTarget() {
+	var scrollY = window.pageYOffset || 0;
+	// Predict: current bottom + velocity * window * 0.5 (deceleration halves distance)
+	var predictedStop = scrollY + window.innerHeight + (_velocity * PREDICTIVE_WINDOW * 0.5);
+	return findTargetNear(predictedStop, window.innerHeight);
+}
+
 /* ================================================================
- * DYNAMIC AD INJECTION
+ * 4. DYNAMIC AD INJECTION
  * ================================================================ */
 
-function injectDynamicAd(afterElement) {
+function injectDynamicAd(afterElement, injectionType) {
 	_slotCounter++;
 	var divId = 'smart-ad-' + _slotCounter;
 
@@ -280,24 +365,26 @@ function injectDynamicAd(afterElement) {
 			.addSize([0, 0],    [[250, 250], [300, 100]])
 			.build();
 
+	var scrollY = window.pageYOffset || 0;
 	var record = {
-		divId:        divId,
-		slot:         null,
-		el:           container,
-		adDiv:        adDiv,
-		anchorEl:     afterElement,
-		injectedAt:   Date.now(),
-		viewable:     false,
-		refreshCount: 0,
-		lastRefresh:  0,
-		renderedSize: null,
-		filled:       false,
-		destroyed:    false
+		divId:          divId,
+		slot:           null,
+		el:             container,
+		adDiv:          adDiv,
+		anchorEl:       afterElement,
+		injectedAt:     Date.now(),
+		injectedY:      scrollY,
+		injectionType:  injectionType || 'unknown',
+		injectionSpeed: _scrollSpeed,
+		viewable:       false,
+		refreshCount:   0,
+		lastRefresh:    0,
+		renderedSize:   null,
+		filled:         false,
+		destroyed:      false
 	};
 
 	_dynamicSlots.push(record);
-	_lastInjectionY = window.pageYOffset || 0;
-	_lastInjectionT = Date.now();
 
 	// Define and display via GPT
 	googletag.cmd.push(function() {
@@ -311,33 +398,31 @@ function injectDynamicAd(afterElement) {
 			slot.addService(googletag.pubads());
 			slot.setTargeting('refresh', 'true');
 			slot.setTargeting('pos', 'dynamic');
+			slot.setTargeting('strategy', injectionType || 'unknown');
 			googletag.display(divId);
 			record.slot = slot;
 		}
 	});
 
-	log('Injected dynamic:', divId, 'after', afterElement.tagName, 'speed:', _scrollSpeed, 'type:', _visitorType);
+	log('Injected:', divId, 'type:', injectionType, 'speed:', _scrollSpeed, 'visitor:', _visitorType);
 	pushEvent('dynamic_ad_injected', {
-		divId:       divId,
-		speed:       _scrollSpeed,
-		visitorType: _visitorType,
-		slotCount:   _dynamicSlots.length
+		divId:         divId,
+		speed:         _scrollSpeed,
+		visitorType:   _visitorType,
+		injectionType: injectionType,
+		slotCount:     _dynamicSlots.length
 	});
 	if (window.__plAdTracker) {
-		window.__plAdTracker.track('dynamic_inject', divId, { slotType: 'dynamic' });
+		window.__plAdTracker.track('dynamic_inject', divId, { slotType: 'dynamic', strategy: injectionType });
 	}
 
 	return record;
 }
 
 /* ================================================================
- * SLOT RECYCLING
+ * 5. SLOT RECYCLING (max 20, 1000px+ above viewport)
  * ================================================================ */
 
-/**
- * If we have more than MAX_DYNAMIC_SLOTS active, destroy the oldest
- * slot that is off-screen (above the viewport).
- */
 function recycleSlots() {
 	var activeCount = 0;
 	for (var i = 0; i < _dynamicSlots.length; i++) {
@@ -346,16 +431,13 @@ function recycleSlots() {
 
 	if (activeCount <= MAX_DYNAMIC_SLOTS) return;
 
-	var scrollY = window.pageYOffset || 0;
-
-	// Find the oldest non-destroyed slot that's above the viewport
+	// Find the oldest non-destroyed slot that's 1000px+ above the viewport
 	for (var j = 0; j < _dynamicSlots.length; j++) {
 		var rec = _dynamicSlots[j];
 		if (rec.destroyed) continue;
 
 		var rect = rec.el.getBoundingClientRect();
-		// Slot is well above the viewport
-		if (rect.bottom < -500) {
+		if (rect.bottom < -RECYCLE_DISTANCE) {
 			destroySlot(rec);
 			log('Recycled slot:', rec.divId);
 			pushEvent('slot_recycled', { divId: rec.divId });
@@ -381,30 +463,30 @@ function destroySlot(record) {
 }
 
 /* ================================================================
- * SMART IN-VIEW REFRESH
+ * 6. VIEWPORT REFRESH (paused reading)
+ *
+ * When user pauses for >5s, refresh in-view dynamic ads.
+ * - 30s minimum between refreshes (Google policy)
+ * - Max 2 refreshes per slot
+ * - Tab must be visible
  * ================================================================ */
 
-/**
- * Check dynamic slots for refresh eligibility:
- * - Slot is viewable (50%+ in viewport)
- * - At least 30s since last display/refresh
- * - Tab is visible
- * - User is engaged (not idle)
- * - Max 2 refreshes per dynamic slot
- */
-function checkRefreshes() {
+function checkViewportRefresh() {
 	if (document.hidden) return;
+	if (!_isPaused) return;
 
-	var now     = Date.now();
-	var scrollY = window.pageYOffset || 0;
-	var vpH     = window.innerHeight;
+	var pauseDuration = Date.now() - _pauseStartT;
+	if (pauseDuration < VP_REFRESH_DELAY) return;
+
+	var now = Date.now();
+	var vpH = window.innerHeight;
 
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		var rec = _dynamicSlots[i];
 		if (rec.destroyed || !rec.slot || !rec.filled) continue;
 		if (rec.refreshCount >= MAX_REFRESH_DYN) continue;
 
-		// Check timing
+		// Check timing (30s minimum)
 		var lastTime = rec.lastRefresh || rec.injectedAt;
 		if (now - lastTime < REFRESH_INTERVAL) continue;
 
@@ -423,17 +505,65 @@ function checkRefreshes() {
 
 		rec.refreshCount++;
 		rec.lastRefresh = now;
-		rec.viewable    = false; // Reset for next impression
+		rec.viewable    = false;
 
-		log('Refreshed dynamic:', rec.divId, 'count:', rec.refreshCount);
+		log('Viewport refresh:', rec.divId, 'count:', rec.refreshCount, 'pause:', Math.round(pauseDuration / 1000) + 's');
 		pushEvent('dynamic_ad_refreshed', {
 			divId:        rec.divId,
-			refreshCount: rec.refreshCount
+			refreshCount: rec.refreshCount,
+			strategy:     'viewport_refresh'
 		});
 		if (window.__plAdTracker) {
-			window.__plAdTracker.track('refresh', rec.divId, { slotType: 'dynamic' });
+			window.__plAdTracker.track('refresh', rec.divId, { slotType: 'dynamic', strategy: 'viewport_refresh' });
 		}
 	}
+}
+
+/* ================================================================
+ * 7. PREDICTIVE INJECTION ENGINE (100ms loop)
+ *
+ * Three strategies evaluated every tick:
+ * 1. PAUSE — user stopped scrolling → inject at viewport center
+ * 2. PREDICTIVE — user decelerating → inject at predicted stop
+ * 3. VIEWPORT REFRESH — user paused >5s → refresh in-view ads
+ * ================================================================ */
+
+function engineLoop() {
+	// Video check runs independently of display ad guards
+	checkVideoInjection();
+
+	// Dynamic ads disabled in optimizer?
+	var dynVal = FMT.dynamic;
+	if (dynVal === false || dynVal === 'false' || dynVal === '' || dynVal === '0' || dynVal === 0) return;
+
+	// Active slot count check
+	var activeCount = 0;
+	for (var i = 0; i < _dynamicSlots.length; i++) {
+		if (!_dynamicSlots[i].destroyed) activeCount++;
+	}
+
+	// Strategy 1: PAUSE — user has stopped scrolling for PAUSE_THRESHOLD_MS
+	if (activeCount < MAX_DYNAMIC_SLOTS && _isPaused && (Date.now() - _pauseStartT) >= PAUSE_THRESHOLD_MS) {
+		var pauseTarget = findPauseTarget();
+		if (pauseTarget) {
+			recycleSlots();
+			injectDynamicAd(pauseTarget, 'pause');
+			return; // one injection per tick
+		}
+	}
+
+	// Strategy 2: PREDICTIVE — user is decelerating while scrolling down
+	if (activeCount < MAX_DYNAMIC_SLOTS && _isDecelerating && _velocity > 0) {
+		var scrollTarget = findScrollTarget();
+		if (scrollTarget) {
+			recycleSlots();
+			injectDynamicAd(scrollTarget, 'predictive');
+			return;
+		}
+	}
+
+	// Strategy 3: VIEWPORT REFRESH — user paused long enough, refresh in-view ads
+	checkViewportRefresh();
 }
 
 /* ================================================================
@@ -507,6 +637,7 @@ function updateDashboard() {
 	var viewableSlots = 0;
 	var totalRefreshes = 0;
 	var filledSlots = 0;
+	var byStrategy = { pause: 0, predictive: 0 };
 
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		var s = _dynamicSlots[i];
@@ -515,6 +646,9 @@ function updateDashboard() {
 		if (s.viewable) viewableSlots++;
 		if (s.filled) filledSlots++;
 		totalRefreshes += s.refreshCount;
+		if (s.injectionType && byStrategy[s.injectionType] !== undefined) {
+			byStrategy[s.injectionType]++;
+		}
 	}
 
 	window.__plAdDashboard = window.__plAdDashboard || {};
@@ -526,53 +660,12 @@ function updateDashboard() {
 		totalInjected:  _dynamicSlots.length,
 		scrollSpeed:    _scrollSpeed,
 		visitorType:    _visitorType,
-		timeOnPage:     Math.round(_timeOnPage)
+		timeOnPage:     Math.round(_timeOnPage),
+		isPaused:       _isPaused,
+		isDecelerating: _isDecelerating,
+		spacing:        getSpacing(),
+		byStrategy:     byStrategy
 	};
-}
-
-/* ================================================================
- * MAIN LOOP
- * ================================================================ */
-
-function mainLoop() {
-	sampleScroll();
-
-	// Video check runs independently of display ad guards
-	checkVideoInjection();
-
-	// Layer 2 (dynamic ads) disabled in optimizer
-	var dynVal = FMT.dynamic;
-	if (dynVal === false || dynVal === 'false' || dynVal === '' || dynVal === '0' || dynVal === 0) return;
-
-	var now     = Date.now();
-	var scrollY = window.pageYOffset || 0;
-
-	// Don't inject if fast-scanner (0% viewability at high speed)
-	if (_visitorType === 'fast-scanner') return;
-
-	// First dynamic ad waits for 30% scroll depth
-	if (_dynamicSlots.length === 0 && _maxScrollDepth < 30) return;
-
-	// Don't inject too frequently (cooldown from optimizer)
-	var cooldown = L2.cooldown ? parseInt(L2.cooldown, 10) : 6000;
-	if (now - _lastInjectionT < cooldown) return;
-
-	// Don't inject if too close to last injection position
-	if (Math.abs(scrollY - _lastInjectionY) < MIN_SPACING_PX) return;
-
-	// Don't inject if scrolling too fast right now
-	var maxSpeed = L2.maxScrollSpeed ? parseInt(L2.maxScrollSpeed, 10) : 500;
-	if (_scrollSpeed > maxSpeed) return;
-
-	// Find best injection point
-	var target = findBestInjectionPoint();
-	if (!target) return;
-
-	// Recycle before injecting to stay within limit
-	recycleSlots();
-
-	// Inject
-	injectDynamicAd(target);
 }
 
 /* ================================================================
@@ -685,12 +778,14 @@ function sendBeacon() {
 		if (!s.filled && !s.destroyed) totalEmpty++;
 		totalRefreshes += s.refreshCount;
 		zones.push({
-			divId:        s.divId,
-			filled:       s.filled,
-			viewable:     s.viewable,
-			refreshCount: s.refreshCount,
-			destroyed:    s.destroyed,
-			renderedSize: s.renderedSize
+			divId:         s.divId,
+			filled:        s.filled,
+			viewable:      s.viewable,
+			refreshCount:  s.refreshCount,
+			destroyed:     s.destroyed,
+			renderedSize:  s.renderedSize,
+			injectionType: s.injectionType,
+			injectionSpeed: s.injectionSpeed
 		});
 	}
 
@@ -865,12 +960,13 @@ function sendHeartbeat() {
 		var ds = _dynamicSlots[d];
 		if (ds.destroyed) continue;
 		zones.push({
-			zoneId:   ds.divId,
-			slot:     'Ad.Plus-300x250',
-			size:     ds.renderedSize ? ds.renderedSize[0] + 'x' + ds.renderedSize[1] : '',
-			viewable: ds.viewable,
-			filled:   ds.filled,
-			refreshCount: ds.refreshCount
+			zoneId:        ds.divId,
+			slot:          'Ad.Plus-300x250',
+			size:          ds.renderedSize ? ds.renderedSize[0] + 'x' + ds.renderedSize[1] : '',
+			viewable:      ds.viewable,
+			filled:        ds.filled,
+			refreshCount:  ds.refreshCount,
+			injectionType: ds.injectionType
 		});
 	}
 	data.zones = zones;
@@ -907,7 +1003,7 @@ function init() {
 
 	// Wait for Layer 1 (__initialAds) to be ready
 	function onLayer1Ready() {
-		log('Layer 1 ready — starting dynamic injection');
+		log('Layer 1 ready — starting predictive injection engine');
 
 		// Register our event listeners on the shared GPT instance
 		googletag.cmd.push(function() {
@@ -915,17 +1011,15 @@ function init() {
 			googletag.pubads().addEventListener('impressionViewable', onDynamicImpressionViewable);
 		});
 
-		// Start main loop
-		setInterval(mainLoop, MAIN_LOOP_MS);
+		// Start velocity tracker (50ms) and predictive engine (100ms)
+		setInterval(sampleVelocity, VELOCITY_SAMPLE_MS);
+		setInterval(engineLoop, ENGINE_LOOP_MS);
 
 		// Start heartbeat for live sessions dashboard
 		startHeartbeat();
 
-		// Passive scroll listener for accurate mobile tracking
-		window.addEventListener('scroll', sampleScroll, { passive: true });
-
-		// Start refresh checker (every 10s)
-		setInterval(checkRefreshes, 10000);
+		// Passive scroll listener for immediate velocity updates
+		window.addEventListener('scroll', sampleVelocity, { passive: true });
 
 		// Update dashboard every 5s
 		setInterval(updateDashboard, 5000);
@@ -978,15 +1072,15 @@ function init() {
 					googletag.pubads().addEventListener('impressionViewable', onDynamicImpressionViewable);
 					googletag.enableServices();
 				});
-				setInterval(mainLoop, MAIN_LOOP_MS);
+				setInterval(sampleVelocity, VELOCITY_SAMPLE_MS);
+				setInterval(engineLoop, ENGINE_LOOP_MS);
 
 				// Start heartbeat for live sessions dashboard
 				startHeartbeat();
 
-				// Passive scroll listener for accurate mobile tracking
-				window.addEventListener('scroll', sampleScroll, { passive: true });
+				// Passive scroll listener for immediate velocity updates
+				window.addEventListener('scroll', sampleVelocity, { passive: true });
 
-				setInterval(checkRefreshes, 10000);
 				setInterval(updateDashboard, 5000);
 				document.addEventListener('visibilitychange', function() {
 					if (document.visibilityState === 'hidden') {

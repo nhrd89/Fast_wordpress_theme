@@ -317,14 +317,16 @@ function pl_opt_refresh_defaults() {
 
 function pl_opt_layer2_defaults() {
 	return array(
-		'density'           => 'normal',
-		'maxScrollSpeed'    => 500,
-		'pauseThreshold'    => 800,
-		'spacing'           => 800,
-		'cooldown'          => 6,
-		'maxSlots'          => 4,
-		'fastScannerSpeed'  => 400,
-		'readerSpeed'       => 100,
+		'density'              => 'normal',
+		'maxSlots'             => 20,
+		'pauseThreshold'       => 300,
+		'predictiveWindow'     => 1.0,
+		'viewportRefreshDelay' => 5000,
+		'readerSpacing'        => 400,
+		'scannerSpacing'       => 500,
+		'fastScannerSpacing'   => 600,
+		'readerSpeed'          => 100,
+		'fastScannerSpeed'     => 400,
 	);
 }
 
@@ -470,14 +472,16 @@ function pl_opt_ajax_save() {
 		$l = $raw['layer2'];
 		$d = pl_opt_layer2_defaults();
 		update_option( 'pl_ad_layer2_settings', array(
-			'density'          => in_array( $l['density'] ?? '', array( 'light', 'normal', 'aggressive' ), true ) ? $l['density'] : 'normal',
-			'maxScrollSpeed'   => max( 100, min( 2000, (int) ( $l['maxScrollSpeed'] ?? $d['maxScrollSpeed'] ) ) ),
-			'pauseThreshold'   => max( 200, min( 3000, (int) ( $l['pauseThreshold'] ?? $d['pauseThreshold'] ) ) ),
-			'spacing'          => max( 200, min( 2000, (int) ( $l['spacing'] ?? $d['spacing'] ) ) ),
-			'cooldown'         => max( 1, min( 30, (int) ( $l['cooldown'] ?? $d['cooldown'] ) ) ),
-			'maxSlots'         => max( 1, min( 20, (int) ( $l['maxSlots'] ?? $d['maxSlots'] ) ) ),
-			'fastScannerSpeed' => max( 100, min( 2000, (int) ( $l['fastScannerSpeed'] ?? $d['fastScannerSpeed'] ) ) ),
-			'readerSpeed'      => max( 10, min( 500, (int) ( $l['readerSpeed'] ?? $d['readerSpeed'] ) ) ),
+			'density'              => in_array( $l['density'] ?? '', array( 'light', 'normal', 'aggressive' ), true ) ? $l['density'] : 'normal',
+			'maxSlots'             => max( 1, min( 30, (int) ( $l['maxSlots'] ?? $d['maxSlots'] ) ) ),
+			'pauseThreshold'       => max( 100, min( 3000, (int) ( $l['pauseThreshold'] ?? $d['pauseThreshold'] ) ) ),
+			'predictiveWindow'     => max( 0.1, min( 5.0, round( (float) ( $l['predictiveWindow'] ?? $d['predictiveWindow'] ), 1 ) ) ),
+			'viewportRefreshDelay' => max( 1000, min( 30000, (int) ( $l['viewportRefreshDelay'] ?? $d['viewportRefreshDelay'] ) ) ),
+			'readerSpacing'        => max( 100, min( 2000, (int) ( $l['readerSpacing'] ?? $d['readerSpacing'] ) ) ),
+			'scannerSpacing'       => max( 100, min( 2000, (int) ( $l['scannerSpacing'] ?? $d['scannerSpacing'] ) ) ),
+			'fastScannerSpacing'   => max( 100, min( 2000, (int) ( $l['fastScannerSpacing'] ?? $d['fastScannerSpacing'] ) ) ),
+			'readerSpeed'          => max( 10, min( 500, (int) ( $l['readerSpeed'] ?? $d['readerSpeed'] ) ) ),
+			'fastScannerSpeed'     => max( 100, min( 2000, (int) ( $l['fastScannerSpeed'] ?? $d['fastScannerSpeed'] ) ) ),
 		) );
 	}
 
@@ -651,11 +655,11 @@ function pl_ad_render_optimizer() {
 						<th>Ad Density Level</th>
 						<td>
 							<select id="opt_density">
-								<option value="light" <?php selected( $l2['density'], 'light' ); ?>>Light (1200px, 10s cooldown, max 2)</option>
-								<option value="normal" <?php selected( $l2['density'], 'normal' ); ?>>Normal (800px, 6s cooldown, max 4)</option>
-								<option value="aggressive" <?php selected( $l2['density'], 'aggressive' ); ?>>Aggressive (600px, 4s cooldown, max 6)</option>
+								<option value="light" <?php selected( $l2['density'], 'light' ); ?>>Light (600-800px spacing, max 10)</option>
+								<option value="normal" <?php selected( $l2['density'], 'normal' ); ?>>Normal (400-600px spacing, max 20)</option>
+								<option value="aggressive" <?php selected( $l2['density'], 'aggressive' ); ?>>Aggressive (300-500px spacing, max 20)</option>
 							</select>
-							<p class="description">Presets for Layer 2 spacing, cooldown, and max dynamic slots.</p>
+							<p class="description">Presets for per-visitor-type spacing and max dynamic slots.</p>
 						</td>
 					</tr>
 				</table>
@@ -737,18 +741,33 @@ function pl_ad_render_optimizer() {
 			</div>
 		</details>
 
-		<!-- ============ SECTION 4: LAYER 2 TUNING ============ -->
+		<!-- ============ SECTION 4: LAYER 2 TUNING (Predictive Engine) ============ -->
 		<details class="pl-opt-card">
-			<summary>4. Layer 2 Tuning</summary>
+			<summary>4. Layer 2 Tuning (Predictive Engine)</summary>
 			<div class="pl-opt-body">
+				<p class="description" style="margin-bottom:12px;">Predictive injection uses real-time velocity tracking to inject ads at pause points and predicted scroll stops. Spacing is dynamic per visitor type.</p>
 				<table class="form-table">
-					<tr><th>Max scroll speed for injection</th><td><input type="number" id="opt_l2_maxScrollSpeed" value="<?php echo (int) $l2['maxScrollSpeed']; ?>" min="100" max="2000" class="small-text"> px/s</td></tr>
-					<tr><th>Pause detection threshold</th><td><input type="number" id="opt_l2_pauseThreshold" value="<?php echo (int) $l2['pauseThreshold']; ?>" min="200" max="3000" class="small-text"> ms</td></tr>
-					<tr><th>Injection spacing</th><td><input type="number" id="opt_l2_spacing" value="<?php echo (int) $l2['spacing']; ?>" min="200" max="2000" class="small-text"> px</td></tr>
-					<tr><th>Injection cooldown</th><td><input type="number" id="opt_l2_cooldown" value="<?php echo (int) $l2['cooldown']; ?>" min="1" max="30" class="small-text"> seconds</td></tr>
-					<tr><th>Max active dynamic slots</th><td><input type="number" id="opt_l2_maxSlots" value="<?php echo (int) $l2['maxSlots']; ?>" min="1" max="20" class="small-text"></td></tr>
-					<tr><th>Fast-scanner threshold</th><td><input type="number" id="opt_l2_fastScannerSpeed" value="<?php echo (int) $l2['fastScannerSpeed']; ?>" min="100" max="2000" class="small-text"> px/s</td></tr>
-					<tr><th>Reader threshold</th><td><input type="number" id="opt_l2_readerSpeed" value="<?php echo (int) $l2['readerSpeed']; ?>" min="10" max="500" class="small-text"> px/s</td></tr>
+					<tr><th>Max active dynamic slots</th><td><input type="number" id="opt_l2_maxSlots" value="<?php echo (int) $l2['maxSlots']; ?>" min="1" max="30" class="small-text"> <p class="description">Slots are recycled when 1000px+ above viewport</p></td></tr>
+					<tr><th>Pause detection threshold</th><td><input type="number" id="opt_l2_pauseThreshold" value="<?php echo (int) $l2['pauseThreshold']; ?>" min="100" max="3000" class="small-text"> ms <p class="description">Time scrolling must stop before injecting an ad</p></td></tr>
+					<tr><th>Predictive window</th><td><input type="number" id="opt_l2_predictiveWindow" value="<?php echo esc_attr( $l2['predictiveWindow'] ); ?>" min="0.1" max="5.0" step="0.1" class="small-text"> s <p class="description">How far ahead to predict scroll stop position</p></td></tr>
+					<tr><th>Viewport refresh delay</th><td><input type="number" id="opt_l2_viewportRefreshDelay" value="<?php echo (int) $l2['viewportRefreshDelay']; ?>" min="1000" max="30000" step="1000" class="small-text"> ms <p class="description">Pause duration before refreshing in-view ads</p></td></tr>
+					<tr>
+						<th>Spacing per visitor type</th>
+						<td>
+							<label>Reader: <input type="number" id="opt_l2_readerSpacing" value="<?php echo (int) $l2['readerSpacing']; ?>" min="100" max="2000" class="small-text"> px</label><br>
+							<label>Scanner: <input type="number" id="opt_l2_scannerSpacing" value="<?php echo (int) $l2['scannerSpacing']; ?>" min="100" max="2000" class="small-text"> px</label><br>
+							<label>Fast-scanner: <input type="number" id="opt_l2_fastScannerSpacing" value="<?php echo (int) $l2['fastScannerSpacing']; ?>" min="100" max="2000" class="small-text"> px</label>
+							<p class="description">Minimum distance between ads, per visitor type (readers get tighter spacing for higher viewability)</p>
+						</td>
+					</tr>
+					<tr>
+						<th>Visitor classification</th>
+						<td>
+							<label>Reader &lt; <input type="number" id="opt_l2_readerSpeed" value="<?php echo (int) $l2['readerSpeed']; ?>" min="10" max="500" class="small-text"> px/s</label><br>
+							<label>Fast-scanner &gt; <input type="number" id="opt_l2_fastScannerSpeed" value="<?php echo (int) $l2['fastScannerSpeed']; ?>" min="100" max="2000" class="small-text"> px/s</label>
+							<p class="description">Scanner fills the gap between reader and fast-scanner thresholds</p>
+						</td>
+					</tr>
 				</table>
 			</div>
 		</details>
@@ -936,14 +955,16 @@ function pl_ad_render_optimizer() {
 			// Layer 2
 			var density = document.getElementById('opt_density').value;
 			var layer2 = {
-				density:          density,
-				maxScrollSpeed:   parseInt(document.getElementById('opt_l2_maxScrollSpeed').value, 10),
-				pauseThreshold:   parseInt(document.getElementById('opt_l2_pauseThreshold').value, 10),
-				spacing:          parseInt(document.getElementById('opt_l2_spacing').value, 10),
-				cooldown:         parseInt(document.getElementById('opt_l2_cooldown').value, 10),
-				maxSlots:         parseInt(document.getElementById('opt_l2_maxSlots').value, 10),
-				fastScannerSpeed: parseInt(document.getElementById('opt_l2_fastScannerSpeed').value, 10),
-				readerSpeed:      parseInt(document.getElementById('opt_l2_readerSpeed').value, 10),
+				density:              density,
+				maxSlots:             parseInt(document.getElementById('opt_l2_maxSlots').value, 10),
+				pauseThreshold:       parseInt(document.getElementById('opt_l2_pauseThreshold').value, 10),
+				predictiveWindow:     parseFloat(document.getElementById('opt_l2_predictiveWindow').value),
+				viewportRefreshDelay: parseInt(document.getElementById('opt_l2_viewportRefreshDelay').value, 10),
+				readerSpacing:        parseInt(document.getElementById('opt_l2_readerSpacing').value, 10),
+				scannerSpacing:       parseInt(document.getElementById('opt_l2_scannerSpacing').value, 10),
+				fastScannerSpacing:   parseInt(document.getElementById('opt_l2_fastScannerSpacing').value, 10),
+				readerSpeed:          parseInt(document.getElementById('opt_l2_readerSpeed').value, 10),
+				fastScannerSpeed:     parseInt(document.getElementById('opt_l2_fastScannerSpeed').value, 10),
 			};
 
 			// Video
@@ -993,15 +1014,16 @@ function pl_ad_render_optimizer() {
 		// Density preset auto-fill
 		document.getElementById('opt_density').addEventListener('change', function() {
 			var presets = {
-				light:      { spacing: 1200, cooldown: 10, maxSlots: 2 },
-				normal:     { spacing: 800,  cooldown: 6,  maxSlots: 4 },
-				aggressive: { spacing: 600,  cooldown: 4,  maxSlots: 6 },
+				light:      { readerSpacing: 600, scannerSpacing: 700, fastScannerSpacing: 800, maxSlots: 10 },
+				normal:     { readerSpacing: 400, scannerSpacing: 500, fastScannerSpacing: 600, maxSlots: 20 },
+				aggressive: { readerSpacing: 300, scannerSpacing: 400, fastScannerSpacing: 500, maxSlots: 20 },
 			};
 			var p = presets[this.value];
 			if (p) {
-				document.getElementById('opt_l2_spacing').value  = p.spacing;
-				document.getElementById('opt_l2_cooldown').value = p.cooldown;
-				document.getElementById('opt_l2_maxSlots').value = p.maxSlots;
+				document.getElementById('opt_l2_readerSpacing').value       = p.readerSpacing;
+				document.getElementById('opt_l2_scannerSpacing').value      = p.scannerSpacing;
+				document.getElementById('opt_l2_fastScannerSpacing').value  = p.fastScannerSpacing;
+				document.getElementById('opt_l2_maxSlots').value            = p.maxSlots;
 			}
 		});
 
