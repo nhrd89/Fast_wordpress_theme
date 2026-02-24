@@ -427,7 +427,7 @@ function pinlightning_summarize_ad_data($sessions) {
  */
 function pl_ad_ensure_tables() {
     $installed_ver = get_option( 'pl_ad_tables_ver', '0' );
-    if ( '1' === $installed_ver ) {
+    if ( '2' === $installed_ver ) {
         return;
     }
 
@@ -435,7 +435,7 @@ function pl_ad_ensure_tables() {
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     $charset = $wpdb->get_charset_collate();
 
-    // Granular event log.
+    // Granular event log (v2: added injection analytics columns).
     $sql1 = "CREATE TABLE {$wpdb->prefix}pl_ad_events (
         id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
         session_id varchar(32) NOT NULL DEFAULT '',
@@ -451,11 +451,17 @@ function pl_ad_ensure_tables() {
         device varchar(10) NOT NULL DEFAULT '',
         page_type varchar(10) NOT NULL DEFAULT '',
         post_id int(10) unsigned NOT NULL DEFAULT 0,
+        injection_type varchar(20) NOT NULL DEFAULT '',
+        scroll_speed int(10) unsigned NOT NULL DEFAULT 0,
+        predicted_distance int(11) NOT NULL DEFAULT 0,
+        ad_spacing int(10) unsigned NOT NULL DEFAULT 0,
+        time_to_viewable int(10) unsigned NOT NULL DEFAULT 0,
         created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY  (id),
         KEY idx_created (created_at),
         KEY idx_slot_created (slot_type, created_at),
-        KEY idx_event_created (event_type, created_at)
+        KEY idx_event_created (event_type, created_at),
+        KEY idx_injection (injection_type, created_at)
     ) $charset;";
 
     // Hourly rollup for dashboard queries.
@@ -478,7 +484,22 @@ function pl_ad_ensure_tables() {
     dbDelta( $sql1 );
     dbDelta( $sql2 );
 
-    update_option( 'pl_ad_tables_ver', '1' );
+    // v1→v2 migration: add injection analytics columns to existing table.
+    if ( $installed_ver === '1' ) {
+        $te = $wpdb->prefix . 'pl_ad_events';
+        $cols = $wpdb->get_col( "SHOW COLUMNS FROM {$te}", 0 );
+        if ( ! in_array( 'injection_type', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$te}
+                ADD COLUMN injection_type varchar(20) NOT NULL DEFAULT '' AFTER post_id,
+                ADD COLUMN scroll_speed int(10) unsigned NOT NULL DEFAULT 0 AFTER injection_type,
+                ADD COLUMN predicted_distance int(11) NOT NULL DEFAULT 0 AFTER scroll_speed,
+                ADD COLUMN ad_spacing int(10) unsigned NOT NULL DEFAULT 0 AFTER predicted_distance,
+                ADD COLUMN time_to_viewable int(10) unsigned NOT NULL DEFAULT 0 AFTER ad_spacing,
+                ADD KEY idx_injection (injection_type, created_at)" );
+        }
+    }
+
+    update_option( 'pl_ad_tables_ver', '2' );
 }
 add_action( 'admin_init', 'pl_ad_ensure_tables' );
 
@@ -535,22 +556,34 @@ function pl_ad_handle_event_batch() {
         $creativeSize = sanitize_text_field( substr( $evt['cs'] ?? '', 0, 15 ) );
         $refreshCount = min( 255, absint( $evt['rc'] ?? 0 ) );
 
+        // Injection analytics fields (v2).
+        $injectionType    = sanitize_text_field( substr( $evt['it'] ?? '', 0, 20 ) );
+        $scrollSpeed      = absint( $evt['ss'] ?? 0 );
+        $predictedDist    = intval( $evt['pd'] ?? 0 );
+        $adSpacing        = absint( $evt['sp'] ?? 0 );
+        $timeToViewable   = absint( $evt['ttv'] ?? 0 );
+
         // Insert event row.
         $wpdb->insert( $table_events, array(
-            'session_id'     => $sid,
-            'event_type'     => $eventType,
-            'slot_id'        => $slotId,
-            'unit_name'      => $unitName,
-            'slot_type'      => $slotType,
-            'creative_size'  => $creativeSize,
-            'refresh_count'  => $refreshCount,
-            'visitor_type'   => $visitorType,
-            'scroll_percent' => $scrollPct,
-            'time_on_page'   => $timeOnPage,
-            'device'         => $device,
-            'page_type'      => $pageType,
-            'post_id'        => $postId,
-            'created_at'     => current_time( 'mysql' ),
+            'session_id'         => $sid,
+            'event_type'         => $eventType,
+            'slot_id'            => $slotId,
+            'unit_name'          => $unitName,
+            'slot_type'          => $slotType,
+            'creative_size'      => $creativeSize,
+            'refresh_count'      => $refreshCount,
+            'visitor_type'       => $visitorType,
+            'scroll_percent'     => $scrollPct,
+            'time_on_page'       => $timeOnPage,
+            'device'             => $device,
+            'page_type'          => $pageType,
+            'post_id'            => $postId,
+            'injection_type'     => $injectionType,
+            'scroll_speed'       => $scrollSpeed,
+            'predicted_distance' => $predictedDist,
+            'ad_spacing'         => $adSpacing,
+            'time_to_viewable'   => $timeToViewable,
+            'created_at'         => current_time( 'mysql' ),
         ) );
 
         // Hourly aggregation via INSERT ... ON DUPLICATE KEY UPDATE.

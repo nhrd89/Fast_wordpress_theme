@@ -164,7 +164,7 @@ function refDelay(slotType) {
 function trackAdEvent(eventType, slotId, extra) {
 	extra = extra || {};
 	var info = _slotMap[slotId] || {};
-	_eventBatch.push({
+	var evt = {
 		e:  eventType,
 		s:  slotId,
 		u:  _unitMap[slotId] || '',
@@ -172,7 +172,14 @@ function trackAdEvent(eventType, slotId, extra) {
 		cs: extra.creativeSize || (info.renderedSize ? info.renderedSize[0] + 'x' + info.renderedSize[1] : ''),
 		rc: info.refreshCount || 0,
 		ts: Date.now()
-	});
+	};
+	// Pass through injection analytics fields if present
+	if (extra.injectionType)               evt.it  = extra.injectionType;
+	if (extra.scrollSpeed !== undefined)    evt.ss  = Math.round(extra.scrollSpeed);
+	if (extra.predictedDistance !== undefined) evt.pd = Math.round(extra.predictedDistance);
+	if (extra.adSpacing !== undefined)      evt.sp  = Math.round(extra.adSpacing);
+	if (extra.timeToViewable !== undefined) evt.ttv = Math.round(extra.timeToViewable);
+	_eventBatch.push(evt);
 }
 
 function flushEvents() {

@@ -624,6 +624,7 @@ function pl_ad_render_optimizer() {
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-live-sessions' ) ); ?>" class="button">Live Sessions</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-recommendations' ) ); ?>" class="button">Recommendations</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-injection-lab' ) ); ?>" class="button">Injection Lab</a>
 		</div>
 
 		<!-- Save / Reset bar -->

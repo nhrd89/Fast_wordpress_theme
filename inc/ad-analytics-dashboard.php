@@ -271,6 +271,7 @@ function pl_ad_render_analytics() {
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-optimizer' ) ); ?>" class="button">Optimizer</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-recommendations&range=' . $range ) ); ?>" class="button">Recommendations</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-injection-lab' ) ); ?>" class="button">Injection Lab</a>
 
 			<span style="border-left:1px solid #c3c4c7;height:24px;margin:0 4px;"></span>
 

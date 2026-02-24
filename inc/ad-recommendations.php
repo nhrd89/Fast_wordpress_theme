@@ -519,6 +519,7 @@ function pl_ad_render_recommendations_page() {
 			<span style="border-left:1px solid #c3c4c7;height:24px;margin:0 4px;"></span>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-analytics-dashboard&range=' . $range ) ); ?>" class="button">Analytics Dashboard</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-live-sessions' ) ); ?>" class="button">Live Sessions</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-injection-lab' ) ); ?>" class="button">Injection Lab</a>
 		</div>
 
 		<?php pl_ad_render_recommendations( $recs ); ?>

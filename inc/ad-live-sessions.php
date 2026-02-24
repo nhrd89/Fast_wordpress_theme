@@ -363,6 +363,7 @@ function pl_live_sessions_page() {
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button">Ad Engine Settings</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-optimizer' ) ); ?>" class="button">Optimizer</a>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-recommendations' ) ); ?>" class="button">Recommendations</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-injection-lab' ) ); ?>" class="button">Injection Lab</a>
 			<span style="border-left:1px solid #c3c4c7;height:24px"></span>
 			<button type="button" id="plClearLiveSessions" class="button" style="background:#d63638;border-color:#d63638;color:#fff">Clear All Data</button>
 			<button type="button" id="plExportLive" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff">Export All Sessions (JSON)</button>

@@ -134,6 +134,37 @@ function getSpacing() {
 	return SCANNER_SPACING;
 }
 
+/** Get distance to nearest existing ad from a Y position. */
+function getNearestAdDistance(targetY) {
+	var scrollY = window.pageYOffset || 0;
+	var minDist = 99999;
+
+	if (window.__initialAds) {
+		var zones = window.__initialAds.getExclusionZones();
+		for (var z = 0; z < zones.length; z++) {
+			var d = Math.abs(targetY - (zones[z].top + zones[z].bottom) / 2);
+			if (d < minDist) minDist = d;
+		}
+	}
+
+	for (var i = 0; i < _dynamicSlots.length; i++) {
+		var rec = _dynamicSlots[i];
+		if (rec.destroyed || !rec.el || !rec.el.parentNode) continue;
+		var rect = rec.el.getBoundingClientRect();
+		var d = Math.abs(targetY - (rect.top + scrollY + rect.height / 2));
+		if (d < minDist) minDist = d;
+	}
+
+	return minDist;
+}
+
+/** Get current scroll percentage. */
+function getScrollPercent() {
+	var docH = document.documentElement.scrollHeight || 1;
+	var y = window.pageYOffset || 0;
+	return Math.round((y + window.innerHeight) / docH * 100);
+}
+
 /* ================================================================
  * 1. VELOCITY TRACKER (50ms sampling)
  *
@@ -366,22 +397,30 @@ function injectDynamicAd(afterElement, injectionType) {
 			.build();
 
 	var scrollY = window.pageYOffset || 0;
+	var elRect  = container.getBoundingClientRect();
+	var adY     = elRect.top + scrollY + elRect.height / 2;
+	var adSpacing = getNearestAdDistance(adY);
+	var vpBottom  = scrollY + window.innerHeight;
+	var predDist  = (injectionType === 'predictive') ? Math.round(adY - vpBottom) : 0;
+
 	var record = {
-		divId:          divId,
-		slot:           null,
-		el:             container,
-		adDiv:          adDiv,
-		anchorEl:       afterElement,
-		injectedAt:     Date.now(),
-		injectedY:      scrollY,
-		injectionType:  injectionType || 'unknown',
-		injectionSpeed: _scrollSpeed,
-		viewable:       false,
-		refreshCount:   0,
-		lastRefresh:    0,
-		renderedSize:   null,
-		filled:         false,
-		destroyed:      false
+		divId:             divId,
+		slot:              null,
+		el:                container,
+		adDiv:             adDiv,
+		anchorEl:          afterElement,
+		injectedAt:        Date.now(),
+		injectedY:         scrollY,
+		injectionType:     injectionType || 'unknown',
+		injectionSpeed:    _scrollSpeed,
+		adSpacing:         Math.round(adSpacing),
+		predictedDistance: predDist,
+		viewable:          false,
+		refreshCount:      0,
+		lastRefresh:       0,
+		renderedSize:      null,
+		filled:            false,
+		destroyed:         false
 	};
 
 	_dynamicSlots.push(record);
@@ -404,16 +443,24 @@ function injectDynamicAd(afterElement, injectionType) {
 		}
 	});
 
-	log('Injected:', divId, 'type:', injectionType, 'speed:', _scrollSpeed, 'visitor:', _visitorType);
+	log('Injected:', divId, 'type:', injectionType, 'speed:', _scrollSpeed, 'spacing:', Math.round(adSpacing), 'visitor:', _visitorType);
 	pushEvent('dynamic_ad_injected', {
-		divId:         divId,
-		speed:         _scrollSpeed,
-		visitorType:   _visitorType,
-		injectionType: injectionType,
-		slotCount:     _dynamicSlots.length
+		divId:             divId,
+		speed:             _scrollSpeed,
+		visitorType:       _visitorType,
+		injectionType:     injectionType,
+		slotCount:         _dynamicSlots.length,
+		adSpacing:         Math.round(adSpacing),
+		predictedDistance: predDist
 	});
 	if (window.__plAdTracker) {
-		window.__plAdTracker.track('dynamic_inject', divId, { slotType: 'dynamic', strategy: injectionType });
+		window.__plAdTracker.track('dynamic_inject', divId, {
+			slotType:          'dynamic',
+			injectionType:     injectionType,
+			scrollSpeed:       _scrollSpeed,
+			predictedDistance: predDist,
+			adSpacing:         Math.round(adSpacing)
+		});
 	}
 
 	return record;
@@ -511,10 +558,15 @@ function checkViewportRefresh() {
 		pushEvent('dynamic_ad_refreshed', {
 			divId:        rec.divId,
 			refreshCount: rec.refreshCount,
-			strategy:     'viewport_refresh'
+			strategy:     'viewport_refresh',
+			viewDuration: pauseDuration
 		});
 		if (window.__plAdTracker) {
-			window.__plAdTracker.track('refresh', rec.divId, { slotType: 'dynamic', strategy: 'viewport_refresh' });
+			window.__plAdTracker.track('refresh', rec.divId, {
+				slotType:      'dynamic',
+				injectionType: 'viewport_refresh',
+				scrollSpeed:   _scrollSpeed
+			});
 		}
 	}
 }
@@ -618,10 +670,22 @@ function onDynamicImpressionViewable(event) {
 
 	for (var i = 0; i < _dynamicSlots.length; i++) {
 		if (_dynamicSlots[i].divId === divId) {
-			_dynamicSlots[i].viewable = true;
-			pushEvent('dynamic_ad_viewable', { divId: divId });
+			var rec = _dynamicSlots[i];
+			rec.viewable = true;
+			var ttv = Date.now() - rec.injectedAt;
+			pushEvent('dynamic_ad_viewable', {
+				divId:           divId,
+				timeToViewable:  ttv,
+				injectionType:   rec.injectionType,
+				injectionSpeed:  rec.injectionSpeed
+			});
 			if (window.__plAdTracker) {
-				window.__plAdTracker.track('viewable', divId, { slotType: 'dynamic' });
+				window.__plAdTracker.track('viewable', divId, {
+					slotType:        'dynamic',
+					injectionType:   rec.injectionType,
+					scrollSpeed:     rec.injectionSpeed,
+					timeToViewable:  ttv
+				});
 			}
 			break;
 		}
@@ -778,14 +842,16 @@ function sendBeacon() {
 		if (!s.filled && !s.destroyed) totalEmpty++;
 		totalRefreshes += s.refreshCount;
 		zones.push({
-			divId:         s.divId,
-			filled:        s.filled,
-			viewable:      s.viewable,
-			refreshCount:  s.refreshCount,
-			destroyed:     s.destroyed,
-			renderedSize:  s.renderedSize,
-			injectionType: s.injectionType,
-			injectionSpeed: s.injectionSpeed
+			divId:             s.divId,
+			filled:            s.filled,
+			viewable:          s.viewable,
+			refreshCount:      s.refreshCount,
+			destroyed:         s.destroyed,
+			renderedSize:      s.renderedSize,
+			injectionType:     s.injectionType,
+			injectionSpeed:    s.injectionSpeed,
+			adSpacing:         s.adSpacing || 0,
+			predictedDistance: s.predictedDistance || 0
 		});
 	}
 
@@ -960,13 +1026,15 @@ function sendHeartbeat() {
 		var ds = _dynamicSlots[d];
 		if (ds.destroyed) continue;
 		zones.push({
-			zoneId:        ds.divId,
-			slot:          'Ad.Plus-300x250',
-			size:          ds.renderedSize ? ds.renderedSize[0] + 'x' + ds.renderedSize[1] : '',
-			viewable:      ds.viewable,
-			filled:        ds.filled,
-			refreshCount:  ds.refreshCount,
-			injectionType: ds.injectionType
+			zoneId:            ds.divId,
+			slot:              'Ad.Plus-300x250',
+			size:              ds.renderedSize ? ds.renderedSize[0] + 'x' + ds.renderedSize[1] : '',
+			viewable:          ds.viewable,
+			filled:            ds.filled,
+			refreshCount:      ds.refreshCount,
+			injectionType:     ds.injectionType,
+			injectionSpeed:    ds.injectionSpeed,
+			adSpacing:         ds.adSpacing || 0
 		});
 	}
 	data.zones = zones;
