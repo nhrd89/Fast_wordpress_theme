@@ -46,7 +46,7 @@ function pl_ad_defaults() {
 		// Format Toggles.
 		'fmt_interstitial'      => true,
 		'fmt_anchor'            => true,
-		'fmt_top_anchor'        => true,
+		'fmt_top_anchor'        => false,
 		'fmt_300x250'           => true,
 		'fmt_970x250'           => true,
 		'fmt_728x90'            => true,
@@ -66,7 +66,6 @@ function pl_ad_defaults() {
 		// Ad Unit Slot Names.
 		'slot_interstitial'     => 'Ad.Plus-Interstitial',
 		'slot_anchor'           => 'Ad.Plus-Anchor',
-		'slot_top_anchor'       => 'Ad.Plus-Anchor',
 		'slot_300x250'          => 'Ad.Plus-300x250',
 		'slot_970x250'          => 'Ad.Plus-970x250',
 		'slot_728x90'           => 'Ad.Plus-728x90',
@@ -228,7 +227,7 @@ function pl_ad_sanitize_settings( $input ) {
 	$bools = array(
 		'enabled', 'dummy_mode', 'debug_overlay', 'record_data',
 		'mobile_enabled', 'desktop_enabled',
-		'fmt_interstitial', 'fmt_anchor', 'fmt_top_anchor', 'fmt_300x250',
+		'fmt_interstitial', 'fmt_anchor', 'fmt_300x250',
 		'fmt_970x250', 'fmt_728x90', 'fmt_320x100', 'fmt_160x600',
 		'fmt_pause', 'fmt_video',
 		'passback_enabled',
@@ -253,7 +252,7 @@ function pl_ad_sanitize_settings( $input ) {
 	// Text fields.
 	$texts = array(
 		'network_code', 'slot_prefix',
-		'slot_interstitial', 'slot_anchor', 'slot_top_anchor', 'slot_300x250',
+		'slot_interstitial', 'slot_anchor', 'slot_300x250',
 		'slot_970x250', 'slot_728x90', 'slot_320x100', 'slot_160x600', 'slot_pause',
 		'backfill_script_url', 'backfill_anchor_tag', 'backfill_interstitial_tag',
 	);
@@ -438,10 +437,6 @@ function pl_ad_render_global_tab( $s ) {
 			<td><label><input type="checkbox" name="pl_ad_settings[fmt_anchor]" value="1" <?php checked( $s['fmt_anchor'] ); ?>> Sticky banner at bottom of viewport</label></td>
 		</tr>
 		<tr>
-			<th>Top Anchor</th>
-			<td><label><input type="checkbox" name="pl_ad_settings[fmt_top_anchor]" value="1" <?php checked( $s['fmt_top_anchor'] ); ?>> Sticky banner at top of viewport</label></td>
-		</tr>
-		<tr>
 			<th>300x250</th>
 			<td><label><input type="checkbox" name="pl_ad_settings[fmt_300x250]" value="1" <?php checked( $s['fmt_300x250'] ); ?>> In-content medium rectangle</label></td>
 		</tr>
@@ -522,10 +517,6 @@ function pl_ad_render_codes_tab( $s ) {
 		<tr>
 			<th>Anchor (Bottom)</th>
 			<td><input type="text" name="pl_ad_settings[slot_anchor]" value="<?php echo esc_attr( $s['slot_anchor'] ); ?>" class="regular-text"></td>
-		</tr>
-		<tr>
-			<th>Anchor (Top)</th>
-			<td><input type="text" name="pl_ad_settings[slot_top_anchor]" value="<?php echo esc_attr( $s['slot_top_anchor'] ); ?>" class="regular-text"></td>
 		</tr>
 		<tr>
 			<th>300x250</th>
@@ -940,7 +931,6 @@ function pinlightning_ads_enqueue() {
 		// Formats.
 		'fmtInterstitial' => (bool) $s['fmt_interstitial'],
 		'fmtAnchor'       => (bool) $s['fmt_anchor'],
-		'fmtTopAnchor'    => (bool) $s['fmt_top_anchor'],
 		'fmtVideo'        => (bool) $s['fmt_video'],
 		'fmt300x250'      => (bool) $s['fmt_300x250'],
 		'fmt970x250'      => (bool) $s['fmt_970x250'],
@@ -966,7 +956,6 @@ function pinlightning_ads_enqueue() {
 		'slots'           => array(
 			'interstitial' => $s['slot_interstitial'],
 			'anchor'       => $s['slot_anchor'],
-			'topAnchor'    => $s['slot_top_anchor'],
 			'300x250'      => $s['slot_300x250'],
 			'970x250'      => $s['slot_970x250'],
 			'728x90'       => $s['slot_728x90'],

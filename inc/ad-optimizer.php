@@ -295,7 +295,7 @@ function pl_opt_format_defaults() {
 		'pause'        => false,
 		'dynamic'      => true,
 		'video'        => true,
-		'topAnchor'    => true,
+		'topAnchor'    => false,
 		'anchor'       => true,
 		'sideRails'    => true,
 		'interstitial' => true,
@@ -310,7 +310,6 @@ function pl_opt_refresh_defaults() {
 		'pause'     => array( 'enabled' => true,  'delay' => 30, 'max' => 2 ),
 		'dynamic'   => array( 'enabled' => true,  'delay' => 30, 'max' => 2 ),
 		'anchor'    => array( 'enabled' => true,  'delay' => 30, 'max' => -1 ),
-		'topAnchor' => array( 'enabled' => true,  'delay' => 30, 'max' => -1 ),
 		'sideRails' => array( 'enabled' => true,  'delay' => 30, 'max' => -1 ),
 	);
 }
@@ -355,7 +354,6 @@ function pl_opt_ecpm_defaults() {
 	return array(
 		'interstitial' => 3.27,
 		'anchor'       => 1.10,
-		'topAnchor'    => 1.10,
 		'sideRails'    => 0.65,
 		'video'        => 2.50,
 		'336x280'      => 0.74,
@@ -690,7 +688,6 @@ function pl_ad_render_optimizer() {
 						'pause'        => array( 'Pause Banner', 'pause' ),
 						'dynamic'      => array( 'Dynamic Ads (Layer 2)', 'dynamic' ),
 						'video'        => array( 'Video Outstream', 'video' ),
-						'topAnchor'    => array( 'Top Anchor', 'anchor' ),
 						'anchor'       => array( 'Bottom Anchor', 'anchor' ),
 						'sideRails'    => array( 'Side Rails', 'sideRail' ),
 						'interstitial' => array( 'Interstitial', 'interstitial' ),
@@ -730,7 +727,6 @@ function pl_ad_render_optimizer() {
 						'pause'     => 'Pause Banner',
 						'dynamic'   => 'Dynamic Ads',
 						'anchor'    => 'Bottom Anchor',
-						'topAnchor' => 'Top Anchor',
 						'sideRails' => 'Side Rails',
 					);
 					foreach ( $ref_labels as $rk => $rl ) :
@@ -830,7 +826,7 @@ function pl_ad_render_optimizer() {
 					<tbody>
 					<?php
 					$ecpm_labels = array(
-						'interstitial' => 'Interstitial', 'anchor' => 'Bottom Anchor', 'topAnchor' => 'Top Anchor',
+						'interstitial' => 'Interstitial', 'anchor' => 'Bottom Anchor',
 						'sideRails' => 'Side Rails', 'video' => 'Video Outstream',
 						'336x280' => '336x280', '300x600' => '300x600', '300x250' => '300x250',
 						'970x250' => '970x250', '970x90' => '970x90', '250x250' => '250x250',

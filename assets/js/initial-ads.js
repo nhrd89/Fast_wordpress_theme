@@ -34,7 +34,6 @@ var _overlaySlots   = {};
 
 // Module-scope overlay slot references (FIX A: accessible by setInterval, event handlers)
 var _anchorSlot     = null;
-var _topAnchorSlot  = null;
 var _leftRailSlot   = null;
 var _rightRailSlot  = null;
 var _interstitialSlot = null;
@@ -48,14 +47,13 @@ window.__plViewableCount = 0;
 window.__plOverlayStatus = {
 	interstitial: 'off',
 	bottomAnchor: 'off',
-	topAnchor:    'off',
+	topAnchor:    'off',   // Removed — kept for beacon/heartbeat compat
 	leftRail:     'off',
 	rightRail:    'off'
 };
 var _overlayDivMap = {
 	'__interstitial': 'interstitial',
 	'__anchor':       'bottomAnchor',
-	'__topAnchor':    'topAnchor',
 	'__leftRail':     'leftRail',
 	'__rightRail':    'rightRail'
 };
@@ -154,7 +152,7 @@ function refMax(key, fallback) {
 
 function refDelay(slotType) {
 	var map = { initial:'initial', sidebar:'sidebar', pause:'pause',
-	            anchor:'anchor', sideRail:'sideRails', topAnchor:'topAnchor' };
+	            anchor:'anchor', sideRail:'sideRails' };
 	var cfg = REF_CFG[map[slotType] || slotType];
 	if (!cfg) return (slotType === 'anchor' || slotType === 'sideRail') ? 30000 : 45000;
 	if (!cfg.enabled || cfg.enabled === 'false' || cfg.enabled === '0') return 0;
@@ -345,27 +343,8 @@ function initSlots() {
 			}
 		} else { log('Anchor SKIPPED — disabled'); }
 
-		// Top Anchor (guard: plAds.formats.topAnchor)
-		// Uses same Ad.Plus-Anchor unit as bottom — GPT enum controls position (TOP_ANCHOR vs BOTTOM_ANCHOR)
-		if (fmtOn('topAnchor')) {
-			var topAnchor = googletag.defineOutOfPageSlot(
-				SLOT_PATH + 'Ad.Plus-Anchor',
-				googletag.enums.OutOfPageFormat.TOP_ANCHOR
-			);
-			if (topAnchor) {
-				topAnchor.addService(googletag.pubads());
-				_overlaySlots.topAnchor = topAnchor;
-				_topAnchorSlot = topAnchor;
-				_slotMap['__topAnchor'] = {
-					slot: topAnchor, type: 'topAnchor',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('topAnchor', -1),
-					renderedSize: null, viewable: false
-				};
-				window.__plOverlayStatus.topAnchor = 'pending';
-			} else {
-				console.log('[InitialAds] Top Anchor slot returned null — GPT does not support TOP_ANCHOR on this page/device');
-			}
-		} else { log('Top Anchor SKIPPED — disabled'); }
+		// Top Anchor — REMOVED: "Format already created on the page" conflict with bottom anchor
+		// + GPT does not support TOP_ANCHOR on most pages/devices. Zero demand in 27 sessions.
 
 		// Side Rails (guard: plAds.formats.sideRails)
 		if (IS_DESKTOP && fmtOn('sideRails')) {
@@ -526,7 +505,6 @@ function initSlots() {
 		/* --- Unit Map for Event Tracking --- */
 		_unitMap['__interstitial']  = 'Ad.Plus-Interstitial';
 		_unitMap['__anchor']        = 'Ad.Plus-Anchor';
-		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor';
 		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
 		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
 		_unitMap['initial-ad-1']    = 'Ad.Plus-336x280';
@@ -580,7 +558,6 @@ function initSlots() {
 		// Uses module-scope slot refs — accessible from setInterval closures.
 		var overlayDefs = [
 			{ key: 'anchor',    slotRef: _anchorSlot,    divId: '__anchor',    statusKey: 'bottomAnchor' },
-			{ key: 'topAnchor', slotRef: _topAnchorSlot, divId: '__topAnchor', statusKey: 'topAnchor' },
 			{ key: 'leftRail',  slotRef: _leftRailSlot,  divId: '__leftRail',  statusKey: 'leftRail' },
 			{ key: 'rightRail', slotRef: _rightRailSlot, divId: '__rightRail', statusKey: 'rightRail' }
 		];
@@ -629,7 +606,6 @@ function onSlotRenderEnded(event) {
 		window.__plOverlayStatus[_overlayDivMap[divId]] = statusVal;
 	}
 	if (event.slot === _anchorSlot)       window.__plOverlayStatus.bottomAnchor = statusVal;
-	if (event.slot === _topAnchorSlot)    window.__plOverlayStatus.topAnchor    = statusVal;
 	if (event.slot === _leftRailSlot)     window.__plOverlayStatus.leftRail     = statusVal;
 	if (event.slot === _rightRailSlot)    window.__plOverlayStatus.rightRail    = statusVal;
 	if (event.slot === _interstitialSlot) window.__plOverlayStatus.interstitial = statusVal;
@@ -687,7 +663,6 @@ function onImpressionViewable(event) {
 	// Update overlay status by slot reference (out-of-page divIds are auto-generated)
 	if (_overlayDivMap[divId])            window.__plOverlayStatus[_overlayDivMap[divId]] = 'viewable';
 	if (slot === _anchorSlot)             window.__plOverlayStatus.bottomAnchor = 'viewable';
-	if (slot === _topAnchorSlot)          window.__plOverlayStatus.topAnchor    = 'viewable';
 	if (slot === _leftRailSlot)           window.__plOverlayStatus.leftRail     = 'viewable';
 	if (slot === _rightRailSlot)          window.__plOverlayStatus.rightRail    = 'viewable';
 	if (slot === _interstitialSlot)       window.__plOverlayStatus.interstitial = 'viewable';
@@ -714,7 +689,7 @@ function onImpressionViewable(event) {
 	trackAdEvent('viewable', divId);
 
 	// Overlays use setInterval for refresh — skip impressionViewable scheduling
-	var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'topAnchor' || info.type === 'sideRail');
+	var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'sideRail');
 	if (isOverlay) {
 		console.log('[InitialAds] Skipping impressionViewable refresh for overlay:', divId);
 		return;
