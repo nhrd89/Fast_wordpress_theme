@@ -54,8 +54,8 @@ var MOBILE_MAX_IN_VIEW      = L2.mobileMaxInView ? parseInt(L2.mobileMaxInView, 
 var MAX_AD_DENSITY_PERCENT  = L2.maxAdDensityPercent ? parseInt(L2.maxAdDensityPercent, 10) : 30;
 
 // Pause detection
-var PAUSE_VELOCITY       = 50;   // px/s — below this = paused
-var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 200;
+var PAUSE_VELOCITY       = 80;   // px/s — below this = paused (raised from 50, pause has 50% viewability)
+var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 150;
 
 // Viewport refresh
 var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDelay, 10) : 3000;
@@ -228,7 +228,7 @@ function getViewportDensity() {
  *
  * Tracks position, velocity, acceleration every 50ms.
  * Detects deceleration (speed drops >50% from recent peak) and
- * pause (velocity < 30px/s for PAUSE_THRESHOLD_MS).
+ * pause (velocity < 80px/s for PAUSE_THRESHOLD_MS).
  * Classifies visitor: reader (<100), scanner (<400), fast-scanner.
  * ================================================================ */
 
