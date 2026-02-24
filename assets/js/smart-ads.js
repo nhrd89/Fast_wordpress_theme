@@ -29,11 +29,11 @@ var L2  = (typeof plAds !== 'undefined' && plAds.layer2)  ? plAds.layer2  : {};
 var VID = (typeof plAds !== 'undefined' && plAds.video)   ? plAds.video   : {};
 var FMT = (typeof plAds !== 'undefined' && plAds.formats) ? plAds.formats : {};
 
-var MAX_DYNAMIC_SLOTS = L2.maxSlots ? parseInt(L2.maxSlots, 10) : 6;
+var MAX_DYNAMIC_SLOTS = L2.maxSlots ? parseInt(L2.maxSlots, 10) : 4;
 var MAX_REFRESH_DYN   = 2;       // max refreshes per dynamic slot
 var REFRESH_INTERVAL  = 30000;   // 30s minimum (Google policy)
 var MAIN_LOOP_MS      = 500;     // main loop interval
-var MIN_SPACING_PX    = L2.spacing ? parseInt(L2.spacing, 10) : 600;
+var MIN_SPACING_PX    = L2.spacing ? parseInt(L2.spacing, 10) : 800;
 
 /* ================================================================
  * STATE
@@ -550,8 +550,11 @@ function mainLoop() {
 	// Don't inject if fast-scanner (0% viewability at high speed)
 	if (_visitorType === 'fast-scanner') return;
 
+	// First dynamic ad waits for 30% scroll depth
+	if (_dynamicSlots.length === 0 && _maxScrollDepth < 30) return;
+
 	// Don't inject too frequently (cooldown from optimizer)
-	var cooldown = L2.cooldown ? parseInt(L2.cooldown, 10) : 4000;
+	var cooldown = L2.cooldown ? parseInt(L2.cooldown, 10) : 6000;
 	if (now - _lastInjectionT < cooldown) return;
 
 	// Don't inject if too close to last injection position

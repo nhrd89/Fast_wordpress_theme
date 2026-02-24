@@ -292,7 +292,7 @@ function pl_opt_format_defaults() {
 		'initial2'     => true,
 		'sidebar1'     => true,
 		'sidebar2'     => true,
-		'pause'        => true,
+		'pause'        => false,
 		'dynamic'      => true,
 		'video'        => true,
 		'topAnchor'    => true,
@@ -320,9 +320,9 @@ function pl_opt_layer2_defaults() {
 		'density'           => 'normal',
 		'maxScrollSpeed'    => 500,
 		'pauseThreshold'    => 800,
-		'spacing'           => 600,
-		'cooldown'          => 4,
-		'maxSlots'          => 6,
+		'spacing'           => 800,
+		'cooldown'          => 6,
+		'maxSlots'          => 4,
 		'fastScannerSpeed'  => 400,
 		'readerSpeed'       => 100,
 	);
@@ -330,7 +330,7 @@ function pl_opt_layer2_defaults() {
 
 function pl_opt_video_defaults() {
 	return array(
-		'enabled'        => true,
+		'enabled'        => false,
 		'minScroll'      => 40,
 		'minFilledAds'   => 2,
 		'allowedVisitor' => array( 'reader', 'scanner' ),
@@ -340,7 +340,7 @@ function pl_opt_video_defaults() {
 function pl_opt_viewability_defaults() {
 	return array(
 		'viewportCheck'   => true,
-		'minVisibility'   => 50,
+		'minVisibility'   => 10,
 		'skipTabHidden'   => true,
 		'lazyThreshold'   => 200,
 	);
@@ -651,9 +651,9 @@ function pl_ad_render_optimizer() {
 						<th>Ad Density Level</th>
 						<td>
 							<select id="opt_density">
-								<option value="light" <?php selected( $l2['density'], 'light' ); ?>>Light (800px, 6s cooldown, max 3)</option>
-								<option value="normal" <?php selected( $l2['density'], 'normal' ); ?>>Normal (600px, 4s cooldown, max 6)</option>
-								<option value="aggressive" <?php selected( $l2['density'], 'aggressive' ); ?>>Aggressive (400px, 3s cooldown, max 8)</option>
+								<option value="light" <?php selected( $l2['density'], 'light' ); ?>>Light (1200px, 10s cooldown, max 2)</option>
+								<option value="normal" <?php selected( $l2['density'], 'normal' ); ?>>Normal (800px, 6s cooldown, max 4)</option>
+								<option value="aggressive" <?php selected( $l2['density'], 'aggressive' ); ?>>Aggressive (600px, 4s cooldown, max 6)</option>
 							</select>
 							<p class="description">Presets for Layer 2 spacing, cooldown, and max dynamic slots.</p>
 						</td>
@@ -993,9 +993,9 @@ function pl_ad_render_optimizer() {
 		// Density preset auto-fill
 		document.getElementById('opt_density').addEventListener('change', function() {
 			var presets = {
-				light:      { spacing: 800, cooldown: 6, maxSlots: 3 },
-				normal:     { spacing: 600, cooldown: 4, maxSlots: 6 },
-				aggressive: { spacing: 400, cooldown: 3, maxSlots: 8 },
+				light:      { spacing: 1200, cooldown: 10, maxSlots: 2 },
+				normal:     { spacing: 800,  cooldown: 6,  maxSlots: 4 },
+				aggressive: { spacing: 600,  cooldown: 4,  maxSlots: 6 },
 			};
 			var p = presets[this.value];
 			if (p) {

@@ -324,7 +324,7 @@ function initSlots() {
 		// Top Anchor (guard: plAds.formats.topAnchor)
 		if (fmtOn('topAnchor')) {
 			var topAnchor = googletag.defineOutOfPageSlot(
-				SLOT_PATH + 'Ad.Plus-AnchorSmall',
+				SLOT_PATH + 'Ad.Plus-Anchor',
 				googletag.enums.OutOfPageFormat.TOP_ANCHOR
 			);
 			if (topAnchor) {
@@ -527,7 +527,7 @@ function initSlots() {
 		/* --- Unit Map for Event Tracking --- */
 		_unitMap['__interstitial']  = 'Ad.Plus-Interstitial';
 		_unitMap['__anchor']        = 'Ad.Plus-Anchor';
-		_unitMap['__topAnchor']     = 'Ad.Plus-AnchorSmall';
+		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor';
 		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
 		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
 		_unitMap['nav-ad-1']        = 'Ad.Plus-970x90';
@@ -577,6 +577,46 @@ function initSlots() {
 			if (document.visibilityState === 'hidden') flushEvents();
 		});
 		window.addEventListener('pagehide', flushEvents);
+
+		// Overlay refresh via setInterval (replaces impressionViewable for overlays).
+		// Overlays manage their own visibility — no viewport check needed.
+		var overlayRefreshKeys = ['anchor', 'topAnchor', 'leftRail', 'rightRail'];
+		for (var oi = 0; oi < overlayRefreshKeys.length; oi++) {
+			(function(key) {
+				var oSlot = _overlaySlots[key];
+				if (!oSlot) return;
+				var oDivId = key === 'anchor' ? '__anchor' : ('__' + key);
+				var oInfo = _slotMap[oDivId];
+				if (!oInfo) return;
+				var oDelay = refDelay(oInfo.type);
+				if (oDelay === 0) {
+					log('Overlay refresh DISABLED:', key);
+					return;
+				}
+				setInterval(function() {
+					if (VW_CFG.skipTabHidden !== 'false' && VW_CFG.skipTabHidden !== false && document.hidden) {
+						log('Overlay refresh SKIP:', key, '— tab hidden');
+						return;
+					}
+					if (oInfo.maxRefresh !== -1 && oInfo.refreshCount >= oInfo.maxRefresh) {
+						log('Overlay refresh SKIP:', key, '— max reached');
+						return;
+					}
+					var oStatus = window.__plOverlayStatus[_overlayDivMap[oDivId] || ''];
+					if (oStatus !== 'filled' && oStatus !== 'viewable') {
+						log('Overlay refresh SKIP:', key, '— status:', oStatus);
+						return;
+					}
+					log('Overlay refresh:', key, '#' + (oInfo.refreshCount + 1));
+					googletag.pubads().refresh([oSlot]);
+					oInfo.refreshCount++;
+					oInfo.lastRefresh = Date.now();
+					trackAdEvent('refresh', oDivId);
+					pushEvent('ad_refreshed', { divId: oDivId, refreshCount: oInfo.refreshCount, type: oInfo.type });
+				}, oDelay);
+				log('Overlay setInterval:', key, 'every', oDelay / 1000 + 's');
+			})(overlayRefreshKeys[oi]);
+		}
 	});
 }
 
@@ -657,8 +697,15 @@ function onImpressionViewable(event) {
 	pushEvent('ad_viewable', { divId: divId, type: info.type });
 	trackAdEvent('viewable', divId);
 
+	// Overlays use setInterval for refresh — skip impressionViewable scheduling
+	var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'topAnchor' || info.type === 'sideRail');
+	if (isOverlay) {
+		log('impressionViewable — overlay skip (uses setInterval):', divId);
+		return;
+	}
+
 	// Schedule refresh based on format type
-	// maxRefresh: -1 = unlimited (overlays), 0 = never (interstitial), N = cap
+	// maxRefresh: -1 = unlimited, 0 = never, N = cap
 	if (info.maxRefresh === 0) {
 		log('Refresh SKIPPED:', divId, '— interstitial (maxRefresh=0)');
 		return;
@@ -685,22 +732,28 @@ function onImpressionViewable(event) {
 			return;
 		}
 
-		// Viewport check for display slots (overlays skip — they manage their own visibility)
-		var isOverlay = (info.type === 'interstitial' || info.type === 'anchor' || info.type === 'topAnchor' || info.type === 'sideRail');
+		// Viewport check for display slots (overlays already filtered above)
 		var doViewportCheck = VW_CFG.viewportCheck !== 'false' && VW_CFG.viewportCheck !== false;
-		if (!isOverlay && doViewportCheck) {
+		if (doViewportCheck) {
 			var refreshEl = document.getElementById(divId);
 			if (refreshEl) {
 				var rRect = refreshEl.getBoundingClientRect();
 				var vpH   = window.innerHeight;
 				if (rRect.height > 0) {
-					var visH = Math.max(0, Math.min(rRect.bottom, vpH) - Math.max(rRect.top, 0));
-					var minVis = VW_CFG.minVisibility ? parseFloat(VW_CFG.minVisibility) / 100 : 0.5;
-					if (visH / rRect.height < minVis) {
-						log('Refresh ABORTED:', divId, '— not in viewport');
+					// 200px margin above/below viewport, 10% default threshold
+					var vpTop    = -200;
+					var vpBtm    = vpH + 200;
+					var visH     = Math.max(0, Math.min(rRect.bottom, vpBtm) - Math.max(rRect.top, vpTop));
+					var minVis   = VW_CFG.minVisibility ? parseFloat(VW_CFG.minVisibility) / 100 : 0.1;
+					var visRatio = visH / rRect.height;
+					if (visRatio < minVis) {
+						log('Refresh SKIP:', divId,
+							'vis=' + Math.round(visRatio * 100) + '% < min=' + Math.round(minVis * 100) + '%',
+							'(top:' + Math.round(rRect.top) + ' btm:' + Math.round(rRect.bottom) + ' vpH:' + vpH + ')');
 						trackAdEvent('refresh_skip', divId);
 						return;
 					}
+					log('Refresh viewport OK:', divId, Math.round(visRatio * 100) + '% visible');
 				}
 			}
 		}
