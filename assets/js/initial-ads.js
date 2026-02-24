@@ -526,7 +526,10 @@ function initSlots() {
 		googletag.enableServices();
 
 		// Display all display slots (overlays are auto-displayed by GPT)
-		var displayIds = ['initial-ad-1', 'initial-ad-2', 'pause-ad-1', '300x600-1', '300x250-sidebar'];
+		var displayIds = ['initial-ad-1', 'initial-ad-2', 'pause-ad-1'];
+		if (IS_DESKTOP) {
+			displayIds.push('300x600-1', '300x250-sidebar');
+		}
 		for (var i = 0; i < displayIds.length; i++) {
 			if (document.getElementById(displayIds[i])) {
 				googletag.display(displayIds[i]);
