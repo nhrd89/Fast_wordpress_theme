@@ -321,7 +321,7 @@ function pl_opt_layer2_defaults() {
 		'pauseThreshold'       => 200,
 		'predictiveWindow'     => 1.0,
 		'viewportRefreshDelay' => 3000,
-		'minPixelSpacing'      => 200,
+		'minPixelSpacing'      => 400,
 		'maxPixelSpacing'      => 1000,
 		'desktopMaxInView'     => 2,
 		'mobileMaxInView'      => 1,
@@ -478,7 +478,7 @@ function pl_opt_ajax_save() {
 			'pauseThreshold'       => max( 100, min( 3000, (int) ( $l['pauseThreshold'] ?? $d['pauseThreshold'] ) ) ),
 			'predictiveWindow'     => max( 0.1, min( 5.0, round( (float) ( $l['predictiveWindow'] ?? $d['predictiveWindow'] ), 1 ) ) ),
 			'viewportRefreshDelay' => max( 1000, min( 30000, (int) ( $l['viewportRefreshDelay'] ?? $d['viewportRefreshDelay'] ) ) ),
-			'minPixelSpacing'      => max( 50, min( 1000, (int) ( $l['minPixelSpacing'] ?? $d['minPixelSpacing'] ) ) ),
+			'minPixelSpacing'      => max( 400, min( 1000, (int) ( $l['minPixelSpacing'] ?? $d['minPixelSpacing'] ) ) ),
 			'maxPixelSpacing'      => max( 200, min( 3000, (int) ( $l['maxPixelSpacing'] ?? $d['maxPixelSpacing'] ) ) ),
 			'desktopMaxInView'     => max( 1, min( 5, (int) ( $l['desktopMaxInView'] ?? $d['desktopMaxInView'] ) ) ),
 			'mobileMaxInView'      => max( 1, min( 3, (int) ( $l['mobileMaxInView'] ?? $d['mobileMaxInView'] ) ) ),
@@ -758,7 +758,7 @@ function pl_ad_render_optimizer() {
 					<tr>
 						<th>Spacing bounds (speed-based)</th>
 						<td>
-							<label>Min spacing: <input type="number" id="opt_l2_minPixelSpacing" value="<?php echo (int) $l2['minPixelSpacing']; ?>" min="50" max="1000" class="small-text"> px</label><br>
+							<label>Min spacing: <input type="number" id="opt_l2_minPixelSpacing" value="<?php echo (int) $l2['minPixelSpacing']; ?>" min="400" max="1000" class="small-text"> px</label><br>
 							<label>Max spacing: <input type="number" id="opt_l2_maxPixelSpacing" value="<?php echo (int) $l2['maxPixelSpacing']; ?>" min="200" max="3000" class="small-text"> px</label>
 							<p class="description">Spacing = scroll speed &times; time-between (reader 2.5s, scanner 3.0s, fast 3.5s), clamped to these bounds</p>
 						</td>
@@ -1029,9 +1029,9 @@ function pl_ad_render_optimizer() {
 		// Density preset auto-fill
 		document.getElementById('opt_density').addEventListener('change', function() {
 			var presets = {
-				light:      { minPixelSpacing: 300, maxPixelSpacing: 1200, desktopMaxInView: 1, mobileMaxInView: 1, maxAdDensityPercent: 20, maxSlots: 10, predictiveSpeedCap: 250 },
-				normal:     { minPixelSpacing: 200, maxPixelSpacing: 1000, desktopMaxInView: 2, mobileMaxInView: 1, maxAdDensityPercent: 30, maxSlots: 20, predictiveSpeedCap: 300 },
-				aggressive: { minPixelSpacing: 150, maxPixelSpacing: 800,  desktopMaxInView: 3, mobileMaxInView: 2, maxAdDensityPercent: 40, maxSlots: 20, predictiveSpeedCap: 400 },
+				light:      { minPixelSpacing: 600, maxPixelSpacing: 1200, desktopMaxInView: 1, mobileMaxInView: 1, maxAdDensityPercent: 20, maxSlots: 10, predictiveSpeedCap: 250 },
+				normal:     { minPixelSpacing: 400, maxPixelSpacing: 1000, desktopMaxInView: 2, mobileMaxInView: 1, maxAdDensityPercent: 30, maxSlots: 20, predictiveSpeedCap: 300 },
+				aggressive: { minPixelSpacing: 400, maxPixelSpacing: 800,  desktopMaxInView: 3, mobileMaxInView: 2, maxAdDensityPercent: 40, maxSlots: 20, predictiveSpeedCap: 400 },
 			};
 			var p = presets[this.value];
 			if (p) {

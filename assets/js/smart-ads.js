@@ -42,7 +42,7 @@ var ENGINE_LOOP_MS     = 100;    // predictive engine loop
 var RECYCLE_DISTANCE   = 1000;   // px above viewport to recycle
 
 // Speed-based spacing: spacing = speed × timeBetween, clamped [MIN, MAX]
-var MIN_PIXEL_SPACING    = L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 400;
+var MIN_PIXEL_SPACING    = Math.max(400, L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 400);
 var MAX_PIXEL_SPACING    = L2.maxPixelSpacing ? parseInt(L2.maxPixelSpacing, 10) : 1000;
 var READER_TIME          = 2.5;   // seconds between ads for readers
 var SCANNER_TIME         = 3.0;   // seconds between ads for scanners
@@ -473,6 +473,15 @@ function injectDynamicAd(afterElement, injectionType) {
 	var elRect  = container.getBoundingClientRect();
 	var adY     = elRect.top + scrollY + elRect.height / 2;
 	var adSpacing = getNearestAdDistance(adY);
+
+	// Absolute minimum spacing guard — abort if actual placement is too close
+	if (adSpacing < MIN_PIXEL_SPACING) {
+		if (container.parentNode) container.parentNode.removeChild(container);
+		_slotCounter--;
+		log('ABORT: actual spacing', Math.round(adSpacing), '< MIN', MIN_PIXEL_SPACING);
+		return null;
+	}
+
 	var vpBottom  = scrollY + window.innerHeight;
 	var predDist  = (injectionType === 'predictive') ? Math.round(adY - vpBottom) : 0;
 
