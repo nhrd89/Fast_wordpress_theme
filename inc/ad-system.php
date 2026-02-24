@@ -147,14 +147,7 @@ function pl_render_sidebar_ads() {
  * initial-ads.js defines the GPT slot with responsive size mapping.
  */
 function pl_render_nav_ad() {
-	$s = function_exists( 'pl_ad_settings' ) ? pl_ad_settings() : array( 'enabled' => false );
-	if ( empty( $s['enabled'] ) ) {
-		return;
-	}
-
-	echo '<div class="pl-nav-ad" style="text-align:center;min-height:90px;margin:0 auto;overflow:hidden;width:100%;">';
-	echo '<div id="nav-ad-1"></div>';
-	echo '</div>';
+	return;
 }
 
 /* ================================================================
@@ -176,8 +169,6 @@ function pl_ad_system_css() {
 <style>
 .pl-initial-ad{position:relative;overflow:hidden;clear:both;contain:layout}
 .pl-dynamic-ad{position:relative;overflow:hidden;clear:both;contain:layout}
-.pl-nav-ad{position:relative;overflow:hidden;contain:layout;min-height:100px}
-@media(min-width:768px){.pl-nav-ad{min-height:90px}}
 .pl-sidebar-ads{display:none}
 @media(min-width:1025px){.pl-sidebar-ads{display:block;position:sticky;top:80px}}
 </style>

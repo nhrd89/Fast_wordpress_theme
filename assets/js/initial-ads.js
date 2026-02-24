@@ -143,10 +143,10 @@ function refMax(key, fallback) {
 }
 
 function refDelay(slotType) {
-	var map = { nav:'nav', initial:'initial', sidebar:'sidebar', pause:'pause',
+	var map = { initial:'initial', sidebar:'sidebar', pause:'pause',
 	            anchor:'anchor', sideRail:'sideRails', topAnchor:'topAnchor' };
 	var cfg = REF_CFG[map[slotType] || slotType];
-	if (!cfg) return (slotType === 'anchor' || slotType === 'sideRail' || slotType === 'nav') ? 30000 : 45000;
+	if (!cfg) return (slotType === 'anchor' || slotType === 'sideRail') ? 30000 : 45000;
 	if (!cfg.enabled || cfg.enabled === 'false' || cfg.enabled === '0') return 0;
 	return cfg.delay ? parseInt(cfg.delay, 10) * 1000 : 30000;
 }
@@ -210,8 +210,8 @@ function boot() {
 		log('plAds not found — ads disabled');
 		return;
 	}
-	// Nav ad exists on ALL pages; initial-ad-1 only on single posts.
-	if (!document.getElementById('nav-ad-1') && !document.getElementById('initial-ad-1')) {
+	// Check for ad containers on this page.
+	if (!document.getElementById('initial-ad-1')) {
 		log('No ad containers found — ads disabled');
 		return;
 	}
@@ -372,37 +372,6 @@ function initSlots() {
 			}
 		}
 
-		/* --- Nav Ad Slot (all pages) --- */
-		/* Leaderboard under navigation — highest viewability placement.
-		   Short formats only: max 90px desktop, 100px mobile. */
-
-		var navSizeMap = googletag.sizeMapping()
-			.addSize([1025, 0], [[970, 90], [728, 90]])
-			.addSize([768, 0],  [[728, 90], [468, 60]])
-			.addSize([468, 0],  [[320, 100], [320, 50], [300, 100], [300, 50]])
-			.addSize([320, 0],  [[320, 100], [320, 50], [300, 100], [300, 50]])
-			.addSize([0, 0],    [[300, 100], [300, 50]])
-			.build();
-
-		if (fmtOn('nav') && document.getElementById('nav-ad-1')) {
-			var navSlot = googletag.defineSlot(
-				SLOT_PATH + 'Ad.Plus-970x90',
-				[[970, 90], [728, 90], [468, 60], [320, 100], [320, 50], [300, 100], [300, 50]],
-				'nav-ad-1'
-			);
-			if (navSlot) {
-				navSlot.defineSizeMapping(navSizeMap);
-				navSlot.addService(googletag.pubads());
-				navSlot.setTargeting('refresh', 'true');
-				navSlot.setTargeting('pos', 'nav');
-				_slotMap['nav-ad-1'] = {
-					slot: navSlot, type: 'nav',
-					refreshCount: 0, lastRefresh: 0, maxRefresh: refMax('nav', -1),
-					renderedSize: null, viewable: false
-				};
-			}
-		}
-
 		/* --- Initial In-Content Slots (only on single posts) --- */
 
 		// Slot 1 — before paragraph 1
@@ -530,7 +499,6 @@ function initSlots() {
 		_unitMap['__topAnchor']     = 'Ad.Plus-Anchor';
 		_unitMap['__leftRail']      = 'Ad.Plus-Side-Anchor';
 		_unitMap['__rightRail']     = 'Ad.Plus-Side-Anchor';
-		_unitMap['nav-ad-1']        = 'Ad.Plus-970x90';
 		_unitMap['initial-ad-1']    = 'Ad.Plus-300x250';
 		_unitMap['initial-ad-2']    = 'Ad.Plus-336x280';
 		_unitMap['300x600-1']       = 'Ad.Plus-300x600';
@@ -550,7 +518,7 @@ function initSlots() {
 		googletag.enableServices();
 
 		// Display all display slots (overlays are auto-displayed by GPT)
-		var displayIds = ['nav-ad-1', 'initial-ad-1', 'initial-ad-2', 'pause-ad-1', '300x600-1', '300x250-sidebar'];
+		var displayIds = ['initial-ad-1', 'initial-ad-2', 'pause-ad-1', '300x600-1', '300x250-sidebar'];
 		for (var i = 0; i < displayIds.length; i++) {
 			if (document.getElementById(displayIds[i])) {
 				googletag.display(displayIds[i]);
@@ -637,7 +605,7 @@ function onSlotRenderEnded(event) {
 
 	if (event.isEmpty) {
 		// Collapse — shrink container to 0
-		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad') || container.classList.contains('pl-nav-ad') || container.classList.contains('pl-pause-ad'))) {
+		if (container && (container.classList.contains('pl-initial-ad') || container.classList.contains('pl-sidebar-ad') || container.classList.contains('pl-pause-ad'))) {
 			container.style.minHeight = '0';
 			container.style.margin    = '0';
 			container.style.overflow  = 'hidden';
@@ -665,14 +633,6 @@ function onSlotRenderEnded(event) {
 			container.style.minHeight = size[1] + 'px';
 		}
 	}
-	// Nav ad container: grow only, set max-width to rendered width
-	if (size && container && container.classList.contains('pl-nav-ad')) {
-		var origNavMin = parseInt(container.style.minHeight, 10) || 90;
-		if (size[1] > origNavMin) {
-			container.style.minHeight = size[1] + 'px';
-		}
-	}
-
 	if (_slotMap[divId]) {
 		_slotMap[divId].renderedSize = size;
 	}

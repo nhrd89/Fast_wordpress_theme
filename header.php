@@ -74,6 +74,4 @@ pinlightning_preload_lcp_image();
 	</div>
 </header>
 
-<?php pl_render_nav_ad(); ?>
-
 <main id="primary" role="main">

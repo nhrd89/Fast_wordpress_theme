@@ -287,7 +287,7 @@ function pl_optimizer_clear_history() {
 
 function pl_opt_format_defaults() {
 	return array(
-		'nav'          => true,
+		'nav'          => false,
 		'initial1'     => true,
 		'initial2'     => true,
 		'sidebar1'     => true,
