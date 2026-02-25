@@ -62,7 +62,7 @@ Fast_wordpress_theme/
 │   │   ├── smart-ads.js    # Layer 2: Dynamic predictive injection engine
 │   │   ├── engagement.js   # Engagement IIFE: observers, counters, milestones, polls
 │   │   ├── scroll-engage.js # Gamified character system + header stats reveal
-│   │   ├── infinite-scroll.js # Infinite scroll via REST API
+│   │   ├── infinite-scroll.js # Next-post auto-loader (IO at 70% read, max 3 posts)
 │   │   └── dist/           # Build output (gitignored)
 │   └── engage/             # Scroll-engage character assets (images, video)
 │
@@ -172,8 +172,15 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - `window.__plViewableCount` — shared viewable counter incremented by BOTH layers
 - `window.__plOverlayStatus` — overlay states: off → pending → empty/filled → viewable
 - `window.__initialAds` API: `.ready`, `.onReady()`, `.getExclusionZones()`, `.refreshSlot()`, `.getSlotMap()`
+- `window.SmartAds` API: `.rescanAnchors()` — notify Layer 2 of new content (resets house ad counter)
+- `window.__plNextPostLoader` API: `.getLoadedIds()`, `.getContainer()` — next-post loader state
 
 ### Layer 2 — Dynamic Predictive Injection (`smart-ads.js`)
+
+**Content Discovery:**
+- `findTargetNear()` uses `querySelectorAll('.single-content')` to find paragraphs across ALL content sections (original + auto-loaded posts)
+- REST endpoint already wraps auto-loaded content in `<div class="infinite-post-content single-content">` (rest-random-posts.php L98)
+- `checkVideoInjection()` still uses `querySelector('.single-content')` (first/original article only — one video per page)
 
 **Visitor Classification:**
 | Type | Speed | Time Between Ads |
@@ -478,7 +485,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 | Method | Endpoint | File | Purpose |
 |--------|----------|------|---------|
-| GET | `/pinlightning/v1/random-posts` | `rest-random-posts.php` | Infinite scroll |
+| GET | `/pinlightning/v1/random-posts` | `rest-random-posts.php` | Next-post auto-load (returns full article HTML with .single-content wrapper) |
 | POST | `/pinlightning/v1/flush-cache` | `performance.php` | Cache flush (X-Cache-Secret) |
 | POST | `/pl/v1/subscribe` | `email-leads.php` | Email capture + lead scoring |
 | GET | `/pl/v1/unsubscribe` | `email-leads.php` | Email unsubscribe |
@@ -516,6 +523,9 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Next-Post Auto-Load (Feb 25, 2026)
+- `3d37051`: **Next-post auto-load with smart-ads rescan** — Rewrote `infinite-scroll.js` as a next-post auto-loader (IO trigger at 70% read, max 3 posts/session). smart-ads.js `findTargetNear()` now uses `querySelectorAll('.single-content')` to discover paragraphs in all content sections (original + auto-loaded). Exposed `window.SmartAds.rescanAnchors()` API from the IIFE. engagement.js `handleNext()` smooth-scrolls to auto-loaded post if present instead of navigating. Admin toggle `next_post_autoload` added to Device Controls in ad-engine.php. PHP passes `autoLoad` flag via `plInfinite` localized config.
 
 ### Admin Tooling (Feb 25, 2026)
 - `a223aba`: **Stable snapshot system** — save/revert all ad engine files from admin UI. `inc/ad-snapshot.php` handles AJAX save (copies 13 files to `backup/ad-engine-stable/` with `snapshot.json` metadata) and revert (restores from backup). UI panel at top of Ad Engine settings page. `backup/` gitignored.
@@ -574,6 +584,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Creative timeout, viewport-aware size selection
 - 400px minimum spacing enforced everywhere
 - Stable snapshot system for ad engine files (save/revert from admin)
+- Next-post auto-load (IO trigger at 70% read, max 3 posts, smart-ads rescan)
 - PageSpeed scores maintained at 100/100/100/100
 
 ### Monitoring (check after 24-48 hours)
