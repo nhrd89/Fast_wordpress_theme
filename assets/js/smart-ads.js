@@ -84,6 +84,7 @@ var _activeStickyAd = null; // currently sticky ad div (only one at a time)
 // Exit-intent interstitial
 var _exitFired          = false;
 var _exitTrigger        = '';   // 'visibility' | 'mouseleave' | 'beforeunload'
+var _exitRecord         = null; // full tracking record (same shape as zone entries)
 
 // Velocity tracker
 var _velocitySamples = [];  // last 10 velocity readings
@@ -1384,6 +1385,27 @@ function sendBeacon() {
 		});
 	}
 
+	// Include exit interstitial as a zone entry if it fired.
+	// Totals NOT incremented here — interstitial already counted via Layer 1 slotMap.
+	if (_exitRecord) {
+		zones.push({
+			divId:             _exitRecord.divId,
+			filled:            _exitRecord.filled,
+			viewable:          _exitRecord.viewableEver,
+			refreshCount:      0,
+			destroyed:         false,
+			renderedSize:      _exitRecord.renderedSize,
+			injectionType:     _exitRecord.injectionType,
+			injectionSpeed:    0,
+			scrollDirection:   'n/a',
+			nearImage:         false,
+			adSpacing:         0,
+			predictedDistance: 0,
+			trigger:           _exitRecord.trigger,
+			sessionSeconds:    _exitRecord.sessionSeconds
+		});
+	}
+
 	// Gather Layer 1 data — slotMap for counts, __plOverlayStatus for overlay state
 	var slotMap = (window.__initialAds && window.__initialAds.getSlotMap) ? window.__initialAds.getSlotMap() : {};
 	var OVS = window.__plOverlayStatus || {};
@@ -1585,6 +1607,23 @@ function sendHeartbeat() {
 			adSpacing:         ds.adSpacing || 0
 		});
 	}
+
+	// Include exit interstitial as a zone entry if it fired
+	if (_exitRecord) {
+		zones.push({
+			zoneId:        _exitRecord.divId,
+			slot:          'exit-interstitial',
+			size:          _exitRecord.renderedSize ? _exitRecord.renderedSize[0] + 'x' + _exitRecord.renderedSize[1] : '',
+			viewable:      _exitRecord.viewableEver,
+			filled:        _exitRecord.filled,
+			refreshCount:  0,
+			injectionType: _exitRecord.injectionType,
+			injectionSpeed: 0,
+			scrollDirection: 'n/a',
+			adSpacing:     0
+		});
+	}
+
 	data.zones = zones;
 
 	// Use fetch (not sendBeacon) so we can send credentials for CORS
@@ -1756,9 +1795,58 @@ function tryExitInterstitial(trigger) {
 	_exitFired = true;
 	_exitTrigger = trigger;
 
-	// Refresh the interstitial — GPT shows it as full-screen overlay
+	// Create tracking record (same fields used by beacon/heartbeat zones).
+	// NOT pushed to _dynamicSlots (no DOM element — would crash engine loop).
+	_exitRecord = {
+		divId:           'exit-interstitial',
+		injectedAt:      Date.now(),
+		injectionType:   'exit_intent',
+		injectionSpeed:  0,
+		scrollDirection: 'n/a',
+		nearImage:       false,
+		adSpacing:       0,
+		predictedDistance: 0,
+		trigger:         trigger,
+		sessionSeconds:  Math.round(sessionSeconds),
+		filled:          false,
+		viewable:        false,
+		viewableEver:    false,
+		refreshCount:    0,
+		renderedSize:    null,
+		destroyed:       false
+	};
+
+	// Refresh the interstitial — GPT shows it as full-screen overlay.
+	// Add targeted GPT listeners for fill/viewability BEFORE refresh.
 	googletag.cmd.push(function() {
-		googletag.pubads().refresh([slotInfo.slot]);
+		var targetSlot = slotInfo.slot;
+
+		// Listen for render result
+		googletag.pubads().addEventListener('slotRenderEnded', function(event) {
+			if (event.slot !== targetSlot || !_exitRecord) return;
+			_exitRecord.filled = !event.isEmpty;
+			if (event.size) {
+				_exitRecord.renderedSize = event.size;
+			}
+			log('Exit interstitial result:',
+				_exitRecord.filled ? 'FILLED ' + (event.size ? event.size[0] + 'x' + event.size[1] : '') : 'EMPTY');
+			pushEvent(_exitRecord.filled ? 'exit_interstitial_filled' : 'exit_interstitial_empty', {
+				trigger: trigger,
+				size: event.size ? event.size[0] + 'x' + event.size[1] : 'empty'
+			});
+		});
+
+		// Listen for viewability
+		googletag.pubads().addEventListener('impressionViewable', function(event) {
+			if (event.slot !== targetSlot || !_exitRecord) return;
+			_exitRecord.viewable = true;
+			_exitRecord.viewableEver = true;
+			window.__plViewableCount = (window.__plViewableCount || 0) + 1;
+			log('Exit interstitial VIEWABLE');
+			pushEvent('exit_interstitial_viewable', { trigger: trigger });
+		});
+
+		googletag.pubads().refresh([targetSlot]);
 	});
 
 	console.log('[SmartAds] Exit interstitial fired:', trigger,

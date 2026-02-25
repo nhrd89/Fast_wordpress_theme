@@ -158,11 +158,12 @@ function pinlightning_record_ad_data($request) {
     if (!empty($body['zones']) && is_array($body['zones'])) {
         foreach ($body['zones'] as $zone) {
             $session['zones'][] = array(
-                'zone_id' => sanitize_text_field($zone['zoneId'] ?? ''),
+                'zone_id' => sanitize_text_field($zone['zoneId'] ?? $zone['divId'] ?? ''),
                 'slot' => sanitize_text_field($zone['slot'] ?? ''),
                 'ad_size' => sanitize_text_field($zone['size'] ?? $zone['adSize'] ?? ''),
                 'position' => sanitize_text_field($zone['position'] ?? ''),
-                'speed_at_injection' => floatval($zone['speedAtInjection'] ?? $zone['scrollSpeedAtInjection'] ?? 0),
+                'injection_type' => sanitize_text_field($zone['injectionType'] ?? ''),
+                'speed_at_injection' => floatval($zone['speedAtInjection'] ?? $zone['injectionSpeed'] ?? 0),
                 'pattern_at_injection' => sanitize_text_field($zone['patternAtInjection'] ?? ''),
                 'total_visible_ms' => intval($zone['visibleMs'] ?? $zone['totalVisibleMs'] ?? 0),
                 'viewable_impressions' => !empty($zone['viewable']) ? 1 : 0,
@@ -173,6 +174,7 @@ function pinlightning_record_ad_data($request) {
                 'passback' => !empty($zone['passback']),
                 'passback_network' => sanitize_text_field($zone['passbackNetwork'] ?? ''),
                 'refresh_count' => intval($zone['refreshCount'] ?? 0),
+                'trigger' => sanitize_text_field($zone['trigger'] ?? ''),
             );
         }
     }

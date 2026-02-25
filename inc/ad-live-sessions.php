@@ -159,21 +159,22 @@ function pl_live_sessions_heartbeat( $request ) {
 	if ( ! empty( $body['zones'] ) && is_array( $body['zones'] ) ) {
 		foreach ( array_slice( $body['zones'], 0, 20 ) as $z ) {
 			$session['events'][] = array(
-				'zone_id'       => sanitize_text_field( $z['zoneId'] ?? '' ),
-				'slot'          => sanitize_text_field( $z['slot'] ?? '' ),
-				'ad_size'       => sanitize_text_field( $z['size'] ?? $z['adSize'] ?? '' ),
-				'position'      => sanitize_text_field( $z['position'] ?? '' ),
-				'speed_at_inj'  => intval( $z['speedAtInjection'] ?? 0 ),
-				'pattern'       => sanitize_text_field( $z['patternAtInjection'] ?? '' ),
-				'visible_ms'    => intval( $z['visibleMs'] ?? 0 ),
-				'viewable'      => ! empty( $z['viewable'] ) ? 1 : 0,
-				'max_ratio'     => floatval( $z['maxRatio'] ?? 0 ),
-				'filled'        => isset( $z['filled'] ) ? (bool) $z['filled'] : null,
-				'is_pause'      => ! empty( $z['isPause'] ),
-				'is_video'      => ! empty( $z['isVideo'] ),
-				'passback'      => ! empty( $z['passback'] ),
-				'passback_net'  => sanitize_text_field( $z['passbackNetwork'] ?? '' ),
-				'refresh_count' => intval( $z['refreshCount'] ?? 0 ),
+				'zone_id'        => sanitize_text_field( $z['zoneId'] ?? '' ),
+				'slot'           => sanitize_text_field( $z['slot'] ?? '' ),
+				'ad_size'        => sanitize_text_field( $z['size'] ?? $z['adSize'] ?? '' ),
+				'position'       => sanitize_text_field( $z['position'] ?? '' ),
+				'injection_type' => sanitize_text_field( $z['injectionType'] ?? '' ),
+				'speed_at_inj'   => intval( $z['speedAtInjection'] ?? $z['injectionSpeed'] ?? 0 ),
+				'pattern'        => sanitize_text_field( $z['patternAtInjection'] ?? '' ),
+				'visible_ms'     => intval( $z['visibleMs'] ?? 0 ),
+				'viewable'       => ! empty( $z['viewable'] ) ? 1 : 0,
+				'max_ratio'      => floatval( $z['maxRatio'] ?? 0 ),
+				'filled'         => isset( $z['filled'] ) ? (bool) $z['filled'] : null,
+				'is_pause'       => ! empty( $z['isPause'] ),
+				'is_video'       => ! empty( $z['isVideo'] ),
+				'passback'       => ! empty( $z['passback'] ),
+				'passback_net'   => sanitize_text_field( $z['passbackNetwork'] ?? '' ),
+				'refresh_count'  => intval( $z['refreshCount'] ?? 0 ),
 			);
 		}
 		$session['zones_active'] = implode( ',', array_column( $session['events'], 'zone_id' ) );
@@ -667,7 +668,21 @@ function pl_live_sessions_page() {
 			h += '<tr><td>Refreshes</td><td>' + (s.refresh_count || 0) + '</td></tr>';
 			h += '<tr><td>Video</td><td>' + (s.video_injected ? '<span class="pl-gate-ok">&#10003; Injected</span>' : '&#10007; Not injected') + '</td></tr>';
 			if (s.exit_interstitial_fired) {
-				h += '<tr><td>Exit Interstitial</td><td><span class="pl-gate-ok">&#10003; Fired</span> (' + (s.exit_interstitial_trigger || '-') + ')</td></tr>';
+				// Find exit interstitial zone record for fill/size/viewable detail
+				var exitZone = null;
+				if (s.events) {
+					for (var ei = 0; ei < s.events.length; ei++) {
+						if (s.events[ei].zone_id === 'exit-interstitial') { exitZone = s.events[ei]; break; }
+					}
+				}
+				var exitDetail = '<span class="pl-gate-ok">&#10003; Fired</span> (' + (s.exit_interstitial_trigger || '-') + ')';
+				if (exitZone) {
+					var exitFill = exitZone.filled ? '<span class="pl-gate-ok">filled</span>' : '<span class="pl-gate-fail">empty</span>';
+					var exitView = exitZone.viewable > 0 ? '<span class="pl-gate-ok">viewable</span>' : 'not viewable';
+					var exitSize = exitZone.ad_size || '-';
+					exitDetail += ' &mdash; ' + exitFill + ', ' + exitView + (exitSize !== '-' ? ', ' + exitSize : '');
+				}
+				h += '<tr><td>Exit Interstitial</td><td>' + exitDetail + '</td></tr>';
 			}
 			if (s.image_tap_count > 0 || (s.image_taps && s.image_taps.length > 0)) {
 				var tapCount = s.image_tap_count || (s.image_taps ? s.image_taps.length : 0);
@@ -690,13 +705,15 @@ function pl_live_sessions_page() {
 			h += '<div>';
 			h += '<h4>Ad Detail (' + (s.events ? s.events.length : 0) + ' ads)' + (isRecent ? ' — Final' : '') + '</h4>';
 			if (s.events && s.events.length > 0) {
-				h += '<table><tr><th>Zone</th><th>Size</th><th>Position</th><th>Speed</th><th>Pattern</th><th>Visible</th><th>Viewable</th><th>Pause</th><th>Refresh</th></tr>';
+				h += '<table><tr><th>Zone</th><th>Type</th><th>Size</th><th>Filled</th><th>Speed</th><th>Pattern</th><th>Visible</th><th>Viewable</th><th>Pause</th><th>Refresh</th></tr>';
 				for (var i = 0; i < s.events.length; i++) {
 					var e = s.events[i];
-					h += '<tr>';
+					var rowStyle = e.injection_type === 'exit_intent' ? ' style="background:#fef3c7"' : '';
+					h += '<tr' + rowStyle + '>';
 					h += '<td><code>' + (e.zone_id || '-') + '</code></td>';
+					h += '<td>' + (e.injection_type || '-') + '</td>';
 					h += '<td>' + (e.ad_size || '-') + '</td>';
-					h += '<td>' + (e.position || '-') + '</td>';
+					h += '<td>' + (e.filled === true ? statusIcon(true) : (e.filled === false ? statusIcon(false) : '-')) + '</td>';
 					h += '<td>' + (e.speed_at_inj || 0) + '</td>';
 					h += '<td>' + (e.pattern || '-') + '</td>';
 					h += '<td>' + ((e.visible_ms || 0) / 1000).toFixed(1) + 's</td>';
