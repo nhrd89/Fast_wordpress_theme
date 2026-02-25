@@ -180,8 +180,8 @@ function pl_ad_system_css() {
 	}
 	?>
 <style>
-.pl-initial-ad{position:relative;overflow:hidden;clear:both;contain:layout}
-.pl-dynamic-ad{position:relative;overflow:hidden;clear:both;contain:layout}
+.pl-initial-ad{position:relative;overflow:hidden;clear:both;contain:layout;min-height:250px;display:flex;align-items:center;justify-content:center}
+.pl-dynamic-ad{position:relative;overflow:hidden;clear:both;contain:layout;min-height:250px;display:flex;align-items:center;justify-content:center}
 .pl-sidebar-ads{display:none}
 @media(min-width:1025px){.pl-sidebar-ads{display:block;position:sticky;top:80px}}
 </style>
