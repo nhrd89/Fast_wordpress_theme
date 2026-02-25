@@ -365,58 +365,60 @@ function checkSpacing(targetY) {
  * ================================================================ */
 
 function findTargetNear(targetY, searchRadius) {
-	var content = document.querySelector('.single-content');
-	if (!content) return null;
-
-	var candidates = content.querySelectorAll('p');
-	if (!candidates.length) return null;
+	// Support multiple .single-content sections (original + auto-loaded posts)
+	var contentSections = document.querySelectorAll('.single-content');
+	if (!contentSections.length) return null;
 
 	var scrollY   = window.pageYOffset || 0;
 	var bestScore = -Infinity;
 	var bestEl    = null;
 
-	for (var i = 0; i < candidates.length; i++) {
-		var el   = candidates[i];
-		var rect = el.getBoundingClientRect();
-		var elY  = rect.top + scrollY + rect.height;
+	for (var s = 0; s < contentSections.length; s++) {
+		var candidates = contentSections[s].querySelectorAll('p');
 
-		// Must be within search radius of target
-		var dist = Math.abs(elY - targetY);
-		if (dist > searchRadius) continue;
+		for (var i = 0; i < candidates.length; i++) {
+			var el   = candidates[i];
+			var rect = el.getBoundingClientRect();
+			var elY  = rect.top + scrollY + rect.height;
 
-		// Must pass spacing guard
-		if (!checkSpacing(elY)) continue;
+			// Must be within search radius of target
+			var dist = Math.abs(elY - targetY);
+			if (dist > searchRadius) continue;
 
-		// Score: closer to target = better (inverse distance)
-		var score = searchRadius - dist;
+			// Must pass spacing guard
+			if (!checkSpacing(elY)) continue;
 
-		var prev = el.previousElementSibling;
+			// Score: closer to target = better (inverse distance)
+			var score = searchRadius - dist;
 
-		// Bonus: after images — #1 priority (natural content break, high attention)
-		if (prev && (prev.tagName === 'IMG' || prev.tagName === 'FIGURE'
-			|| (prev.classList && (prev.classList.contains('wp-block-image') || prev.classList.contains('wp-block-gallery')))
-			|| (prev.querySelector && prev.querySelector('img')))) {
-			score += 300;
-		}
+			var prev = el.previousElementSibling;
 
-		// Bonus: after headings (section break)
-		if (prev && /^H[2-4]$/.test(prev.tagName)) {
-			score += 150;
-		}
+			// Bonus: after images — #1 priority (natural content break, high attention)
+			if (prev && (prev.tagName === 'IMG' || prev.tagName === 'FIGURE'
+				|| (prev.classList && (prev.classList.contains('wp-block-image') || prev.classList.contains('wp-block-gallery')))
+				|| (prev.querySelector && prev.querySelector('img')))) {
+				score += 300;
+			}
 
-		// Bonus: paragraph has substantial text
-		if (el.textContent.length > 80) {
-			score += 50;
-		}
+			// Bonus: after headings (section break)
+			if (prev && /^H[2-4]$/.test(prev.tagName)) {
+				score += 150;
+			}
 
-		// Penalty: very short paragraph
-		if (el.textContent.length < 20) {
-			score -= 200;
-		}
+			// Bonus: paragraph has substantial text
+			if (el.textContent.length > 80) {
+				score += 50;
+			}
 
-		if (score > bestScore) {
-			bestScore = score;
-			bestEl    = el;
+			// Penalty: very short paragraph
+			if (el.textContent.length < 20) {
+				score -= 200;
+			}
+
+			if (score > bestScore) {
+				bestScore = score;
+				bestEl    = el;
+			}
 		}
 	}
 
@@ -1266,7 +1268,7 @@ function checkVideoInjection() {
 	// One video per page — ever
 	if (window.__plVideoInjected) return;
 
-	// Only on single posts
+	// Only on single posts — use first .single-content (original article)
 	var content = document.querySelector('.single-content');
 	if (!content) return;
 
@@ -1745,5 +1747,31 @@ if (document.readyState === 'loading') {
 setTimeout(function() {
 	if (!_booted) bootOnce();
 }, 15000);
+
+/* ================================================================
+ * PUBLIC API — window.SmartAds
+ *
+ * Exposes rescanAnchors() so next-post-loader can notify Layer 2
+ * that new .single-content sections have been appended to the DOM.
+ * The engine loop already picks up new paragraphs via querySelectorAll,
+ * but rescan forces an immediate spacing recalculation.
+ * ================================================================ */
+
+/**
+ * Notify Layer 2 that new content has been added to the page.
+ * Resets the engine's house ad counter so new content gets fresh quota,
+ * and logs the rescan for debugging.
+ */
+function rescanAnchors() {
+	// Reset house ad counter: new content gets its own quota
+	_houseAdsShown = 0;
+
+	log('rescanAnchors: new content detected, house ads reset. Content sections:',
+		document.querySelectorAll('.single-content').length);
+}
+
+window.SmartAds = {
+	rescanAnchors: rescanAnchors
+};
 
 })();

@@ -436,10 +436,27 @@ function handleExitClose() {
 
 function handleNext(btn) {
 	var url = btn.dataset.url;
-	if (url) {
-		ebTrack('next_article_clicked', { url: url });
-		window.location.href = url;
+	if (!url) return;
+
+	ebTrack('next_article_clicked', { url: url });
+
+	// If next-post auto-loader has already loaded content below,
+	// smooth-scroll to it instead of navigating away.
+	var loader = window.__plNextPostLoader;
+	if (loader) {
+		var ctr = loader.getContainer();
+		if (ctr) {
+			// Find the first auto-loaded post wrapper
+			var firstLoaded = ctr.querySelector('.infinite-post-wrapper');
+			if (firstLoaded) {
+				firstLoaded.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				return;
+			}
+		}
 	}
+
+	// Fallback: full-page navigation
+	window.location.href = url;
 }
 
 function handlePinAll() {

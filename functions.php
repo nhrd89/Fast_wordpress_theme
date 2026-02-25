@@ -119,8 +119,9 @@ function pinlightning_scripts() {
 	// Comment reply — dequeued here, loaded on first scroll (see pinlightning_scroll_deferred_assets).
 	wp_dequeue_script( 'comment-reply' );
 
-	// Infinite scroll on single posts (defer + requestIdleCallback = zero TBT).
+	// Next-post auto-loader on single posts (defer + requestIdleCallback = zero TBT).
 	if ( is_singular() ) {
+		$ad_s = function_exists( 'pl_ad_settings' ) ? pl_ad_settings() : array();
 		wp_enqueue_script(
 			'pinlightning-infinite-scroll',
 			PINLIGHTNING_URI . '/assets/js/infinite-scroll.js',
@@ -130,6 +131,7 @@ function pinlightning_scripts() {
 		);
 		wp_localize_script( 'pinlightning-infinite-scroll', 'plInfinite', array(
 			'endpoint' => esc_url_raw( rest_url( 'pinlightning/v1/random-posts' ) ),
+			'autoLoad' => ! empty( $ad_s['next_post_autoload'] ) ? '1' : '0',
 		) );
 
 		// smart-ads.js — loaded post-window.load (see pinlightning_postload_scripts).

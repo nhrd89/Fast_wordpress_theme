@@ -43,6 +43,9 @@ function pl_ad_defaults() {
 		'mobile_enabled'        => true,
 		'desktop_enabled'       => true,
 
+		// Next-post auto-load (loads next article at 70% read).
+		'next_post_autoload'    => true,
+
 		// Format Toggles.
 		'fmt_interstitial'      => true,
 		'fmt_anchor'            => true,
@@ -227,6 +230,7 @@ function pl_ad_sanitize_settings( $input ) {
 	$bools = array(
 		'enabled', 'dummy_mode', 'debug_overlay', 'record_data',
 		'mobile_enabled', 'desktop_enabled',
+		'next_post_autoload',
 		'fmt_interstitial', 'fmt_anchor', 'fmt_300x250',
 		'fmt_970x250', 'fmt_728x90', 'fmt_320x100', 'fmt_160x600',
 		'fmt_pause', 'fmt_video',
@@ -427,6 +431,13 @@ function pl_ad_render_global_tab( $s ) {
 		<tr>
 			<th>Desktop</th>
 			<td><label><input type="checkbox" name="pl_ad_settings[desktop_enabled]" value="1" <?php checked( $s['desktop_enabled'] ); ?>> Enable ads on desktop</label></td>
+		</tr>
+		<tr>
+			<th>Next-Post Auto-Load</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[next_post_autoload]" value="1" <?php checked( $s['next_post_autoload'] ); ?>> Auto-load next article at 70% read</label>
+				<p class="description">Loads a random post below the current article. Smart ads inject into the new content automatically.</p>
+			</td>
 		</tr>
 
 		<tr><th colspan="2"><h2>Format Toggles</h2></th></tr>
