@@ -939,6 +939,7 @@ require_once PINLIGHTNING_DIR . '/inc/ad-recommendations.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-optimizer.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-live-sessions.php';
 require_once PINLIGHTNING_DIR . '/inc/ad-injection-lab.php';
+require_once PINLIGHTNING_DIR . '/inc/ad-snapshot.php';
 require_once PINLIGHTNING_DIR . '/inc/customizer-scroll-engage.php';
 require_once PINLIGHTNING_DIR . '/inc/visitor-tracker.php';
 require_once PINLIGHTNING_DIR . '/inc/ai-chat.php';

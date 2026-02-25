@@ -309,6 +309,8 @@ function pl_ad_settings_page() {
 	<div class="wrap">
 		<h1>PinLightning Ad Engine</h1>
 
+		<?php if ( function_exists( 'pl_snapshot_render_controls' ) ) { pl_snapshot_render_controls(); } ?>
+
 		<p>
 			<?php if ( $settings['enabled'] ) : ?>
 				<span style="color:#46b450;font-weight:600;">&#9679; Ads Active</span>
