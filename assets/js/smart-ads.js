@@ -515,6 +515,23 @@ function renderSlot(record, sizes, sizeMapping) {
 		}
 	});
 
+	// Slow-creative timeout: if no creative renders in 3s, collapse the container
+	// to prevent blank 250px gaps. Shows house ad if available.
+	(function(rec) {
+		setTimeout(function() {
+			if (rec.destroyed || rec.filled) return;
+			// Creative didn't arrive in 3s — collapse
+			showHouseAd(rec);
+			log('Slow-creative timeout:', rec.divId, '— collapsed after 3s');
+			pushEvent('dynamic_ad_timeout', { divId: rec.divId });
+			if (window.__plAdTracker) {
+				window.__plAdTracker.track('creative_timeout', rec.divId, {
+					slotType: 'dynamic', timeoutMs: 3000
+				});
+			}
+		}, 3000);
+	})(record);
+
 	log('Rendered:', record.divId, 'type:', record.injectionType);
 }
 
