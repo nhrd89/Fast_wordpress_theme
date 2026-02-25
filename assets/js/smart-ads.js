@@ -54,8 +54,8 @@ var MOBILE_MAX_IN_VIEW      = L2.mobileMaxInView ? parseInt(L2.mobileMaxInView, 
 var MAX_AD_DENSITY_PERCENT  = L2.maxAdDensityPercent ? parseInt(L2.maxAdDensityPercent, 10) : 30;
 
 // Pause detection
-var PAUSE_VELOCITY       = 80;   // px/s — below this = paused (raised from 50, pause has 50% viewability)
-var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 150;
+var PAUSE_VELOCITY       = 100;  // px/s — below this = paused (raised from 80, pause has 50% viewability)
+var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) : 120;
 
 // Viewport refresh
 var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDelay, 10) : 3000;
@@ -87,6 +87,7 @@ var _speed           = 0;   // absolute velocity
 var _peakSpeed       = 0;   // recent peak (for deceleration detection)
 var _peakDecayT      = 0;   // timestamp of last peak update
 var _isDecelerating  = false;
+var _isRapidDecel    = false;  // rapid deceleration (>150 to <100 in <300ms)
 var _isPaused        = false;
 var _pauseStartT     = 0;   // when current pause began
 
@@ -231,8 +232,9 @@ function getViewportDensity() {
  * 1. VELOCITY TRACKER (50ms sampling)
  *
  * Tracks position, velocity, acceleration every 50ms.
- * Detects deceleration (speed drops >50% from recent peak) and
- * pause (velocity < 80px/s for PAUSE_THRESHOLD_MS).
+ * Detects deceleration (speed drops >50% from recent peak),
+ * rapid deceleration (>150 to <100 in <300ms), and
+ * pause (velocity < 100px/s for PAUSE_THRESHOLD_MS).
  * Classifies visitor: reader (<100), scanner (<400), fast-scanner.
  * ================================================================ */
 
@@ -274,8 +276,15 @@ function sampleVelocity() {
 		// Deceleration detection: speed dropped >50% from recent peak
 		_isDecelerating = (_peakSpeed > 100 && _speed < _peakSpeed * 0.5 && _speed > PAUSE_VELOCITY);
 
+		// Rapid deceleration: >150px/s to <100px/s within 300ms — user is clearly stopping.
+		// Catches the moment just before a full pause for earlier injection.
+		var prevSpeed = _velocitySamples.length >= 2
+			? Math.abs(_velocitySamples[_velocitySamples.length - 2])
+			: 0;
+		_isRapidDecel = (prevSpeed > 150 && _speed < PAUSE_VELOCITY && dt < 0.3);
+
 		// Pause detection: velocity below threshold
-		if (_speed < PAUSE_VELOCITY) {
+		if (_speed < PAUSE_VELOCITY || _isRapidDecel) {
 			if (!_isPaused) {
 				_isPaused = true;
 				_pauseStartT = now;
