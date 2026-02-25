@@ -262,6 +262,15 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - If `rec.filled` is still false, collapses via `showHouseAd()`
 - Prevents persistent 250px blank gaps from slow/no-fill auctions
 
+**Exit-Intent Interstitial (`tryExitInterstitial()`):**
+- Fires the GPT interstitial slot on user exit (tab switch, mouse-leave, beforeunload)
+- `initExitIntent()` called at script load time (NOT inside `init()` — catches exits before engagement gate)
+- 3 triggers: `visibilitychange` (tab switch), `mouseleave` (clientY<10), `beforeunload`
+- Guards: `exit_interstitial` admin toggle, 15s minimum session, fires once per page
+- Accesses Layer 1 interstitial via `window.__initialAds.getSlotMap()['__interstitial'].slot`
+- Direct `googletag.pubads().refresh([slot])` (bypasses `refreshSlot()` which checks maxRefresh=0)
+- Tracked: `exitInterstitialFired` + `exitInterstitialTrigger` in beacon and heartbeat
+
 **Viewability Tracking:**
 - `viewableEver` flag: set once on `impressionViewable`, never cleared (unlike `viewable` which resets on refresh)
 - Session reporter uses `viewableEver` for accurate aggregate counts
@@ -281,6 +290,8 @@ var _slotViewStart  = {};    // per-slot viewport visibility timestamps
 var _isPaused       = false; // velocity < 100px/s
 var _isDecelerating = false; // speed dropped >50% from peak
 var _isRapidDecel   = false; // >150 to <100 in 300ms
+var _exitFired      = false; // exit interstitial fired (once per page)
+var _exitTrigger    = '';    // which trigger fired it
 ```
 
 **Dynamic Ad Record Fields:**
@@ -473,6 +484,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 | Milestones | `#ebMilestone` | Toast at 25%, 50%, 75%, 100% |
 | Collect counter | `#ebCollectCounter` | Collectible emoji tracking |
 | Exit intent | `#ebExit` | Email capture on mouse-leave |
+| Image tap tracker | `window._imageTaps` | Click/tap tracking on post images |
+
+### Image Tap Tracker (`engagement.js`)
+- `initImageTapTracker()` — delegated click listener on `.single-content img` + `.infinite-post-content img`
+- Stores: `{ src, alt, heading, ts }` per tap in `window._imageTaps` array
+- Heading context: finds nearest `<h2>`/`<h3>` in `.eb-item`, `article`, or `.infinite-post-wrapper`
+- Sent in beacon as `imageTaps` (full array) and heartbeat as `imageTapCount`
+- Stored in ad-data-recorder.php session JSON and displayed in Live Sessions detail
 
 ### Split IntersectionObserver (CRITICAL)
 - **seenIO** (threshold 0.15): counting/tracking, one-shot per item
@@ -524,6 +543,10 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Exit-Intent + Image Tap Tracking (Feb 25, 2026)
+- **Exit-intent interstitial** — `tryExitInterstitial()` in smart-ads.js fires the GPT interstitial slot on tab switch (visibilitychange), mouse-leave (clientY<10), or beforeunload. 15s minimum session. Admin toggle `exit_interstitial` in ad-engine.php. `initExitIntent()` runs at script load (not gated by engagement). Tracked in beacon + heartbeat.
+- **Image tap tracker** — `initImageTapTracker()` in engagement.js. Delegated click listener on `.single-content img` + `.infinite-post-content img`. Stores `{src, alt, heading, ts}` in `window._imageTaps`. Sent via beacon (full array) and heartbeat (count). Stored in ad-data-recorder.php session JSON. Displayed in Live Sessions detail panel.
 
 ### Next-Post Auto-Load (Feb 25, 2026)
 - `3d37051`: **Next-post auto-load with smart-ads rescan** — Rewrote `infinite-scroll.js` as a next-post auto-loader (IO trigger at 70% read, max 3 posts/session). smart-ads.js `findTargetNear()` now uses `querySelectorAll('.single-content')` to discover paragraphs in all content sections (original + auto-loaded). Exposed `window.SmartAds.rescanAnchors()` API from the IIFE. engagement.js `handleNext()` smooth-scrolls to auto-loaded post if present instead of navigating. Admin toggle `next_post_autoload` added to Device Controls in ad-engine.php. PHP passes `autoLoad` flag via `plInfinite` localized config.
@@ -588,6 +611,8 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - 400px minimum spacing enforced everywhere
 - Stable snapshot system for ad engine files (save/revert from admin)
 - Next-post auto-load (IO trigger at 70% read, max 3 posts, smart-ads rescan)
+- Exit-intent interstitial (fires GPT interstitial on tab switch/mouse-leave/beforeunload)
+- Image tap tracker (click tracking on post images, stored in session data)
 - PageSpeed scores maintained at 100/100/100/100
 
 ### Monitoring (check after 24-48 hours)
