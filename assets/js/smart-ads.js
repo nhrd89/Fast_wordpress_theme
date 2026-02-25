@@ -437,6 +437,51 @@ function findScrollTarget() {
  * 4. DYNAMIC AD INJECTION
  * ================================================================ */
 
+/** Render a dynamic ad slot via GPT (called by lazy render observer or timeout). */
+function renderSlot(record, sizes, sizeMapping) {
+	if (record.destroyed || record.rendered) return;
+	record.rendered = true;
+
+	googletag.cmd.push(function() {
+		var slot = googletag.defineSlot(
+			SLOT_PATH + 'Ad.Plus-300x250',
+			sizes,
+			record.divId
+		);
+		if (slot) {
+			slot.defineSizeMapping(sizeMapping);
+			slot.addService(googletag.pubads());
+			slot.setTargeting('refresh', 'true');
+			slot.setTargeting('pos', 'dynamic');
+			slot.setTargeting('strategy', record.injectionType || 'unknown');
+			googletag.display(record.divId);
+			record.slot = slot;
+		}
+	});
+
+	log('Rendered:', record.divId, 'type:', record.injectionType);
+}
+
+/** Observe a dynamic ad container for lazy rendering — triggers 200px before viewport. */
+function observeForLazyRender(container, record, sizes, sizeMapping) {
+	if (typeof IntersectionObserver === 'undefined') {
+		renderSlot(record, sizes, sizeMapping);
+		return;
+	}
+
+	var observer = new IntersectionObserver(function(entries) {
+		if (entries[0].isIntersecting && !record.rendered) {
+			observer.disconnect();
+			renderSlot(record, sizes, sizeMapping);
+		}
+	}, {
+		rootMargin: '200px 0px'  // trigger 200px BEFORE entering viewport
+	});
+
+	observer.observe(container);
+	record._lazyObserver = observer;
+}
+
 function injectDynamicAd(afterElement, injectionType) {
 	_slotCounter++;
 	var divId = 'smart-ad-' + _slotCounter;
@@ -513,28 +558,16 @@ function injectDynamicAd(afterElement, injectionType) {
 		lastRefresh:       0,
 		renderedSize:      null,
 		filled:            false,
-		destroyed:         false
+		destroyed:         false,
+		rendered:          false
 	};
 
 	_dynamicSlots.push(record);
 
-	// Define and display via GPT
-	googletag.cmd.push(function() {
-		var slot = googletag.defineSlot(
-			SLOT_PATH + 'Ad.Plus-300x250',
-			sizes,
-			divId
-		);
-		if (slot) {
-			slot.defineSizeMapping(sizeMapping);
-			slot.addService(googletag.pubads());
-			slot.setTargeting('refresh', 'true');
-			slot.setTargeting('pos', 'dynamic');
-			slot.setTargeting('strategy', injectionType || 'unknown');
-			googletag.display(divId);
-			record.slot = slot;
-		}
-	});
+	// Lazy render — defer GPT defineSlot+display until 200px from viewport.
+	// This gives the creative ~500-1000ms to load while the user scrolls toward it,
+	// dramatically improving viewability for predictive injections.
+	observeForLazyRender(container, record, sizes, sizeMapping);
 
 	log('Injected:', divId, 'type:', injectionType, 'dir:', _scrollDirection, 'speed:', _scrollSpeed, 'spacing:', Math.round(adSpacing), 'visitor:', _visitorType);
 	pushEvent('dynamic_ad_injected', {
@@ -597,6 +630,10 @@ function recycleSlots() {
 function destroySlot(record) {
 	record.destroyed = true;
 	delete _slotViewStart[record.divId];
+	if (record._lazyObserver) {
+		record._lazyObserver.disconnect();
+		record._lazyObserver = null;
+	}
 
 	googletag.cmd.push(function() {
 		if (record.slot) {
