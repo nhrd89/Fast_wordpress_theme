@@ -89,6 +89,9 @@ var _isDecelerating  = false;
 var _isPaused        = false;
 var _pauseStartT     = 0;   // when current pause began
 
+// Per-slot viewport visibility tracking (for viewport refresh)
+var _slotViewStart   = {};   // divId → timestamp when slot became 50%+ visible
+
 // Visitor classification
 var _visitorType    = 'unknown';  // reader | scanner | fast-scanner
 var _scrollSpeed    = 0;          // dashboard compat alias
@@ -593,6 +596,7 @@ function recycleSlots() {
 
 function destroySlot(record) {
 	record.destroyed = true;
+	delete _slotViewStart[record.divId];
 
 	googletag.cmd.push(function() {
 		if (record.slot) {
@@ -608,20 +612,19 @@ function destroySlot(record) {
 }
 
 /* ================================================================
- * 6. VIEWPORT REFRESH (paused reading)
+ * 6. VIEWPORT REFRESH (per-slot visibility tracking)
  *
- * When user pauses for >5s, refresh in-view dynamic ads.
+ * Tracks how long each dynamic ad has been 50%+ visible.
+ * When visible for VP_REFRESH_DELAY (3s) continuously AND
+ * user nearly stopped (< 20px/s), refresh it.
  * - 30s minimum between refreshes (Google policy)
  * - Max 2 refreshes per slot
  * - Tab must be visible
+ * - Runs every engine tick (100ms) for accurate timing
  * ================================================================ */
 
 function checkViewportRefresh() {
 	if (document.hidden) return;
-	if (!_isPaused) return;
-
-	var pauseDuration = Date.now() - _pauseStartT;
-	if (pauseDuration < VP_REFRESH_DELAY) return;
 
 	var now = Date.now();
 	var vpH = window.innerHeight;
@@ -631,41 +634,70 @@ function checkViewportRefresh() {
 		if (rec.destroyed || !rec.slot || !rec.filled) continue;
 		if (rec.refreshCount >= MAX_REFRESH_DYN) continue;
 
-		// Check timing (30s minimum)
+		// Check timing (30s minimum between refreshes — Google policy)
 		var lastTime = rec.lastRefresh || rec.injectedAt;
 		if (now - lastTime < REFRESH_INTERVAL) continue;
 
-		// Check viewability (50%+ in viewport)
+		// Check if 50%+ visible in viewport
 		var rect = rec.el.getBoundingClientRect();
 		if (rect.height < 10) continue;
 		var visibleH = Math.max(0, Math.min(rect.bottom, vpH) - Math.max(rect.top, 0));
 		var ratio    = visibleH / rect.height;
-		if (ratio < 0.5) continue;
 
-		// Refresh this slot
-		googletag.cmd.push(function() {
-			var slot = rec.slot;
-			if (slot) googletag.pubads().refresh([slot]);
-		});
+		if (ratio >= 0.5) {
+			// Track when this slot became continuously visible
+			if (!_slotViewStart[rec.divId]) {
+				_slotViewStart[rec.divId] = now;
+			}
 
-		rec.refreshCount++;
-		rec.lastRefresh = now;
-		rec.viewable    = false;
+			// Must be continuously visible for VP_REFRESH_DELAY (3s)
+			var viewDuration = now - _slotViewStart[rec.divId];
+			if (viewDuration < VP_REFRESH_DELAY) continue;
 
-		log('Viewport refresh:', rec.divId, 'count:', rec.refreshCount, 'pause:', Math.round(pauseDuration / 1000) + 's');
-		pushEvent('dynamic_ad_refreshed', {
-			divId:        rec.divId,
-			refreshCount: rec.refreshCount,
-			strategy:     'viewport_refresh',
-			viewDuration: pauseDuration
-		});
-		if (window.__plAdTracker) {
-			window.__plAdTracker.track('refresh', rec.divId, {
-				slotType:        'dynamic',
-				injectionType:   'viewport_refresh',
-				scrollDirection: _scrollDirection,
-				scrollSpeed:     _scrollSpeed
+			// User must be nearly stopped (< 20px/s) — more reliable than _isPaused
+			if (_speed > 20) continue;
+
+			// Density check: skip if 2+ other filled ads near viewport (±200px)
+			var nearbyAds = 0;
+			for (var j = 0; j < _dynamicSlots.length; j++) {
+				if (j === i || _dynamicSlots[j].destroyed || !_dynamicSlots[j].filled) continue;
+				var jRect = _dynamicSlots[j].el.getBoundingClientRect();
+				if (jRect.top < vpH + 200 && jRect.bottom > -200) nearbyAds++;
+			}
+			if (nearbyAds >= 2) continue;
+
+			// Refresh this slot (IIFE to capture rec in closure)
+			(function(r) {
+				googletag.cmd.push(function() {
+					if (r.slot) googletag.pubads().refresh([r.slot]);
+				});
+			})(rec);
+
+			rec.refreshCount++;
+			rec.lastRefresh = now;
+			rec.viewable    = false;
+			// Reset visibility timer (new creative needs new viewability period)
+			delete _slotViewStart[rec.divId];
+
+			log('Viewport refresh:', rec.divId, 'count:', rec.refreshCount,
+				'viewDuration:', Math.round(viewDuration / 1000) + 's');
+			pushEvent('dynamic_ad_refreshed', {
+				divId:        rec.divId,
+				refreshCount: rec.refreshCount,
+				strategy:     'viewport_refresh',
+				viewDuration: viewDuration
 			});
+			if (window.__plAdTracker) {
+				window.__plAdTracker.track('viewport_refresh', rec.divId, {
+					slotType:        'dynamic',
+					injectionType:   'viewport_refresh',
+					scrollDirection: _scrollDirection,
+					scrollSpeed:     _scrollSpeed
+				});
+			}
+		} else {
+			// Not visible — reset continuous visibility timer
+			delete _slotViewStart[rec.divId];
 		}
 	}
 }
@@ -673,15 +705,19 @@ function checkViewportRefresh() {
 /* ================================================================
  * 7. PREDICTIVE INJECTION ENGINE (100ms loop)
  *
- * Three strategies evaluated every tick:
+ * Strategies evaluated every tick:
  * 1. PAUSE — user stopped scrolling → inject at viewport center
+ * 1.5 SLOW SCROLL — sustained reading pace → inject ahead
  * 2. PREDICTIVE — user decelerating → inject at predicted stop
- * 3. VIEWPORT REFRESH — user paused >5s → refresh in-view ads
+ * Note: viewport refresh runs independently at top of loop
  * ================================================================ */
 
 function engineLoop() {
 	// Video check runs independently of display ad guards
 	checkVideoInjection();
+
+	// Viewport refresh runs every tick (tracks per-slot visibility independently)
+	checkViewportRefresh();
 
 	// Dynamic ads disabled in optimizer?
 	var dynVal = FMT.dynamic;
@@ -697,8 +733,6 @@ function engineLoop() {
 	var density = getViewportDensity();
 	var maxInView = IS_DESKTOP ? DESKTOP_MAX_IN_VIEW : MOBILE_MAX_IN_VIEW;
 	if (density.adsInView >= maxInView || density.adPercent >= MAX_AD_DENSITY_PERCENT) {
-		// Too dense — skip to viewport refresh only
-		checkViewportRefresh();
 		return;
 	}
 
@@ -750,8 +784,6 @@ function engineLoop() {
 		}
 	}
 
-	// Strategy 3: VIEWPORT REFRESH — user paused long enough, refresh in-view ads
-	checkViewportRefresh();
 }
 
 /* ================================================================
