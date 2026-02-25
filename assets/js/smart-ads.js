@@ -1759,14 +1759,55 @@ setTimeout(function() {
 
 /**
  * Notify Layer 2 that new content has been added to the page.
- * Resets the engine's house ad counter so new content gets fresh quota,
- * and logs the rescan for debugging.
+ *
+ * Puts the engine back into the same state it was in when the original
+ * post first started getting ads:
+ * - Aggressively recycles (destroys) all slots that are above the current
+ *   viewport, freeing activeCount budget and removing spacing blockers
+ * - Resets house ad counter so new content gets its own quota
+ * - Clears per-slot viewport visibility timestamps (stale from old content)
+ *
+ * The engine loop (setInterval) is ALWAYS running — it never stops.
+ * The blockers were: activeCount near MAX_DYNAMIC_SLOTS (20) and
+ * checkSpacing() rejecting new positions due to old slot Y positions.
+ * Recycling old above-viewport slots fixes both.
  */
 function rescanAnchors() {
-	// Reset house ad counter: new content gets its own quota
+	var scrollY = window.pageYOffset || 0;
+	var recycled = 0;
+
+	// Aggressively recycle ALL slots above the current viewport.
+	// Normal recycleSlots() only recycles one at a time and only when
+	// count > MAX_DYNAMIC_SLOTS. Here we destroy ALL above-viewport slots
+	// so the new post gets a fresh budget identical to post 1.
+	for (var i = 0; i < _dynamicSlots.length; i++) {
+		var rec = _dynamicSlots[i];
+		if (rec.destroyed) continue;
+		if (!rec.el || !rec.el.parentNode) continue;
+
+		var rect = rec.el.getBoundingClientRect();
+		// Destroy any slot whose bottom is above the viewport top
+		if (rect.bottom < 0) {
+			destroySlot(rec);
+			recycled++;
+		}
+	}
+
+	// Reset house ad counter: new content gets its own quota (max 2)
 	_houseAdsShown = 0;
 
-	log('rescanAnchors: new content detected, house ads reset. Content sections:',
+	// Clear stale viewport visibility timestamps from old content slots
+	_slotViewStart = {};
+
+	// Count remaining active slots for the log
+	var activeAfter = 0;
+	for (var j = 0; j < _dynamicSlots.length; j++) {
+		if (!_dynamicSlots[j].destroyed) activeAfter++;
+	}
+
+	console.log('[SmartAds] rescan: recycled ' + recycled + ' old slots, ' +
+		activeAfter + ' active (of ' + MAX_DYNAMIC_SLOTS + ' max), ' +
+		'house ads reset, engine running. Content sections: ' +
 		document.querySelectorAll('.single-content').length);
 }
 
