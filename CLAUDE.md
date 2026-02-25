@@ -502,6 +502,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - **jQuery** — fully deregistered on frontend
 - **wp-embed, Block library CSS, Dashicons (non-logged-in), Emoji, Global styles** — all removed
 - **Top Anchor ad** — "Format already created" conflict, zero demand in 27 sessions
+- **Read Next bar** (`.eb-next-bar`) — replaced by next-post auto-loader. Don't re-add.
 
 ### Active Optimizations
 - All CSS inlined in `<head>` (zero external CSS requests)
@@ -527,6 +528,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ### Next-Post Auto-Load (Feb 25, 2026)
 - `3d37051`: **Next-post auto-load with smart-ads rescan** — Rewrote `infinite-scroll.js` as a next-post auto-loader (IO trigger at 70% read, max 3 posts/session). smart-ads.js `findTargetNear()` now uses `querySelectorAll('.single-content')` to discover paragraphs in all content sections (original + auto-loaded). Exposed `window.SmartAds.rescanAnchors()` API from the IIFE. engagement.js `handleNext()` smooth-scrolls to auto-loaded post if present instead of navigating. Admin toggle `next_post_autoload` added to Device Controls in ad-engine.php. PHP passes `autoLoad` flag via `plInfinite` localized config.
 - `2bac6de`: **Fix auto-loaded posts getting zero ads** — `rescanAnchors()` now aggressively destroys all dynamic slots above the viewport (frees activeCount budget + removes spacing blockers), resets `_houseAdsShown` to 0 (fresh quota), and clears `_slotViewStart`. Root cause: engine loop never stops but `activeCount >= MAX_DYNAMIC_SLOTS` and `checkSpacing()` rejecting positions near old slots blocked all injection into new content.
+- `97abcdd`: **Remove Read Next bar** — `.eb-next-bar` fixed bottom bar removed from single.php, engagement.js, engagement.css, critical.css, functions.php (`pl_get_next_post_data()` + `nextPost` config key), engagement-customizer.php toggle. Replaced by next-post auto-loader.
 
 ### Admin Tooling (Feb 25, 2026)
 - `a223aba`: **Stable snapshot system** — save/revert all ad engine files from admin UI. `inc/ad-snapshot.php` handles AJAX save (copies 13 files to `backup/ad-engine-stable/` with `snapshot.json` metadata) and revert (restores from backup). UI panel at top of Ad Engine settings page. `backup/` gitignored.
