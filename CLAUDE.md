@@ -172,7 +172,7 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - `window.__plViewableCount` — shared viewable counter incremented by BOTH layers
 - `window.__plOverlayStatus` — overlay states: off → pending → empty/filled → viewable
 - `window.__initialAds` API: `.ready`, `.onReady()`, `.getExclusionZones()`, `.refreshSlot()`, `.getSlotMap()`
-- `window.SmartAds` API: `.rescanAnchors()` — notify Layer 2 of new content (resets house ad counter)
+- `window.SmartAds` API: `.rescanAnchors()` — notify Layer 2 of new content (destroys above-viewport slots, resets house ad counter, clears view timestamps)
 - `window.__plNextPostLoader` API: `.getLoadedIds()`, `.getContainer()` — next-post loader state
 
 ### Layer 2 — Dynamic Predictive Injection (`smart-ads.js`)
@@ -526,6 +526,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Next-Post Auto-Load (Feb 25, 2026)
 - `3d37051`: **Next-post auto-load with smart-ads rescan** — Rewrote `infinite-scroll.js` as a next-post auto-loader (IO trigger at 70% read, max 3 posts/session). smart-ads.js `findTargetNear()` now uses `querySelectorAll('.single-content')` to discover paragraphs in all content sections (original + auto-loaded). Exposed `window.SmartAds.rescanAnchors()` API from the IIFE. engagement.js `handleNext()` smooth-scrolls to auto-loaded post if present instead of navigating. Admin toggle `next_post_autoload` added to Device Controls in ad-engine.php. PHP passes `autoLoad` flag via `plInfinite` localized config.
+- `2bac6de`: **Fix auto-loaded posts getting zero ads** — `rescanAnchors()` now aggressively destroys all dynamic slots above the viewport (frees activeCount budget + removes spacing blockers), resets `_houseAdsShown` to 0 (fresh quota), and clears `_slotViewStart`. Root cause: engine loop never stops but `activeCount >= MAX_DYNAMIC_SLOTS` and `checkSpacing()` rejecting positions near old slots blocked all injection into new content.
 
 ### Admin Tooling (Feb 25, 2026)
 - `a223aba`: **Stable snapshot system** — save/revert all ad engine files from admin UI. `inc/ad-snapshot.php` handles AJAX save (copies 13 files to `backup/ad-engine-stable/` with `snapshot.json` metadata) and revert (restores from backup). UI panel at top of Ad Engine settings page. `backup/` gitignored.
