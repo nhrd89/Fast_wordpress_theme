@@ -1787,10 +1787,8 @@ function tryExitInterstitial(trigger) {
 	var sessionSeconds = (Date.now() - _sessionStart) / 1000;
 	if (sessionSeconds < EXIT_MIN_SESSION_S) return;
 
-	// Get interstitial slot from Layer 1 slot map
-	if (!window.__initialAds || !window.__initialAds.getSlotMap) return;
-	var slotInfo = window.__initialAds.getSlotMap()['__interstitial'];
-	if (!slotInfo || !slotInfo.slot) return;
+	// Ensure GPT is loaded
+	if (typeof googletag === 'undefined' || !googletag.apiReady) return;
 
 	_exitFired = true;
 	_exitTrigger = trigger;
@@ -1816,14 +1814,34 @@ function tryExitInterstitial(trigger) {
 		destroyed:       false
 	};
 
-	// Refresh the interstitial — GPT shows it as full-screen overlay.
-	// Add targeted GPT listeners for fill/viewability BEFORE refresh.
+	// Define a NEW interstitial slot instead of refreshing the existing one.
+	// GPT interstitials are one-shot — refresh on maxRefresh:0 slots yields 0 fills.
+	// Must destroy the Layer 1 interstitial first (GPT only allows one per page).
 	googletag.cmd.push(function() {
-		var targetSlot = slotInfo.slot;
+		// Destroy existing interstitial to free up the format
+		var slotMap = (window.__initialAds && window.__initialAds.getSlotMap)
+			? window.__initialAds.getSlotMap() : {};
+		var existing = slotMap['__interstitial'];
+		if (existing && existing.slot) {
+			googletag.destroySlots([existing.slot]);
+			log('Destroyed Layer 1 interstitial to free format');
+		}
 
-		// Listen for render result
+		// Define fresh interstitial slot
+		var exitSlot = googletag.defineOutOfPageSlot(
+			SLOT_PATH + 'Ad.Plus-Interstitial',
+			googletag.enums.OutOfPageFormat.INTERSTITIAL
+		);
+		if (!exitSlot) {
+			log('Exit interstitial: defineOutOfPageSlot returned null');
+			_exitRecord.filled = false;
+			return;
+		}
+		exitSlot.addService(googletag.pubads());
+
+		// Listen for render result on the NEW slot
 		googletag.pubads().addEventListener('slotRenderEnded', function(event) {
-			if (event.slot !== targetSlot || !_exitRecord) return;
+			if (event.slot !== exitSlot || !_exitRecord) return;
 			_exitRecord.filled = !event.isEmpty;
 			if (event.size) {
 				_exitRecord.renderedSize = event.size;
@@ -1836,9 +1854,9 @@ function tryExitInterstitial(trigger) {
 			});
 		});
 
-		// Listen for viewability
+		// Listen for viewability on the NEW slot
 		googletag.pubads().addEventListener('impressionViewable', function(event) {
-			if (event.slot !== targetSlot || !_exitRecord) return;
+			if (event.slot !== exitSlot || !_exitRecord) return;
 			_exitRecord.viewable = true;
 			_exitRecord.viewableEver = true;
 			window.__plViewableCount = (window.__plViewableCount || 0) + 1;
@@ -1846,7 +1864,8 @@ function tryExitInterstitial(trigger) {
 			pushEvent('exit_interstitial_viewable', { trigger: trigger });
 		});
 
-		googletag.pubads().refresh([targetSlot]);
+		// Display triggers the auction immediately
+		googletag.display(exitSlot);
 	});
 
 	console.log('[SmartAds] Exit interstitial fired:', trigger,
