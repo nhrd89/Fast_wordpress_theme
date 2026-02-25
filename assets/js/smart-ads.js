@@ -585,6 +585,64 @@ function applyStickyBehavior(container) {
 }
 
 /**
+ * Last-chance refresh: refresh a dynamic ad as it exits the viewport top.
+ * When user scrolls past an ad, refresh it so a new creative is ready
+ * if the user scrolls back up. Increases total viewable impressions.
+ * Guards: viewableEver, refreshCount < MAX, 30s cooldown, tab visible.
+ */
+function observeForLastChanceRefresh(record) {
+	if (typeof IntersectionObserver === 'undefined') return;
+
+	var observer = new IntersectionObserver(function(entries) {
+		var entry = entries[0];
+		// Only trigger when ad exits viewport (isIntersecting → false)
+		if (entry.isIntersecting) return;
+
+		// Only if exiting from the TOP (user scrolled past going down)
+		if (entry.boundingClientRect.bottom >= 0) return;
+
+		// Guards
+		if (!_tabVisible) return;
+		if (record.destroyed || !record.slot || !record.filled) return;
+		if (record.refreshCount >= MAX_REFRESH_DYN) return;
+		if (!record.viewableEver) return;
+		var now = Date.now();
+		var lastTime = record.lastRefresh || record.injectedAt;
+		if (now - lastTime < REFRESH_INTERVAL) return;
+
+		// Refresh this slot
+		(function(r) {
+			googletag.cmd.push(function() {
+				if (r.slot) googletag.pubads().refresh([r.slot]);
+			});
+		})(record);
+
+		record.refreshCount++;
+		record.lastRefresh = now;
+		record.viewable    = false;
+		delete _slotViewStart[record.divId];
+
+		log('Last-chance refresh:', record.divId, 'count:', record.refreshCount);
+		pushEvent('dynamic_ad_refreshed', {
+			divId:        record.divId,
+			refreshCount: record.refreshCount,
+			strategy:     'last_chance'
+		});
+		if (window.__plAdTracker) {
+			window.__plAdTracker.track('last_chance_refresh', record.divId, {
+				slotType:     'dynamic',
+				refreshCount: record.refreshCount
+			});
+		}
+	}, {
+		threshold: 0  // fires when visibility crosses 0%
+	});
+
+	observer.observe(record.el);
+	record._lastChanceObserver = observer;
+}
+
+/**
  * Show a house ad (email capture promo) in an empty dynamic slot.
  * Max 2 per page. Not counted in viewability calculations.
  */
@@ -804,6 +862,10 @@ function destroySlot(record) {
 	if (record._lazyObserver) {
 		record._lazyObserver.disconnect();
 		record._lazyObserver = null;
+	}
+	if (record._lastChanceObserver) {
+		record._lastChanceObserver.disconnect();
+		record._lastChanceObserver = null;
 	}
 
 	googletag.cmd.push(function() {
@@ -1081,6 +1143,9 @@ function onDynamicSlotRenderEnded(event) {
 		rec.renderedSize = size;
 	}
 	rec.filled = true;
+
+	// Last-chance refresh: watch for this ad to exit viewport top
+	observeForLastChanceRefresh(rec);
 
 	// Brief sticky for fast-scrolling users: hold ad in viewport for 1.5s
 	// Only when injection speed > 100px/s AND scrolling down (feels jarring on scroll-up)
