@@ -454,6 +454,45 @@ function findScrollTarget() {
  * 4. DYNAMIC AD INJECTION
  * ================================================================ */
 
+/**
+ * Viewport-aware size selection for dynamic ads.
+ * Mobile (<768px): 300x250 only — single auction reduces latency by ~200ms.
+ * Tablet (768-1024): 300x250 + 336x280 — modest multi-size.
+ * Desktop (≥1025): full multi-size with 300x600 for higher RPM.
+ */
+function getDynamicAdSizes() {
+	var w = window.innerWidth;
+	var sizes, sizeMapping;
+
+	if (w < 768) {
+		// Mobile: single-size auction — faster fill, less latency
+		sizes = [[300, 250]];
+		sizeMapping = googletag.sizeMapping()
+			.addSize([0, 0], [[300, 250]])
+			.build();
+	} else if (w < 1025) {
+		// Tablet: modest multi-size
+		sizes = [[300, 250], [336, 280]];
+		sizeMapping = googletag.sizeMapping()
+			.addSize([468, 0], [[300, 250], [336, 280]])
+			.addSize([320, 0], [[300, 250]])
+			.addSize([0, 0],   [[300, 250]])
+			.build();
+	} else {
+		// Desktop: full multi-size for higher RPM
+		sizes = [[336, 280], [300, 250], [300, 600], [250, 250]];
+		sizeMapping = googletag.sizeMapping()
+			.addSize([1025, 0], [[336, 280], [300, 250], [300, 600]])
+			.addSize([768, 0],  [[336, 280], [300, 250], [300, 600]])
+			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
+			.addSize([320, 0],  [[300, 250], [250, 250]])
+			.addSize([0, 0],    [[250, 250]])
+			.build();
+	}
+
+	return { sizes: sizes, sizeMapping: sizeMapping };
+}
+
 /** Render a dynamic ad slot via GPT (called by lazy render observer or timeout). */
 function renderSlot(record, sizes, sizeMapping) {
 	if (record.destroyed || record.rendered) return;
@@ -610,24 +649,10 @@ function injectDynamicAd(afterElement, injectionType) {
 	// Insert as NEXT SIBLING, never inside
 	afterElement.parentNode.insertBefore(container, afterElement.nextSibling);
 
-	// Multi-size: let GPT auction pick highest-paying creative
-	var sizes = IS_DESKTOP
-		? [[336, 280], [300, 250], [300, 600], [250, 250], [300, 100]]
-		: [[300, 250], [336, 280], [250, 250], [300, 100]];
-
-	var sizeMapping = IS_DESKTOP
-		? googletag.sizeMapping()
-			.addSize([1025, 0], [[336, 280], [300, 250], [300, 600]])
-			.addSize([768, 0],  [[336, 280], [300, 250], [300, 600]])
-			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
-			.addSize([320, 0],  [[300, 250], [250, 250]])
-			.addSize([0, 0],    [[250, 250], [300, 100]])
-			.build()
-		: googletag.sizeMapping()
-			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
-			.addSize([320, 0],  [[300, 250], [250, 250]])
-			.addSize([0, 0],    [[250, 250], [300, 100]])
-			.build();
+	// Viewport-aware sizes: mobile single-auction, desktop multi-size
+	var adSizes     = getDynamicAdSizes();
+	var sizes       = adSizes.sizes;
+	var sizeMapping = adSizes.sizeMapping;
 
 	var scrollY = window.pageYOffset || 0;
 	var elRect  = container.getBoundingClientRect();
