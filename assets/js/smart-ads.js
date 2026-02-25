@@ -108,8 +108,12 @@ var _lastScrollDir    = 0;    // 1=down, -1=up, 0=initial
 var _scrollDirection  = 'down'; // current scroll direction: 'down' | 'up'
 
 // Tab visibility tracking
+var _tabVisible      = true;   // false when tab is hidden — gates engine + lazy render
 var _hiddenTime      = 0;
 var _hiddenSince     = 0;
+
+// Engine loop interval (stored for tab visibility pause)
+var _engineInterval  = null;
 
 // Time tracking
 var _timeOnPage     = 0;
@@ -484,6 +488,8 @@ function observeForLazyRender(container, record, sizes, sizeMapping) {
 
 	var observer = new IntersectionObserver(function(entries) {
 		if (entries[0].isIntersecting && !record.rendered) {
+			// Don't render while tab is hidden — IO still fires for background tabs
+			if (!_tabVisible) return;
 			observer.disconnect();
 			renderSlot(record, sizes, sizeMapping);
 		}
@@ -679,6 +685,8 @@ function injectDynamicAd(afterElement, injectionType) {
 		(function(rec, sz, sm, ctr) {
 			setTimeout(function() {
 				if (rec.destroyed || rec.rendered) return;
+				// Don't render while tab is hidden — defer until next engine tick
+				if (!_tabVisible) return;
 				var r = ctr.getBoundingClientRect();
 				var vh = window.innerHeight;
 				// Within 1.5x viewport height above/below = user slowed down or is nearby
@@ -888,6 +896,9 @@ function checkViewportRefresh() {
  * ================================================================ */
 
 function engineLoop() {
+	// Tab hidden — skip all ad operations (prevents background waste)
+	if (!_tabVisible) return;
+
 	// Video check runs independently of display ad guards
 	checkVideoInjection();
 
@@ -1495,7 +1506,7 @@ function init() {
 
 		// Start velocity tracker (50ms) and predictive engine (100ms)
 		setInterval(sampleVelocity, VELOCITY_SAMPLE_MS);
-		setInterval(engineLoop, ENGINE_LOOP_MS);
+		_engineInterval = setInterval(engineLoop, ENGINE_LOOP_MS);
 
 		// Start heartbeat for live sessions dashboard
 		startHeartbeat();
@@ -1506,16 +1517,21 @@ function init() {
 		// Update dashboard every 5s
 		setInterval(updateDashboard, 5000);
 
-		// Track tab visibility for active time
+		// Track tab visibility for active time + pause ad operations
 		document.addEventListener('visibilitychange', function() {
 			if (document.visibilityState === 'hidden') {
+				_tabVisible  = false;
 				_hiddenSince = Date.now();
 				sendBeacon();
 			} else {
+				_tabVisible = true;
 				if (_hiddenSince > 0) {
 					_hiddenTime += Date.now() - _hiddenSince;
 					_hiddenSince = 0;
 				}
+				// Reset per-slot viewport visibility timestamps — stale from hidden period.
+				// Don't refresh existing ads on return; let natural viewport refresh logic re-detect.
+				_slotViewStart = {};
 			}
 		});
 		window.addEventListener('pagehide', sendBeacon);
@@ -1555,7 +1571,7 @@ function init() {
 					googletag.enableServices();
 				});
 				setInterval(sampleVelocity, VELOCITY_SAMPLE_MS);
-				setInterval(engineLoop, ENGINE_LOOP_MS);
+				_engineInterval = setInterval(engineLoop, ENGINE_LOOP_MS);
 
 				// Start heartbeat for live sessions dashboard
 				startHeartbeat();
@@ -1566,13 +1582,16 @@ function init() {
 				setInterval(updateDashboard, 5000);
 				document.addEventListener('visibilitychange', function() {
 					if (document.visibilityState === 'hidden') {
+						_tabVisible  = false;
 						_hiddenSince = Date.now();
 						sendBeacon();
 					} else {
+						_tabVisible = true;
 						if (_hiddenSince > 0) {
 							_hiddenTime += Date.now() - _hiddenSince;
 							_hiddenSince = 0;
 						}
+						_slotViewStart = {};
 					}
 				});
 				window.addEventListener('pagehide', sendBeacon);
