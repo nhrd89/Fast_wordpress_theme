@@ -76,6 +76,7 @@ Fast_wordpress_theme/
 │   │                       # format toggles, refresh config, viewability settings
 │   ├── ad-data-recorder.php # Session beacon + heartbeat REST endpoints, data storage
 │   ├── ad-live-sessions.php # Live sessions admin dashboard, heartbeat processing
+│   ├── ad-snapshot.php     # Stable snapshot save/revert system (AJAX handlers + admin UI)
 │   ├── performance.php     # Bloat removal, critical CSS inlining, gzip, resource hints,
 │   │                       # LCP preload, script defer, cache headers, flush endpoint
 │   ├── image-handler.php   # Lazy loading, responsive images, Pinterest attrs,
@@ -516,6 +517,9 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Admin Tooling (Feb 25, 2026)
+- `a223aba`: **Stable snapshot system** — save/revert all ad engine files from admin UI. `inc/ad-snapshot.php` handles AJAX save (copies 13 files to `backup/ad-engine-stable/` with `snapshot.json` metadata) and revert (restores from backup). UI panel at top of Ad Engine settings page. `backup/` gitignored.
+
 ### Round 3 — Tab Pause + Last-Chance + Sizes (Feb 25, 2026)
 - `8634570`: **Tab visibility pause** — `_tabVisible` gates engineLoop, lazy-render, fast-scroller timeout; resets `_slotViewStart` on tab return
 - `64a0eca`: **Viewport-aware sizes** — `getDynamicAdSizes()`: mobile (<768px) = 300x250 only (single auction, ~200ms faster); desktop = full multi-size
@@ -569,6 +573,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Tab visibility pause, retry logic, house ad backfill
 - Creative timeout, viewport-aware size selection
 - 400px minimum spacing enforced everywhere
+- Stable snapshot system for ad engine files (save/revert from admin)
 - PageSpeed scores maintained at 100/100/100/100
 
 ### Monitoring (check after 24-48 hours)
