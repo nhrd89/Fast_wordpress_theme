@@ -17,6 +17,16 @@
 // starting the hero image fetch immediately instead of after parsing CSS.
 pinlightning_early_preconnect();
 pinlightning_preload_lcp_image();
+// Ad CDN preconnects — warm TCP+TLS so first ad creative loads faster.
+$__pl_ads = function_exists( 'pl_ad_settings' ) ? pl_ad_settings() : array( 'enabled' => false );
+if ( ! empty( $__pl_ads['enabled'] ) ) {
+	echo '<link rel="preconnect" href="https://securepubads.g.doubleclick.net" crossorigin>' . "\n";
+	echo '<link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>' . "\n";
+	echo '<link rel="preconnect" href="https://cdn.ad.plus" crossorigin>' . "\n";
+	echo '<link rel="preconnect" href="https://tpc.googlesyndication.com" crossorigin>' . "\n";
+	echo '<link rel="dns-prefetch" href="https://securepubads.g.doubleclick.net">' . "\n";
+	echo '<link rel="dns-prefetch" href="https://pagead2.googlesyndication.com">' . "\n";
+}
 // CMP consent tag — MUST be the first <script> in <head>, before GPT.
 // __tcfapi stub runs sync; choice.js loads async. GPT detects CMP immediately.
 if ( function_exists( 'pinlightning_output_cmp_tag' ) ) {
