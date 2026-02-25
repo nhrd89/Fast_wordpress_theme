@@ -149,7 +149,7 @@
 
 				loading = false;
 
-				// Expose loaded post IDs for engagement.js handleNext().
+				// Expose loaded post IDs for external consumers.
 				window.__plLoadedPosts = loadedIds.slice();
 
 				// Observe the newly loaded article at 70% for the next batch.

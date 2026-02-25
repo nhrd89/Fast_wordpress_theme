@@ -60,19 +60,6 @@ while ( have_posts() ) :
 	</div>
 	</div>
 
-	<?php
-		$eb_next = pl_get_next_post_data();
-		if ( $eb_next ) :
-	?>
-	<div class="eb-next-bar" id="ebNextBar">
-		<?php if ( $eb_next['img'] ) : ?>
-			<img class="eb-next-bar-img" src="<?php echo esc_url( $eb_next['img'] ); ?>" alt="" width="50" height="50" loading="lazy">
-		<?php endif; ?>
-		<span class="eb-next-bar-title"><?php echo esc_html( $eb_next['title'] ); ?></span>
-		<button class="eb-next-bar-btn" data-eb-action="next" data-url="<?php echo esc_url( $eb_next['url'] ); ?>">Read Next <?php echo "\xE2\x86\x92"; ?></button>
-	</div>
-	<?php endif; ?>
-
 	<div class="eb-exit" id="ebExit">
 		<div class="eb-exit-text">Wait — you saved <strong id="ebExitFavCount">0</strong> looks! Want us to <strong>email you the full collection</strong>?</div>
 		<button class="eb-exit-btn" data-eb-action="email">Yes Please!</button>

@@ -16,7 +16,6 @@ var itemTitles = C.itemTitles || [];
 var itemPins = C.itemPins || [];
 var CATEGORY = C.category || 'hairstyle';
 var POST_ID = C.postId || 0;
-var NEXT_POST = C.nextPost || { title: '', url: '', img: '' };
 var AI_TIP_TEXT = C.aiTip || '';
 var EMAIL_ENDPOINT = C.emailEndpoint || '';
 var FEATURES = C.features || {};
@@ -54,7 +53,6 @@ var $milestoneSub = document.getElementById('ebMilestoneSub');
 var $achievement = document.getElementById('ebAchievement');
 var $collectCounter = document.getElementById('ebCollectCounter');
 var $collectNum = document.getElementById('ebCollectNum');
-var $nextBar = document.getElementById('ebNextBar');
 var $exit = document.getElementById('ebExit');
 var $exitFavCount = document.getElementById('ebExitFavCount');
 var $aiTip = document.getElementById('ebAiTip');
@@ -172,15 +170,6 @@ function checkAiTip() {
 	}
 }
 
-// === Next Article Bar ===
-function checkNextBar() {
-	if (!NEXT_POST || !NEXT_POST.url || !$nextBar) return;
-	var pct = Math.round((seenItems.size / TOTAL) * 100);
-	if (pct >= 80) {
-		$nextBar.classList.add('show');
-	}
-}
-
 // === Speed Warning ===
 function checkScrollSpeed() {
 	var now = Date.now();
@@ -277,7 +266,6 @@ document.addEventListener('click', function(e) {
 	else if (action === 'jump') handleJump(target);
 	else if (action === 'email') handleEmail(target);
 	else if (action === 'exit-close') handleExitClose();
-	else if (action === 'next') handleNext(target);
 	else if (action === 'pin-all') handlePinAll();
 });
 
@@ -434,31 +422,6 @@ function handleExitClose() {
 	if ($exit) $exit.classList.remove('show');
 }
 
-function handleNext(btn) {
-	var url = btn.dataset.url;
-	if (!url) return;
-
-	ebTrack('next_article_clicked', { url: url });
-
-	// If next-post auto-loader has already loaded content below,
-	// smooth-scroll to it instead of navigating away.
-	var loader = window.__plNextPostLoader;
-	if (loader) {
-		var ctr = loader.getContainer();
-		if (ctr) {
-			// Find the first auto-loaded post wrapper
-			var firstLoaded = ctr.querySelector('.infinite-post-wrapper');
-			if (firstLoaded) {
-				firstLoaded.scrollIntoView({ behavior: 'smooth', block: 'start' });
-				return;
-			}
-		}
-	}
-
-	// Fallback: full-page navigation
-	window.location.href = url;
-}
-
 function handlePinAll() {
 	// Open Pinterest bulk save (individual pins)
 	favItems.forEach(function(idx) {
@@ -489,7 +452,6 @@ function initObserver() {
 					updateProgress();
 					updatePills(idx);
 					checkMilestones();
-					checkNextBar();
 					checkAiTip();
 					ebTrack('item_seen', { item: idx, total_seen: seenItems.size });
 				}

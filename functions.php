@@ -1009,7 +1009,6 @@ function pl_enqueue_engagement() {
 	preg_match_all( '/src=["\']([^"\']+)["\']/', $post->post_content, $src_matches );
 	$pins = $src_matches[1] ?? array();
 
-	$next_data = pl_get_next_post_data();
 	$ai_tip    = get_post_meta( $post_id, '_eb_ai_tip', true );
 
 	$config_data = array(
@@ -1025,7 +1024,6 @@ function pl_enqueue_engagement() {
 			array( 'at' => 75,  'emoji' => '💫', 'text' => 'Almost done!',       'sub' => '75% explored' ),
 			array( 'at' => 100, 'emoji' => '👑', 'text' => 'You saw them all!',  'sub' => 'Style Expert unlocked!' ),
 		),
-		'nextPost'      => $next_data,
 		'aiTip'         => $ai_tip ?: '',
 		'emailEndpoint' => esc_url_raw( rest_url( 'pl/v1/subscribe' ) ),
 		'postTitle'     => get_the_title(),
@@ -1089,34 +1087,4 @@ function pl_count_listicle_items() {
 	return count( $matches[0] );
 }
 
-/**
- * Helper: Get random post from same category for next-article bar.
- */
-function pl_get_next_post_data() {
-	$current_id = get_the_ID();
-	$categories = wp_get_post_categories( $current_id );
 
-	$args = array(
-		'posts_per_page'      => 1,
-		'orderby'             => 'rand',
-		'post__not_in'        => array( $current_id ),
-		'post_status'         => 'publish',
-		'no_found_rows'       => true,
-		'ignore_sticky_posts' => true,
-	);
-	if ( ! empty( $categories ) ) {
-		$args['category__in'] = $categories;
-	}
-
-	$query = new WP_Query( $args );
-	if ( ! $query->have_posts() ) {
-		return null;
-	}
-
-	$next = $query->posts[0];
-	return array(
-		'title' => $next->post_title,
-		'url'   => get_permalink( $next ),
-		'img'   => get_the_post_thumbnail_url( $next, 'thumbnail' ) ?: '',
-	);
-}
