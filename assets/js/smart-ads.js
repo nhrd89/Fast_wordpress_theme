@@ -486,7 +486,7 @@ function observeForLazyRender(container, record, sizes, sizeMapping) {
 			renderSlot(record, sizes, sizeMapping);
 		}
 	}, {
-		rootMargin: '200px 0px'  // trigger 200px BEFORE entering viewport
+		rootMargin: '400px 0px'  // trigger 400px BEFORE entering viewport
 	});
 
 	observer.observe(container);
