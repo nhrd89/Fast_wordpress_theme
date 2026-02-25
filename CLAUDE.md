@@ -269,7 +269,10 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - Guards: `exit_interstitial` admin toggle, 15s minimum session, fires once per page
 - Accesses Layer 1 interstitial via `window.__initialAds.getSlotMap()['__interstitial'].slot`
 - Direct `googletag.pubads().refresh([slot])` (bypasses `refreshSlot()` which checks maxRefresh=0)
-- Tracked: `exitInterstitialFired` + `exitInterstitialTrigger` in beacon and heartbeat
+- Full analytics: `_exitRecord` tracks fill/viewable/size via targeted `slotRenderEnded` + `impressionViewable` listeners
+- `_exitRecord` NOT pushed to `_dynamicSlots` (no DOM element — would crash engine loop); instead appended to zones in beacon/heartbeat
+- Shows as zone row with `injectionType: 'exit_intent'` in Live Sessions Ad Detail (highlighted yellow)
+- Totals NOT double-counted (interstitial already in Layer 1 slotMap counts)
 
 **Viewability Tracking:**
 - `viewableEver` flag: set once on `impressionViewable`, never cleared (unlike `viewable` which resets on refresh)
@@ -546,6 +549,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Exit-Intent + Image Tap Tracking (Feb 25, 2026)
 - **Exit-intent interstitial** — `tryExitInterstitial()` in smart-ads.js fires the GPT interstitial slot on tab switch (visibilitychange), mouse-leave (clientY<10), or beforeunload. 15s minimum session. Admin toggle `exit_interstitial` in ad-engine.php. `initExitIntent()` runs at script load (not gated by engagement). Tracked in beacon + heartbeat.
+- **Exit interstitial full analytics** — `_exitRecord` tracks fill/viewable/size via targeted GPT `slotRenderEnded` + `impressionViewable` listeners. Record appended to beacon/heartbeat zones (NOT in `_dynamicSlots` — no DOM element). Shows as zone row in Live Sessions Ad Detail with `injection_type: 'exit_intent'` (highlighted yellow). Totals not double-counted (already in Layer 1 slotMap). Zone storage updated with `injection_type`, `trigger`, and `divId` fallback fields.
 - **Image tap tracker** — `initImageTapTracker()` in engagement.js. Delegated click listener on `.single-content img` + `.infinite-post-content img`. Stores `{src, alt, heading, ts}` in `window._imageTaps`. Sent via beacon (full array) and heartbeat (count). Stored in ad-data-recorder.php session JSON. Displayed in Live Sessions detail panel.
 
 ### Next-Post Auto-Load (Feb 25, 2026)
