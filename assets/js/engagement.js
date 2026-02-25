@@ -597,6 +597,30 @@ function updateBridge() {
 }
 var pageStart = Date.now();
 
+// === Image Tap Tracker ===
+function initImageTapTracker() {
+	window._imageTaps = [];
+	document.addEventListener('click', function(e) {
+		var img = e.target.closest('.single-content img, .infinite-post-content img');
+		if (!img) return;
+
+		// Find nearest heading for context.
+		var heading = '';
+		var el = img.closest('.eb-item, article, .infinite-post-wrapper');
+		if (el) {
+			var h = el.querySelector('h2, h3');
+			if (h) heading = h.textContent.trim().substring(0, 80);
+		}
+
+		window._imageTaps.push({
+			src: (img.currentSrc || img.src || '').substring(0, 200),
+			alt: (img.alt || '').substring(0, 80),
+			heading: heading,
+			ts: Math.round((Date.now() - pageStart) / 1000)
+		});
+	});
+}
+
 // === Init ===
 function init() {
 	// Populate header stats total (mobile)
@@ -620,6 +644,9 @@ function init() {
 
 	// Scroll gate for skeletons
 	initScrollGate();
+
+	// Track image taps/clicks
+	initImageTapTracker();
 }
 
 // Run on DOMContentLoaded or immediately if already loaded

@@ -59,6 +59,9 @@ function pl_ad_defaults() {
 		'fmt_video'             => true,
 		'pause_min_ads'         => 2,
 
+		// Exit-intent interstitial (fires interstitial on tab switch / back button).
+		'exit_interstitial'     => true,
+
 		// Passback.
 		'passback_enabled'      => false,
 
@@ -234,6 +237,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'fmt_interstitial', 'fmt_anchor', 'fmt_300x250',
 		'fmt_970x250', 'fmt_728x90', 'fmt_320x100', 'fmt_160x600',
 		'fmt_pause', 'fmt_video',
+		'exit_interstitial',
 		'passback_enabled',
 	);
 	foreach ( $bools as $key ) {
@@ -444,6 +448,13 @@ function pl_ad_render_global_tab( $s ) {
 		<tr>
 			<th>Interstitial</th>
 			<td><label><input type="checkbox" name="pl_ad_settings[fmt_interstitial]" value="1" <?php checked( $s['fmt_interstitial'] ); ?>> Full-screen overlay between page views</label></td>
+		</tr>
+		<tr>
+			<th>Exit-Intent Interstitial</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[exit_interstitial]" value="1" <?php checked( $s['exit_interstitial'] ); ?>> Fire interstitial on tab switch / back button</label>
+				<p class="description">Requires 15s minimum session. Fires once per page via visibilitychange, mouseleave, or beforeunload.</p>
+			</td>
 		</tr>
 		<tr>
 			<th>Anchor (Bottom Sticky)</th>
@@ -944,6 +955,7 @@ function pinlightning_ads_enqueue() {
 		// Formats.
 		'fmtInterstitial' => (bool) $s['fmt_interstitial'],
 		'fmtAnchor'       => (bool) $s['fmt_anchor'],
+		'exitInterstitial' => (bool) $s['exit_interstitial'],
 		'fmtVideo'        => (bool) $s['fmt_video'],
 		'fmt300x250'      => (bool) $s['fmt_300x250'],
 		'fmt970x250'      => (bool) $s['fmt_970x250'],

@@ -134,8 +134,25 @@ function pinlightning_record_ad_data($request) {
         'interstitial_duration_ms' => intval($body['interstitialDurationMs'] ?? 0),
         'referrer' => sanitize_text_field($body['referrer'] ?? ''),
         'language' => sanitize_text_field($body['language'] ?? ''),
+        // Exit-intent interstitial.
+        'exit_interstitial_fired' => !empty($body['exitInterstitialFired']),
+        'exit_interstitial_trigger' => sanitize_text_field($body['exitInterstitialTrigger'] ?? ''),
+        // Image taps.
+        'image_taps' => array(),
         'zones' => array(),
     );
+
+    // Image tap data from engagement.js.
+    if (!empty($body['imageTaps']) && is_array($body['imageTaps'])) {
+        foreach (array_slice($body['imageTaps'], 0, 50) as $tap) {
+            $session['image_taps'][] = array(
+                'src'     => sanitize_text_field(substr($tap['src'] ?? '', 0, 200)),
+                'alt'     => sanitize_text_field(substr($tap['alt'] ?? '', 0, 80)),
+                'heading' => sanitize_text_field(substr($tap['heading'] ?? '', 0, 80)),
+                'ts'      => intval($tap['ts'] ?? 0),
+            );
+        }
+    }
 
     // Per-zone data (v5: per-ad injection details).
     if (!empty($body['zones']) && is_array($body['zones'])) {
@@ -230,6 +247,12 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         $existing['waldo_tags_used']         = max( $existing['waldo_tags_used'] ?? 0, $session['waldo_tags_used'] ?? 0 );
         $existing['left_side_rail_filled']   = ! empty( $session['left_side_rail_filled'] ) || ! empty( $existing['left_side_rail_filled'] );
         $existing['right_side_rail_filled']  = ! empty( $session['right_side_rail_filled'] ) || ! empty( $existing['right_side_rail_filled'] );
+        // Exit-intent + image taps.
+        $existing['exit_interstitial_fired']   = ! empty( $session['exit_interstitial_fired'] ) || ! empty( $existing['exit_interstitial_fired'] );
+        $existing['exit_interstitial_trigger'] = ! empty( $session['exit_interstitial_trigger'] ) ? $session['exit_interstitial_trigger'] : ( $existing['exit_interstitial_trigger'] ?? '' );
+        if ( ! empty( $session['image_taps'] ) ) {
+            $existing['image_taps'] = $session['image_taps'];
+        }
         // Identity fields.
         if ( ! empty( $session['referrer'] ) ) {
             $existing['referrer'] = $session['referrer'];
@@ -290,6 +313,10 @@ function pinlightning_archive_ad_session_to_live( $session ) {
         'waldo_tags_used'          => $session['waldo_tags_used'] ?? 0,
         'left_side_rail_filled'    => $session['left_side_rail_filled'] ?? false,
         'right_side_rail_filled'   => $session['right_side_rail_filled'] ?? false,
+        // Exit-intent + image taps.
+        'exit_interstitial_fired'   => $session['exit_interstitial_fired'] ?? false,
+        'exit_interstitial_trigger' => $session['exit_interstitial_trigger'] ?? '',
+        'image_taps'                => $session['image_taps'] ?? array(),
         'status'         => 'ended',
         'ended_at'       => time(),
         'source'         => 'ad-track',

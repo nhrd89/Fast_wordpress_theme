@@ -81,6 +81,10 @@ var _totalRetries   = 0;    // empty slot retry attempts (for analytics)
 var _houseAdsShown  = 0;    // house ad backfills shown (max 2 per page)
 var _activeStickyAd = null; // currently sticky ad div (only one at a time)
 
+// Exit-intent interstitial
+var _exitFired          = false;
+var _exitTrigger        = '';   // 'visibility' | 'mouseleave' | 'beforeunload'
+
 // Velocity tracker
 var _velocitySamples = [];  // last 10 velocity readings
 var _lastSampleY     = 0;
@@ -1462,6 +1466,11 @@ function sendBeacon() {
 		videoInjected:       !!window.__plVideoInjected,
 		totalSkips:          _totalSkips,
 		totalRetries:        _totalRetries,
+		// Exit-intent interstitial
+		exitInterstitialFired:   _exitFired,
+		exitInterstitialTrigger: _exitTrigger || '',
+		// Image taps
+		imageTaps:           window._imageTaps || [],
 		// Dynamic slot detail
 		zones:           zones
 	};
@@ -1550,7 +1559,12 @@ function sendHeartbeat() {
 		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
 		videoInjected:       !!window.__plVideoInjected,
 		totalSkips:          _totalSkips,
-		totalRetries:        _totalRetries
+		totalRetries:        _totalRetries,
+		// Exit-intent interstitial
+		exitInterstitialFired:   _exitFired,
+		exitInterstitialTrigger: _exitTrigger || '',
+		// Image taps
+		imageTapCount:       (window._imageTaps || []).length,
 	};
 
 	// Build zones array for per-ad detail
@@ -1710,6 +1724,69 @@ function init() {
 }
 
 /* ================================================================
+ * EXIT-INTENT INTERSTITIAL
+ *
+ * Fires the interstitial ad slot when user shows exit signals:
+ * - Mobile: tab switch / back button (visibilitychange)
+ * - Desktop: mouse leaves viewport toward top (mouseleave)
+ * - Both: page unload (beforeunload)
+ * Requires min 15s session + interstitial slot defined by Layer 1.
+ * ================================================================ */
+
+var EXIT_MIN_SESSION_S = 15;
+
+function tryExitInterstitial(trigger) {
+	if (_exitFired) return;
+
+	// Check config
+	var exitEnabled = (typeof plAds !== 'undefined' && plAds.exitInterstitial !== undefined)
+		? plAds.exitInterstitial
+		: true;
+	if (!exitEnabled) return;
+
+	// Minimum engagement time
+	var sessionSeconds = (Date.now() - _sessionStart) / 1000;
+	if (sessionSeconds < EXIT_MIN_SESSION_S) return;
+
+	// Get interstitial slot from Layer 1 slot map
+	if (!window.__initialAds || !window.__initialAds.getSlotMap) return;
+	var slotInfo = window.__initialAds.getSlotMap()['__interstitial'];
+	if (!slotInfo || !slotInfo.slot) return;
+
+	_exitFired = true;
+	_exitTrigger = trigger;
+
+	// Refresh the interstitial — GPT shows it as full-screen overlay
+	googletag.cmd.push(function() {
+		googletag.pubads().refresh([slotInfo.slot]);
+	});
+
+	console.log('[SmartAds] Exit interstitial fired:', trigger,
+		'after', Math.round(sessionSeconds) + 's');
+	pushEvent('exit_interstitial_fired', {
+		trigger: trigger,
+		sessionSeconds: Math.round(sessionSeconds)
+	});
+}
+
+function initExitIntent() {
+	// Mobile: tab switch / back button
+	document.addEventListener('visibilitychange', function() {
+		if (document.hidden) tryExitInterstitial('visibility');
+	});
+
+	// Desktop: mouse leaves window toward top (close/back button area)
+	document.documentElement.addEventListener('mouseleave', function(e) {
+		if (e.clientY < 10) tryExitInterstitial('mouseleave');
+	});
+
+	// Both: page unload
+	window.addEventListener('beforeunload', function() {
+		tryExitInterstitial('beforeunload');
+	});
+}
+
+/* ================================================================
  * BOOT — first user interaction trigger
  * ================================================================ */
 
@@ -1747,6 +1824,11 @@ if (document.readyState === 'loading') {
 setTimeout(function() {
 	if (!_booted) bootOnce();
 }, 15000);
+
+// Exit-intent runs immediately — doesn't wait for user interaction gate.
+// Layer 1 has already defined the interstitial slot by this point
+// (smart-ads.js loads post-window.load + 100ms, after initial-ads.js).
+initExitIntent();
 
 /* ================================================================
  * PUBLIC API — window.SmartAds

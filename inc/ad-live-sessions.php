@@ -148,6 +148,11 @@ function pl_live_sessions_heartbeat( $request ) {
 		// Side rail fill tracking.
 		'left_side_rail_filled'  => ! empty( $body['leftSideRailFilled'] ),
 		'right_side_rail_filled' => ! empty( $body['rightSideRailFilled'] ),
+		// Exit-intent interstitial.
+		'exit_interstitial_fired'   => ! empty( $body['exitInterstitialFired'] ),
+		'exit_interstitial_trigger' => sanitize_text_field( $body['exitInterstitialTrigger'] ?? '' ),
+		// Image taps.
+		'image_tap_count' => intval( $body['imageTapCount'] ?? 0 ),
 	);
 
 	// v5: Per-ad injection details from heartbeat.
@@ -661,6 +666,13 @@ function pl_live_sessions_page() {
 			h += '<tr><td>Pause Banners</td><td>' + (s.pause_banners_shown || 0) + '</td></tr>';
 			h += '<tr><td>Refreshes</td><td>' + (s.refresh_count || 0) + '</td></tr>';
 			h += '<tr><td>Video</td><td>' + (s.video_injected ? '<span class="pl-gate-ok">&#10003; Injected</span>' : '&#10007; Not injected') + '</td></tr>';
+			if (s.exit_interstitial_fired) {
+				h += '<tr><td>Exit Interstitial</td><td><span class="pl-gate-ok">&#10003; Fired</span> (' + (s.exit_interstitial_trigger || '-') + ')</td></tr>';
+			}
+			if (s.image_tap_count > 0 || (s.image_taps && s.image_taps.length > 0)) {
+				var tapCount = s.image_tap_count || (s.image_taps ? s.image_taps.length : 0);
+				h += '<tr><td>Image Taps</td><td><strong>' + tapCount + '</strong></td></tr>';
+			}
 			h += '</table>';
 			// Overlays detail.
 			h += '<h4 style="margin-top:12px">Overlays</h4>';
@@ -698,6 +710,25 @@ function pl_live_sessions_page() {
 				h += '<p style="color:#646970;font-size:12px">No ads injected' + (isRecent ? '.' : ' yet.') + '</p>';
 			}
 			h += '</div>';
+
+			// Image taps detail (only if data available from beacon).
+			if (s.image_taps && s.image_taps.length > 0) {
+				h += '<div style="grid-column:1/-1;border-top:1px solid #e0e0e0;padding-top:12px">';
+				h += '<h4>Image Taps (' + s.image_taps.length + ')</h4>';
+				h += '<table><tr><th>Time</th><th>Heading</th><th>Alt</th><th>Image</th></tr>';
+				for (var t = 0; t < s.image_taps.length; t++) {
+					var tap = s.image_taps[t];
+					var tapSrc = tap.src || '-';
+					if (tapSrc.length > 60) tapSrc = tapSrc.substring(0, 57) + '...';
+					h += '<tr>';
+					h += '<td>' + (tap.ts || 0) + 's</td>';
+					h += '<td>' + (tap.heading || '-') + '</td>';
+					h += '<td>' + (tap.alt || '-') + '</td>';
+					h += '<td style="font-size:11px;word-break:break-all">' + tapSrc + '</td>';
+					h += '</tr>';
+				}
+				h += '</table></div>';
+			}
 
 			h += '</div>';
 			return h;
