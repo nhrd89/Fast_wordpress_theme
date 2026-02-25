@@ -77,6 +77,7 @@ var SCANNER_SPEED_MAX = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) 
 var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable, refreshCount, lastRefresh, injectionType, injectionSpeed}
 var _slotCounter    = 0;
 var _totalSkips     = 0;    // fast-scroller ad skips (for analytics)
+var _totalRetries   = 0;    // empty slot retry attempts (for analytics)
 var _activeStickyAd = null; // currently sticky ad div (only one at a time)
 
 // Velocity tracker
@@ -614,7 +615,8 @@ function injectDynamicAd(afterElement, injectionType) {
 		renderedSize:      null,
 		filled:            false,
 		destroyed:         false,
-		rendered:          false
+		rendered:          false,
+		retried:           false
 	};
 
 	_dynamicSlots.push(record);
@@ -927,15 +929,63 @@ function onDynamicSlotRenderEnded(event) {
 	if (!rec) return;
 
 	if (event.isEmpty) {
-		// Collapse — remove container
+		if (!rec.retried) {
+			// First empty — retry once after 3s with fallback sizes (300x250 only)
+			rec.retried = true;
+			rec.filled  = false;
+			log('Dynamic empty:', divId, '— will retry in 3s');
+
+			(function(r, evtSlot) {
+				setTimeout(function() {
+					if (r.destroyed) return;
+					var el = r.el;
+					if (!el || !el.parentNode) return;
+					// Only retry if div is still near viewport
+					var rect = el.getBoundingClientRect();
+					var vh   = window.innerHeight;
+					if (rect.top < -vh || rect.top > vh * 2) {
+						el.style.minHeight = '0';
+						el.style.margin    = '0';
+						return;
+					}
+					googletag.cmd.push(function() {
+						googletag.destroySlots([evtSlot]);
+						var newSlot = googletag.defineSlot(
+							SLOT_PATH + 'Ad.Plus-300x250',
+							[[300, 250]],
+							r.divId
+						);
+						if (newSlot) {
+							newSlot.addService(googletag.pubads());
+							newSlot.setTargeting('refresh', 'true');
+							newSlot.setTargeting('pos', 'dynamic');
+							newSlot.setTargeting('strategy', 'retry');
+							googletag.display(r.divId);
+							googletag.pubads().refresh([newSlot]);
+							r.slot = newSlot;
+						}
+					});
+					_totalRetries++;
+					log('Retry:', r.divId);
+					pushEvent('dynamic_ad_retry', { divId: r.divId });
+					if (window.__plAdTracker) {
+						window.__plAdTracker.track('retry', r.divId, { slotType: 'dynamic' });
+					}
+				}, 3000);
+			})(rec, event.slot);
+
+			return;
+		}
+
+		// Retry also empty — collapse
 		rec.el.style.minHeight = '0';
 		rec.el.style.margin    = '0';
 		rec.el.style.overflow  = 'hidden';
 		rec.filled = false;
-		log('Dynamic empty:', divId);
-		pushEvent('dynamic_ad_empty', { divId: divId });
+		log('Dynamic empty after retry:', divId);
+		pushEvent('dynamic_ad_empty', { divId: divId, afterRetry: true });
 		if (window.__plAdTracker) {
-			window.__plAdTracker.track('empty', divId, { slotType: 'dynamic' });
+			window.__plAdTracker.track('empty', divId, { slotType: 'dynamic', afterRetry: true });
 		}
 		return;
 	}
@@ -1244,6 +1294,7 @@ function sendBeacon() {
 		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
 		videoInjected:       !!window.__plVideoInjected,
 		totalSkips:          _totalSkips,
+		totalRetries:        _totalRetries,
 		// Dynamic slot detail
 		zones:           zones
 	};
@@ -1331,7 +1382,8 @@ function sendHeartbeat() {
 		rightSideRailFilled: oFilled((window.__plOverlayStatus || {}).rightRail),
 		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
 		videoInjected:       !!window.__plVideoInjected,
-		totalSkips:          _totalSkips
+		totalSkips:          _totalSkips,
+		totalRetries:        _totalRetries
 	};
 
 	// Build zones array for per-ad detail
