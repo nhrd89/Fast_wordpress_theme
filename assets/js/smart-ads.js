@@ -78,6 +78,7 @@ var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable,
 var _slotCounter    = 0;
 var _totalSkips     = 0;    // fast-scroller ad skips (for analytics)
 var _totalRetries   = 0;    // empty slot retry attempts (for analytics)
+var _houseAdsShown  = 0;    // house ad backfills shown (max 2 per page)
 var _activeStickyAd = null; // currently sticky ad div (only one at a time)
 
 // Velocity tracker
@@ -538,6 +539,55 @@ function applyStickyBehavior(container) {
 	stickyObserver.observe(container);
 }
 
+/**
+ * Show a house ad (email capture promo) in an empty dynamic slot.
+ * Max 2 per page. Not counted in viewability calculations.
+ */
+function showHouseAd(rec) {
+	if (_houseAdsShown >= 2) {
+		// Max house ads reached — collapse instead
+		rec.el.style.minHeight = '0';
+		rec.el.style.margin    = '0';
+		rec.el.style.overflow  = 'hidden';
+		rec.filled = false;
+		return;
+	}
+
+	var adDiv = rec.adDiv || document.getElementById(rec.divId);
+	if (!adDiv) return;
+
+	adDiv.innerHTML = '<a href="/free-pinterest-guide" ' +
+		'class="pl-house-ad" ' +
+		'style="display:block;text-align:center;padding:15px;' +
+		'background:#FFF8E1;border:1px solid #FFD54F;border-radius:8px;text-decoration:none;">' +
+		'<div style="font-weight:bold;font-size:14px;color:#333;">' +
+		'Free Guide: How This Site Gets 5,000+ Pinterest Visitors</div>' +
+		'<div style="font-size:12px;color:#666;margin-top:4px;">' +
+		'Download the free PDF guide</div>' +
+		'</a>';
+
+	rec.el.style.minHeight = 'auto';
+	rec.filled = false; // Don't count in viewability
+	_houseAdsShown++;
+
+	pushEvent('house_ad_shown', { divId: rec.divId });
+	if (window.__plAdTracker) {
+		window.__plAdTracker.track('house_ad_shown', rec.divId, { slotType: 'house' });
+	}
+
+	var link = adDiv.querySelector('.pl-house-ad');
+	if (link) {
+		link.addEventListener('click', function() {
+			pushEvent('house_ad_click', { divId: rec.divId });
+			if (window.__plAdTracker) {
+				window.__plAdTracker.track('house_ad_click', rec.divId, { slotType: 'house' });
+			}
+		});
+	}
+
+	log('House ad shown:', rec.divId, 'total:', _houseAdsShown);
+}
+
 function injectDynamicAd(afterElement, injectionType) {
 	_slotCounter++;
 	var divId = 'smart-ad-' + _slotCounter;
@@ -977,13 +1027,10 @@ function onDynamicSlotRenderEnded(event) {
 			return;
 		}
 
-		// Retry also empty — collapse
-		rec.el.style.minHeight = '0';
-		rec.el.style.margin    = '0';
-		rec.el.style.overflow  = 'hidden';
-		rec.filled = false;
-		log('Dynamic empty after retry:', divId);
-		pushEvent('dynamic_ad_empty', { divId: divId, afterRetry: true });
+		// Retry also empty — backfill with house ad (email capture promo)
+		showHouseAd(rec);
+		log('Dynamic empty after retry:', divId, '— house ad backfill');
+		pushEvent('dynamic_ad_empty', { divId: divId, afterRetry: true, houseAd: _houseAdsShown > 0 });
 		if (window.__plAdTracker) {
 			window.__plAdTracker.track('empty', divId, { slotType: 'dynamic', afterRetry: true });
 		}
