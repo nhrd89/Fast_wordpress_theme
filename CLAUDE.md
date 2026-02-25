@@ -263,12 +263,12 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - Prevents persistent 250px blank gaps from slow/no-fill auctions
 
 **Exit-Intent Interstitial (`tryExitInterstitial()`):**
-- Fires the GPT interstitial slot on user exit (tab switch, mouse-leave, beforeunload)
+- Fires a **new** GPT interstitial slot on user exit (tab switch, mouse-leave, beforeunload)
 - `initExitIntent()` called at script load time (NOT inside `init()` — catches exits before engagement gate)
 - 3 triggers: `visibilitychange` (tab switch), `mouseleave` (clientY<10), `beforeunload`
 - Guards: `exit_interstitial` admin toggle, 15s minimum session, fires once per page
-- Accesses Layer 1 interstitial via `window.__initialAds.getSlotMap()['__interstitial'].slot`
-- Direct `googletag.pubads().refresh([slot])` (bypasses `refreshSlot()` which checks maxRefresh=0)
+- **Destroys Layer 1 interstitial first** (GPT only allows one per page), then `defineOutOfPageSlot` + `display` for a fresh slot
+- Cannot refresh existing interstitial — GPT interstitials are one-shot (`maxRefresh: 0`), refresh yields 0 fills
 - Full analytics: `_exitRecord` tracks fill/viewable/size via targeted `slotRenderEnded` + `impressionViewable` listeners
 - `_exitRecord` NOT pushed to `_dynamicSlots` (no DOM element — would crash engine loop); instead appended to zones in beacon/heartbeat
 - Shows as zone row with `injectionType: 'exit_intent'` in Live Sessions Ad Detail (highlighted yellow)
@@ -548,7 +548,8 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ## 13. Recent Changes Log
 
 ### Exit-Intent + Image Tap Tracking (Feb 25, 2026)
-- **Exit-intent interstitial** — `tryExitInterstitial()` in smart-ads.js fires the GPT interstitial slot on tab switch (visibilitychange), mouse-leave (clientY<10), or beforeunload. 15s minimum session. Admin toggle `exit_interstitial` in ad-engine.php. `initExitIntent()` runs at script load (not gated by engagement). Tracked in beacon + heartbeat.
+- **Fix: exit interstitial uses new slot instead of refresh** — GPT interstitials are one-shot (`maxRefresh: 0`), refreshing yields 0 fills (108 fires, 0 fills). Fix: destroy Layer 1 interstitial via `googletag.destroySlots()`, then `defineOutOfPageSlot` + `display` for a fresh slot. GPT only allows one interstitial per page, so the old one must be destroyed first.
+- **Exit-intent interstitial** — `tryExitInterstitial()` in smart-ads.js fires a new GPT interstitial slot on tab switch (visibilitychange), mouse-leave (clientY<10), or beforeunload. 15s minimum session. Admin toggle `exit_interstitial` in ad-engine.php. `initExitIntent()` runs at script load (not gated by engagement). Tracked in beacon + heartbeat.
 - **Exit interstitial full analytics** — `_exitRecord` tracks fill/viewable/size via targeted GPT `slotRenderEnded` + `impressionViewable` listeners. Record appended to beacon/heartbeat zones (NOT in `_dynamicSlots` — no DOM element). Shows as zone row in Live Sessions Ad Detail with `injection_type: 'exit_intent'` (highlighted yellow). Totals not double-counted (already in Layer 1 slotMap). Zone storage updated with `injection_type`, `trigger`, and `divId` fallback fields.
 - **Image tap tracker** — `initImageTapTracker()` in engagement.js. Delegated click listener on `.single-content img` + `.infinite-post-content img`. Stores `{src, alt, heading, ts}` in `window._imageTaps`. Sent via beacon (full array) and heartbeat (count). Stored in ad-data-recorder.php session JSON. Displayed in Live Sessions detail panel.
 
