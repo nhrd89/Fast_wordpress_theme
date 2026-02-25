@@ -77,6 +77,7 @@ var SCANNER_SPEED_MAX = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) 
 var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable, refreshCount, lastRefresh, injectionType, injectionSpeed}
 var _slotCounter    = 0;
 var _totalSkips     = 0;    // fast-scroller ad skips (for analytics)
+var _activeStickyAd = null; // currently sticky ad div (only one at a time)
 
 // Velocity tracker
 var _velocitySamples = [];  // last 10 velocity readings
@@ -492,6 +493,50 @@ function observeForLazyRender(container, record, sizes, sizeMapping) {
 	record._lazyObserver = observer;
 }
 
+/**
+ * Apply brief sticky behavior to a dynamic ad for viewability.
+ * Only for fast-scrolling users (speed > 100px/s) scrolling down.
+ * Holds the ad in viewport for 1.5s — just enough for the 1s viewability threshold.
+ * Only one sticky ad at a time to avoid UX jank.
+ */
+function applyStickyBehavior(container) {
+	if (typeof IntersectionObserver === 'undefined') return;
+
+	var applied = false;
+	var stickyObserver = new IntersectionObserver(function(entries) {
+		if (entries[0].isIntersecting && !applied) {
+			applied = true;
+			stickyObserver.disconnect();
+
+			// Clear previous sticky if any
+			if (_activeStickyAd && _activeStickyAd !== container) {
+				_activeStickyAd.style.position = '';
+				_activeStickyAd.style.top = '';
+				_activeStickyAd.style.transform = '';
+				_activeStickyAd.style.zIndex = '';
+			}
+
+			// Apply sticky positioning
+			container.style.position = 'sticky';
+			container.style.top = '50%';
+			container.style.transform = 'translateY(-50%)';
+			container.style.zIndex = '10';
+			_activeStickyAd = container;
+
+			// Remove sticky after 1.5 seconds
+			setTimeout(function() {
+				container.style.position = '';
+				container.style.top = '';
+				container.style.transform = '';
+				container.style.zIndex = '';
+				if (_activeStickyAd === container) _activeStickyAd = null;
+			}, 1500);
+		}
+	}, { threshold: 0.5 }); // trigger when 50% visible
+
+	stickyObserver.observe(container);
+}
+
 function injectDynamicAd(afterElement, injectionType) {
 	_slotCounter++;
 	var divId = 'smart-ad-' + _slotCounter;
@@ -903,6 +948,12 @@ function onDynamicSlotRenderEnded(event) {
 		rec.renderedSize = size;
 	}
 	rec.filled = true;
+
+	// Brief sticky for fast-scrolling users: hold ad in viewport for 1.5s
+	// Only when injection speed > 100px/s AND scrolling down (feels jarring on scroll-up)
+	if (rec.injectionSpeed > 100 && rec.scrollDirection === 'down') {
+		applyStickyBehavior(rec.el);
+	}
 
 	log('Dynamic filled:', divId, size);
 	pushEvent('dynamic_ad_filled', { divId: divId, size: size });
