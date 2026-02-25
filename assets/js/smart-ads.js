@@ -76,6 +76,7 @@ var SCANNER_SPEED_MAX = L2.fastScannerSpeed ? parseInt(L2.fastScannerSpeed, 10) 
 
 var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable, refreshCount, lastRefresh, injectionType, injectionSpeed}
 var _slotCounter    = 0;
+var _totalSkips     = 0;    // fast-scroller ad skips (for analytics)
 
 // Velocity tracker
 var _velocitySamples = [];  // last 10 velocity readings
@@ -564,10 +565,41 @@ function injectDynamicAd(afterElement, injectionType) {
 
 	_dynamicSlots.push(record);
 
-	// Lazy render — defer GPT defineSlot+display until 200px from viewport.
-	// This gives the creative ~500-1000ms to load while the user scrolls toward it,
-	// dramatically improving viewability for predictive injections.
-	observeForLazyRender(container, record, sizes, sizeMapping);
+	// Render strategy depends on scroll speed at injection time:
+	// - Fast scrollers (>200px/s): 500ms timeout then proximity check — skip if user scrolled away
+	// - Normal/slow scrollers: IO with 200px rootMargin — renders when approaching viewport
+	if (_scrollSpeed > 200) {
+		// Fast scroller — defer 500ms, then check if div is still near viewport
+		(function(rec, sz, sm, ctr) {
+			setTimeout(function() {
+				if (rec.destroyed || rec.rendered) return;
+				var r = ctr.getBoundingClientRect();
+				var vh = window.innerHeight;
+				// Within 1.5x viewport height above/below = user slowed down or is nearby
+				if (r.top > -vh && r.top < vh * 2.5) {
+					renderSlot(rec, sz, sm);
+				} else {
+					// User scrolled far away — skip this ad, clean up
+					rec.destroyed = true;
+					if (ctr.parentNode) ctr.parentNode.removeChild(ctr);
+					_totalSkips++;
+					log('SKIPPED: fast scroll abandon', rec.divId, 'skips:', _totalSkips);
+					pushEvent('dynamic_ad_skipped', {
+						divId: rec.divId, reason: 'fast_scroll_abandon',
+						speed: rec.injectionSpeed, totalSkips: _totalSkips
+					});
+					if (window.__plAdTracker) {
+						window.__plAdTracker.track('skipped', rec.divId, {
+							slotType: 'dynamic', reason: 'fast_scroll_abandon'
+						});
+					}
+				}
+			}, 500);
+		})(record, sizes, sizeMapping, container);
+	} else {
+		// Normal speed — lazy render via IO (200px rootMargin gives ~500-1000ms lead time)
+		observeForLazyRender(container, record, sizes, sizeMapping);
+	}
 
 	log('Injected:', divId, 'type:', injectionType, 'dir:', _scrollDirection, 'speed:', _scrollSpeed, 'spacing:', Math.round(adSpacing), 'visitor:', _visitorType);
 	pushEvent('dynamic_ad_injected', {
@@ -1151,6 +1183,7 @@ function sendBeacon() {
 		totalRefreshes:      allRefreshes,
 		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
 		videoInjected:       !!window.__plVideoInjected,
+		totalSkips:          _totalSkips,
 		// Dynamic slot detail
 		zones:           zones
 	};
@@ -1237,7 +1270,8 @@ function sendHeartbeat() {
 		leftSideRailFilled:  oFilled((window.__plOverlayStatus || {}).leftRail),
 		rightSideRailFilled: oFilled((window.__plOverlayStatus || {}).rightRail),
 		pauseBannersInjected: slotMap['pause-ad-1'] && slotMap['pause-ad-1'].renderedSize ? 1 : 0,
-		videoInjected:       !!window.__plVideoInjected
+		videoInjected:       !!window.__plVideoInjected,
+		totalSkips:          _totalSkips
 	};
 
 	// Build zones array for per-ad detail
