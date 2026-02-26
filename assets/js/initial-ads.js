@@ -181,6 +181,8 @@ function trackAdEvent(eventType, slotId, extra) {
 	if (extra.nearImage)                   evt.ni  = 1;
 	if (extra.adsInViewport !== undefined) evt.aiv = extra.adsInViewport;
 	if (extra.adDensityPercent !== undefined) evt.adp = extra.adDensityPercent;
+	if (extra.gptResponseMs !== undefined) evt.grm = Math.round(extra.gptResponseMs);
+	if (extra.relocated)                   evt.rel = 1;
 	_eventBatch.push(evt);
 }
 

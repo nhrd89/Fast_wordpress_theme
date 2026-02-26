@@ -518,25 +518,31 @@ function renderSlot(record, sizes, sizeMapping) {
 			slot.setTargeting('pos', 'dynamic');
 			slot.setTargeting('strategy', record.injectionType || 'unknown');
 			googletag.display(record.divId);
+			googletag.pubads().refresh([slot]);
 			record.slot = slot;
 		}
 	});
 
-	// Slow-creative timeout: if no creative renders in 3s, collapse the container
-	// to prevent blank 250px gaps. Shows house ad if available.
+	// Record render request time for GPT response tracking
+	record.renderRequestedAt = Date.now();
+
+	// Patient timeout — only collapses if GPT never responds at all.
+	// Real empties are handled by slotRenderEnded (showHouseAd on isEmpty).
 	(function(rec) {
-		setTimeout(function() {
+		rec._fillTimeout = setTimeout(function() {
 			if (rec.destroyed || rec.filled) return;
-			// Creative didn't arrive in 3s — collapse
-			showHouseAd(rec);
-			log('Slow-creative timeout:', rec.divId, '— collapsed after 3s');
-			pushEvent('dynamic_ad_timeout', { divId: rec.divId });
+			rec.el.style.minHeight = '0';
+			rec.el.style.height = '0';
+			rec.el.style.margin = '0';
+			rec.destroyed = true;
+			console.log('[SmartAds] GPT stuck:', rec.divId, '10s no response, collapsed');
+			pushEvent('dynamic_ad_timeout', { divId: rec.divId, timeoutMs: 10000 });
 			if (window.__plAdTracker) {
 				window.__plAdTracker.track('creative_timeout', rec.divId, {
-					slotType: 'dynamic', timeoutMs: 3000
+					slotType: 'dynamic', timeoutMs: 10000
 				});
 			}
-		}, 3000);
+		}, 10000);
 	})(record);
 
 	log('Rendered:', record.divId, 'type:', record.injectionType);
@@ -713,6 +719,100 @@ function showHouseAd(rec) {
 	}
 
 	log('House ad shown:', rec.divId, 'total:', _houseAdsShown);
+}
+
+/**
+ * Relocate a filled-but-missed ad near the user's current viewport.
+ * Moves the existing DOM element (keeps GPT iframe alive) to a paragraph
+ * near the viewport center, respecting spacing rules.
+ */
+function relocateFilledAd(rec) {
+	if (rec.relocated || rec.destroyed) return;
+
+	var scrollY = window.pageYOffset || 0;
+	var viewportMiddle = scrollY + (window.innerHeight * 0.6);
+
+	// Search all content sections for a paragraph near viewport middle
+	var containers = document.querySelectorAll('.single-content');
+	var bestTarget = null;
+	var bestDistance = Infinity;
+
+	for (var c = 0; c < containers.length; c++) {
+		var paragraphs = containers[c].querySelectorAll('p');
+		for (var p = 0; p < paragraphs.length; p++) {
+			var para = paragraphs[p];
+			var paraY = para.getBoundingClientRect().top + scrollY;
+			var distance = Math.abs(paraY - viewportMiddle);
+
+			if (distance < bestDistance) {
+				// Check spacing: don't place within 400px of another active ad
+				var tooClose = false;
+				for (var s = 0; s < _dynamicSlots.length; s++) {
+					var other = _dynamicSlots[s];
+					if (other.destroyed || other === rec) continue;
+					if (!other.el || !other.el.parentNode) continue;
+					var otherY = other.el.getBoundingClientRect().top + scrollY;
+					if (Math.abs(paraY - otherY) < MIN_PIXEL_SPACING) {
+						tooClose = true;
+						break;
+					}
+				}
+
+				// Also check Layer 1 exclusion zones
+				if (!tooClose && window.__initialAds) {
+					var zones = window.__initialAds.getExclusionZones();
+					for (var z = 0; z < zones.length; z++) {
+						var adCenter = (zones[z].top + zones[z].bottom) / 2;
+						if (Math.abs(paraY - adCenter) < MIN_PIXEL_SPACING) {
+							tooClose = true;
+							break;
+						}
+					}
+				}
+
+				if (!tooClose) {
+					bestDistance = distance;
+					bestTarget = para;
+				}
+			}
+		}
+	}
+
+	if (!bestTarget || bestDistance > 800) {
+		log('Relocate: no valid position for', rec.divId);
+		return;
+	}
+
+	// Store original position for analytics
+	var oldY = rec.el.getBoundingClientRect().top + scrollY;
+
+	// Detach from current position (do NOT clone — keeps GPT iframe alive)
+	if (rec.el.parentNode) {
+		rec.el.parentNode.removeChild(rec.el);
+	}
+
+	// Insert after the target paragraph
+	bestTarget.parentNode.insertBefore(rec.el, bestTarget.nextSibling);
+
+	var newY = rec.el.getBoundingClientRect().top + scrollY;
+
+	// Update tracking
+	rec.relocated = true;
+	rec.relocatedFromY = Math.round(oldY);
+	rec.relocatedToY = Math.round(newY);
+	rec.relocatedAt = Date.now();
+
+	// Reset viewability tracking for new position
+	rec.viewable = false;
+	delete _slotViewStart[rec.divId];
+
+	console.log('[SmartAds] Relocated', rec.divId,
+		'from Y:' + Math.round(oldY), 'to Y:' + Math.round(newY),
+		'(' + Math.round(newY - oldY) + 'px moved)');
+	pushEvent('dynamic_ad_relocated', {
+		divId: rec.divId, fromY: Math.round(oldY),
+		toY: Math.round(newY), distance: Math.round(newY - oldY)
+	});
 }
 
 function injectDynamicAd(afterElement, injectionType) {
@@ -1100,7 +1200,17 @@ function onDynamicSlotRenderEnded(event) {
 	}
 	if (!rec) return;
 
+	// Clear the 10s stuck timeout — GPT did respond
+	if (rec._fillTimeout) {
+		clearTimeout(rec._fillTimeout);
+		rec._fillTimeout = null;
+	}
+
+	// Track GPT response time
+	rec.gptResponseMs = rec.renderRequestedAt ? (Date.now() - rec.renderRequestedAt) : 0;
+
 	if (event.isEmpty) {
+		console.log('[SmartAds] GPT response:', rec.divId, 'EMPTY', rec.gptResponseMs + 'ms');
 		if (!rec.retried) {
 			// First empty — retry once after 3s with fallback sizes (300x250 only)
 			rec.retried = true;
@@ -1168,6 +1278,22 @@ function onDynamicSlotRenderEnded(event) {
 	}
 	rec.filled = true;
 
+	console.log('[SmartAds] GPT response:', rec.divId,
+		'FILLED' + (size ? ' ' + size[0] + 'x' + size[1] : ''),
+		rec.gptResponseMs + 'ms');
+
+	// Relocate filled-but-missed ads: if user has scrolled far past this ad,
+	// move it near their current position to salvage the impression.
+	var rect = rec.el.getBoundingClientRect();
+	var isFarBelow = rect.top > window.innerHeight + 500;
+	var isFarAbove = rect.bottom < -500;
+	if ((isFarBelow || isFarAbove) && !rec.relocated) {
+		// Don't relocate if user is scrolling toward the ad
+		if (!(isFarBelow && _scrollDirection === 'up')) {
+			relocateFilledAd(rec);
+		}
+	}
+
 	// Last-chance refresh: watch for this ad to exit viewport top
 	observeForLastChanceRefresh(rec);
 
@@ -1178,9 +1304,17 @@ function onDynamicSlotRenderEnded(event) {
 	}
 
 	log('Dynamic filled:', divId, size);
-	pushEvent('dynamic_ad_filled', { divId: divId, size: size });
+	pushEvent('dynamic_ad_filled', {
+		divId: divId, size: size, gptResponseMs: rec.gptResponseMs,
+		relocated: rec.relocated || false
+	});
 	if (window.__plAdTracker) {
-		window.__plAdTracker.track('impression', divId, { slotType: 'dynamic', creativeSize: size ? size[0] + 'x' + size[1] : '' });
+		window.__plAdTracker.track('impression', divId, {
+			slotType: 'dynamic',
+			creativeSize: size ? size[0] + 'x' + size[1] : '',
+			gptResponseMs: rec.gptResponseMs || 0,
+			relocated: rec.relocated ? 1 : 0
+		});
 	}
 }
 
@@ -1381,7 +1515,11 @@ function sendBeacon() {
 			scrollDirection:   s.scrollDirection || 'down',
 			nearImage:         s.nearImage || false,
 			adSpacing:         s.adSpacing || 0,
-			predictedDistance: s.predictedDistance || 0
+			predictedDistance: s.predictedDistance || 0,
+			gptResponseMs:     s.gptResponseMs || 0,
+			relocated:         s.relocated || false,
+			relocatedFromY:    s.relocatedFromY || 0,
+			relocatedToY:      s.relocatedToY || 0
 		});
 	}
 
@@ -1604,7 +1742,11 @@ function sendHeartbeat() {
 			injectionType:     ds.injectionType,
 			injectionSpeed:    ds.injectionSpeed,
 			scrollDirection:   ds.scrollDirection || 'down',
-			adSpacing:         ds.adSpacing || 0
+			adSpacing:         ds.adSpacing || 0,
+			gptResponseMs:     ds.gptResponseMs || 0,
+			relocated:         ds.relocated || false,
+			relocatedFromY:    ds.relocatedFromY || 0,
+			relocatedToY:      ds.relocatedToY || 0
 		});
 	}
 

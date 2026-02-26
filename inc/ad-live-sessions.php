@@ -174,7 +174,9 @@ function pl_live_sessions_heartbeat( $request ) {
 				'is_video'       => ! empty( $z['isVideo'] ),
 				'passback'       => ! empty( $z['passback'] ),
 				'passback_net'   => sanitize_text_field( $z['passbackNetwork'] ?? '' ),
-				'refresh_count'  => intval( $z['refreshCount'] ?? 0 ),
+				'refresh_count'    => intval( $z['refreshCount'] ?? 0 ),
+				'gpt_response_ms'  => intval( $z['gptResponseMs'] ?? 0 ),
+				'relocated'        => ! empty( $z['relocated'] ) ? 1 : 0,
 			);
 		}
 		$session['zones_active'] = implode( ',', array_column( $session['events'], 'zone_id' ) );
@@ -705,10 +707,11 @@ function pl_live_sessions_page() {
 			h += '<div>';
 			h += '<h4>Ad Detail (' + (s.events ? s.events.length : 0) + ' ads)' + (isRecent ? ' — Final' : '') + '</h4>';
 			if (s.events && s.events.length > 0) {
-				h += '<table><tr><th>Zone</th><th>Type</th><th>Size</th><th>Filled</th><th>Speed</th><th>Pattern</th><th>Visible</th><th>Viewable</th><th>Pause</th><th>Refresh</th></tr>';
+				h += '<table><tr><th>Zone</th><th>Type</th><th>Size</th><th>Filled</th><th>Speed</th><th>Pattern</th><th>Visible</th><th>Viewable</th><th>Pause</th><th>Refresh</th><th>GPT ms</th><th>Relocated</th></tr>';
 				for (var i = 0; i < s.events.length; i++) {
 					var e = s.events[i];
 					var rowStyle = e.injection_type === 'exit_intent' ? ' style="background:#fef3c7"' : '';
+					if (e.relocated) rowStyle = ' style="background:#dbeafe"';
 					h += '<tr' + rowStyle + '>';
 					h += '<td><code>' + (e.zone_id || '-') + '</code></td>';
 					h += '<td>' + (e.injection_type || '-') + '</td>';
@@ -720,6 +723,8 @@ function pl_live_sessions_page() {
 					h += '<td>' + (e.viewable > 0 ? statusIcon(true) : statusIcon(false)) + '</td>';
 					h += '<td>' + (e.is_pause ? '&#10003;' : '-') + '</td>';
 					h += '<td>' + (e.refresh_count || 0) + '</td>';
+					h += '<td>' + (e.gpt_response_ms > 0 ? e.gpt_response_ms + 'ms' : '-') + '</td>';
+					h += '<td>' + (e.relocated ? '<span style="color:#2563eb">&#8644;</span>' : '-') + '</td>';
 					h += '</tr>';
 				}
 				h += '</table>';

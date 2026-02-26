@@ -175,6 +175,8 @@ function pinlightning_record_ad_data($request) {
                 'passback_network' => sanitize_text_field($zone['passbackNetwork'] ?? ''),
                 'refresh_count' => intval($zone['refreshCount'] ?? 0),
                 'trigger' => sanitize_text_field($zone['trigger'] ?? ''),
+                'gpt_response_ms' => intval($zone['gptResponseMs'] ?? 0),
+                'relocated' => !empty($zone['relocated']),
             );
         }
     }
@@ -489,6 +491,8 @@ function pl_ad_ensure_tables() {
         near_image tinyint(1) unsigned NOT NULL DEFAULT 0,
         ads_in_viewport tinyint(3) unsigned NOT NULL DEFAULT 0,
         ad_density_percent tinyint(3) unsigned NOT NULL DEFAULT 0,
+        gpt_response_ms int(10) unsigned NOT NULL DEFAULT 0,
+        relocated tinyint(1) unsigned NOT NULL DEFAULT 0,
         created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY  (id),
         KEY idx_created (created_at),
@@ -554,7 +558,18 @@ function pl_ad_ensure_tables() {
         }
     }
 
-    update_option( 'pl_ad_tables_ver', '4' );
+    // v4→v5 migration: add gpt_response_ms and relocated columns.
+    if ( in_array( $installed_ver, array( '1', '2', '3', '4' ), true ) ) {
+        $te = $wpdb->prefix . 'pl_ad_events';
+        $cols = $wpdb->get_col( "SHOW COLUMNS FROM {$te}", 0 );
+        if ( ! in_array( 'gpt_response_ms', $cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$te}
+                ADD COLUMN gpt_response_ms int(10) unsigned NOT NULL DEFAULT 0 AFTER ad_density_percent,
+                ADD COLUMN relocated tinyint(1) unsigned NOT NULL DEFAULT 0 AFTER gpt_response_ms" );
+        }
+    }
+
+    update_option( 'pl_ad_tables_ver', '5' );
 }
 add_action( 'admin_init', 'pl_ad_ensure_tables' );
 
@@ -623,6 +638,9 @@ function pl_ad_handle_event_batch() {
         $nearImage        = ! empty( $evt['ni'] ) ? 1 : 0;
         $adsInViewport    = min( 255, absint( $evt['aiv'] ?? 0 ) );
         $adDensityPercent = min( 100, absint( $evt['adp'] ?? 0 ) );
+        // GPT response time + relocation tracking (v5).
+        $gptResponseMs    = absint( $evt['grm'] ?? 0 );
+        $relocated        = ! empty( $evt['rel'] ) ? 1 : 0;
 
         // Insert event row.
         $wpdb->insert( $table_events, array(
@@ -648,6 +666,8 @@ function pl_ad_handle_event_batch() {
             'near_image'         => $nearImage,
             'ads_in_viewport'    => $adsInViewport,
             'ad_density_percent' => $adDensityPercent,
+            'gpt_response_ms'    => $gptResponseMs,
+            'relocated'          => $relocated,
             'created_at'         => current_time( 'mysql' ),
         ) );
 

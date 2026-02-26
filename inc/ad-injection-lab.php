@@ -198,7 +198,47 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 		$cutoff
 	), ARRAY_A );
 
-	// 8. Live feed (recent injections grouped by slot).
+	// 8. GPT response time brackets.
+	$response_time_brackets = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			CASE
+				WHEN gpt_response_ms < 1000 THEN '0-1s'
+				WHEN gpt_response_ms < 2000 THEN '1-2s'
+				WHEN gpt_response_ms < 3000 THEN '2-3s'
+				WHEN gpt_response_ms < 5000 THEN '3-5s'
+				WHEN gpt_response_ms < 8000 THEN '5-8s'
+				WHEN gpt_response_ms < 10000 THEN '8-10s'
+				ELSE '10s+'
+			END AS response_bracket,
+			COUNT(*) AS total,
+			COUNT(CASE WHEN event_type = 'impression' THEN 1 END) AS filled,
+			COUNT(CASE WHEN event_type = 'viewable' THEN 1 END) AS viewable
+		FROM {$te}
+		WHERE created_at >= %s
+			AND slot_type = 'dynamic'
+			AND gpt_response_ms > 0
+		GROUP BY response_bracket
+		ORDER BY FIELD(response_bracket, '0-1s', '1-2s', '2-3s', '3-5s', '5-8s', '8-10s', '10s+')",
+		$cutoff
+	), ARRAY_A );
+
+	// 9. Relocation stats.
+	$relocation_stats = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			relocated,
+			COUNT(CASE WHEN event_type = 'impression' THEN 1 END) AS filled,
+			COUNT(CASE WHEN event_type = 'viewable' THEN 1 END) AS viewable,
+			AVG(CASE WHEN event_type = 'viewable' AND time_to_viewable > 0 THEN time_to_viewable END) AS avg_ttv,
+			AVG(CASE WHEN gpt_response_ms > 0 THEN gpt_response_ms END) AS avg_response_ms
+		FROM {$te}
+		WHERE created_at >= %s
+			AND slot_type = 'dynamic'
+			AND event_type IN ('impression', 'viewable')
+		GROUP BY relocated",
+		$cutoff
+	), ARRAY_A );
+
+	// 10. Live feed (recent injections grouped by slot).
 	$recent = $wpdb->get_results( $wpdb->prepare(
 		"SELECT
 			created_at,
@@ -211,7 +251,9 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 			event_type,
 			time_to_viewable,
 			visitor_type,
-			near_image
+			near_image,
+			gpt_response_ms,
+			relocated
 		FROM {$te}
 		WHERE created_at >= %s
 			AND slot_type = 'dynamic'
@@ -241,6 +283,8 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 				'viewable'       => false,
 				'ttv'            => 0,
 				'visitor'        => $row['visitor_type'],
+				'gptResponseMs'  => 0,
+				'relocated'      => false,
 			);
 		}
 		$g = &$grouped[ $key ];
@@ -255,6 +299,12 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 		}
 		if ( $row['event_type'] === 'impression' ) {
 			$g['filled'] = true;
+			if ( (int) $row['gpt_response_ms'] > 0 ) {
+				$g['gptResponseMs'] = (int) $row['gpt_response_ms'];
+			}
+			if ( ! empty( $row['relocated'] ) ) {
+				$g['relocated'] = true;
+			}
 		}
 		if ( $row['event_type'] === 'viewable' ) {
 			$g['viewable'] = true;
@@ -263,21 +313,23 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 	}
 	$live_feed = array_values( array_slice( $grouped, 0, $feed_limit ) );
 
-	// 9. Recommendations.
+	// 11. Recommendations.
 	$recommendations = pl_injection_lab_recommendations( $type_comparison, $speed_brackets, $spacing_ranges, $visitor_types, $direction_perf );
 
-	// 10. Overview totals.
+	// 12. Overview totals.
 	$totals = array(
-		'total_injections'   => 0,
-		'pause_count'        => 0,
-		'slow_scroll_count'  => 0,
-		'predictive_count'   => 0,
-		'total_filled'       => 0,
-		'total_viewable'     => 0,
-		'total_refreshes'    => 0,
-		'avg_ttv_pause'      => 0,
-		'avg_ttv_slow'       => 0,
-		'avg_ttv_predict'    => 0,
+		'total_injections'    => 0,
+		'pause_count'         => 0,
+		'slow_scroll_count'   => 0,
+		'predictive_count'    => 0,
+		'total_filled'        => 0,
+		'total_viewable'      => 0,
+		'total_refreshes'     => 0,
+		'avg_ttv_pause'       => 0,
+		'avg_ttv_slow'        => 0,
+		'avg_ttv_predict'     => 0,
+		'avg_gpt_response_ms' => 0,
+		'relocated_count'     => 0,
 	);
 	foreach ( $type_comparison as $row ) {
 		$totals['total_injections'] += (int) $row['injections'];
@@ -300,18 +352,38 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 		}
 	}
 
+	// Compute avg GPT response time from response_time_brackets.
+	$rt_total_count = 0;
+	$rt_total_ms    = 0;
+	$bracket_midpoints = array( '0-1s' => 500, '1-2s' => 1500, '2-3s' => 2500, '3-5s' => 4000, '5-8s' => 6500, '8-10s' => 9000, '10s+' => 10000 );
+	foreach ( $response_time_brackets as $row ) {
+		$cnt = (int) $row['total'];
+		$rt_total_count += $cnt;
+		$rt_total_ms    += $cnt * ( $bracket_midpoints[ $row['response_bracket'] ] ?? 5000 );
+	}
+	$totals['avg_gpt_response_ms'] = $rt_total_count > 0 ? round( $rt_total_ms / $rt_total_count ) : 0;
+
+	// Compute relocated count from relocation_stats.
+	foreach ( $relocation_stats as $row ) {
+		if ( (int) $row['relocated'] === 1 ) {
+			$totals['relocated_count'] = (int) $row['filled'];
+		}
+	}
+
 	return array(
-		'totals'          => $totals,
-		'typeComparison'  => $type_comparison,
-		'speedBrackets'   => $speed_brackets,
-		'spacingRanges'   => $spacing_ranges,
-		'directionPerf'   => $direction_perf,
-		'imageProximity'  => $image_proximity,
-		'densityBrackets' => $density_brackets,
-		'visitorTypes'    => $visitor_types,
-		'liveFeed'        => $live_feed,
-		'recommendations' => $recommendations,
-		'range'           => $range,
+		'totals'               => $totals,
+		'typeComparison'       => $type_comparison,
+		'speedBrackets'        => $speed_brackets,
+		'spacingRanges'        => $spacing_ranges,
+		'directionPerf'        => $direction_perf,
+		'imageProximity'       => $image_proximity,
+		'densityBrackets'      => $density_brackets,
+		'responseTimeBrackets' => $response_time_brackets,
+		'relocationStats'      => $relocation_stats,
+		'visitorTypes'         => $visitor_types,
+		'liveFeed'             => $live_feed,
+		'recommendations'      => $recommendations,
+		'range'                => $range,
 	);
 }
 
@@ -366,19 +438,23 @@ function pl_injection_lab_export() {
 			'fill_rate'          => $fill_rate,
 			'total_viewable'     => $totals['total_viewable'],
 			'viewability'        => $viewability,
-			'viewport_refreshes' => $totals['total_refreshes'],
-			'avg_ttv_pause'      => $totals['avg_ttv_pause'],
-			'avg_ttv_predictive' => $totals['avg_ttv_predict'],
+			'viewport_refreshes'  => $totals['total_refreshes'],
+			'avg_ttv_pause'       => $totals['avg_ttv_pause'],
+			'avg_ttv_predictive'  => $totals['avg_ttv_predict'],
+			'avg_gpt_response_ms' => $totals['avg_gpt_response_ms'],
+			'relocated_count'     => $totals['relocated_count'],
 		),
-		'by_type'         => $data['typeComparison'],
-		'by_speed'        => $data['speedBrackets'],
-		'by_spacing'      => $data['spacingRanges'],
-		'by_direction'    => $data['directionPerf'],
-		'by_image'        => $data['imageProximity'],
-		'by_density'      => $data['densityBrackets'],
-		'by_visitor'      => $data['visitorTypes'],
-		'live_feed'       => $data['liveFeed'],
-		'recommendations' => $data['recommendations'],
+		'by_type'          => $data['typeComparison'],
+		'by_speed'         => $data['speedBrackets'],
+		'by_spacing'       => $data['spacingRanges'],
+		'by_direction'     => $data['directionPerf'],
+		'by_image'         => $data['imageProximity'],
+		'by_density'       => $data['densityBrackets'],
+		'by_response_time' => $data['responseTimeBrackets'],
+		'by_relocation'    => $data['relocationStats'],
+		'by_visitor'       => $data['visitorTypes'],
+		'live_feed'        => $data['liveFeed'],
+		'recommendations'  => $data['recommendations'],
 	);
 
 	wp_send_json_success( $export );
@@ -593,6 +669,24 @@ function pl_injection_lab_render() {
 			</table>
 		</div>
 
+		<!-- GPT Response Time Table -->
+		<div class="lab-section">
+			<h3>GPT Response Time Brackets</h3>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Response Time</th><th class="num">Count</th><th class="num">Filled</th><th class="num">Fill%</th><th class="num">Viewable</th><th class="num">View%</th></tr></thead>
+				<tbody id="labResponseTimeTable"><tr><td colspan="6" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+		</div>
+
+		<!-- Relocation Stats Table -->
+		<div class="lab-section">
+			<h3>Ad Relocation Performance</h3>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Status</th><th class="num">Filled</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Avg TTV</th><th class="num">Avg GPT Response</th></tr></thead>
+				<tbody id="labRelocationTable"><tr><td colspan="6" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+		</div>
+
 		<!-- Visitor Type Table -->
 		<div class="lab-section">
 			<h3>Visitor Type Breakdown</h3>
@@ -606,8 +700,8 @@ function pl_injection_lab_render() {
 		<div class="lab-section">
 			<h3>Last 20 Injections (Live Feed)</h3>
 			<table class="widefat striped" style="font-size:12px;">
-				<thead><tr><th>Time</th><th>Session</th><th>Slot</th><th>Type</th><th>Dir</th><th>Img</th><th>Visitor</th><th class="num">Speed</th><th class="num">Spacing</th><th>Filled</th><th>Viewable</th><th class="num">TTV</th></tr></thead>
-				<tbody id="labFeedTable"><tr><td colspan="12" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+				<thead><tr><th>Time</th><th>Session</th><th>Slot</th><th>Type</th><th>Dir</th><th>Img</th><th>Visitor</th><th class="num">Speed</th><th class="num">Spacing</th><th>Filled</th><th>Viewable</th><th class="num">TTV</th><th class="num">GPT ms</th><th>Relocated</th></tr></thead>
+				<tbody id="labFeedTable"><tr><td colspan="14" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
 			</table>
 		</div>
 
@@ -689,6 +783,8 @@ function pl_injection_lab_render() {
 					renderDirectionTable(d.directionPerf);
 					renderImageTable(d.imageProximity);
 					renderDensityTable(d.densityBrackets);
+					renderResponseTimeTable(d.responseTimeBrackets);
+					renderRelocationTable(d.relocationStats);
 					renderVisitorTable(d.visitorTypes);
 					renderFeed(d.liveFeed);
 					renderRecs(d.recommendations);
@@ -713,6 +809,8 @@ function pl_injection_lab_render() {
 			html += card('Avg TTV (Slow Scroll)', fmtMs(t.avg_ttv_slow || 0), 'Time to viewable');
 			html += card('Avg TTV (Predictive)', fmtMs(t.avg_ttv_predict), 'Time to viewable');
 			html += card('Viewport Refreshes', t.total_refreshes, 'In-view ad refreshes');
+			html += card('Avg GPT Response', t.avg_gpt_response_ms > 0 ? (t.avg_gpt_response_ms / 1000).toFixed(1) + 's' : '-', 'Time from request to fill');
+			html += card('Relocated Ads', t.relocated_count || 0, 'Moved to viewport after late fill');
 			document.getElementById('labCards').innerHTML = html;
 		}
 
@@ -794,6 +892,30 @@ function pl_injection_lab_render() {
 			document.getElementById('labDensityTable').innerHTML = html;
 		}
 
+		function renderResponseTimeTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labResponseTimeTable').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">No data</td></tr>'; return; }
+			var html = '';
+			rows.forEach(function(r) {
+				var total = parseInt(r.total) || 0;
+				var filled = parseInt(r.filled) || 0;
+				var viewable = parseInt(r.viewable) || 0;
+				html += '<tr><td><strong>' + r.response_bracket + '</strong></td><td class="num">' + fmt(total) + '</td><td class="num">' + fmt(filled) + '</td><td class="num">' + pct(filled, total) + '%</td><td class="num">' + fmt(viewable) + '</td><td class="num">' + pct(viewable, total) + '%</td></tr>';
+			});
+			document.getElementById('labResponseTimeTable').innerHTML = html;
+		}
+
+		function renderRelocationTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labRelocationTable').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">No data</td></tr>'; return; }
+			var html = '';
+			rows.forEach(function(r) {
+				var filled = parseInt(r.filled) || 0;
+				var viewable = parseInt(r.viewable) || 0;
+				var label = parseInt(r.relocated) ? '<span class="badge-yes">Relocated</span>' : 'Standard (in-place)';
+				html += '<tr><td>' + label + '</td><td class="num">' + fmt(filled) + '</td><td class="num">' + fmt(viewable) + '</td><td class="num">' + pct(viewable, filled) + '%</td><td class="num">' + fmtMs(r.avg_ttv) + '</td><td class="num">' + (r.avg_response_ms ? (parseFloat(r.avg_response_ms) / 1000).toFixed(1) + 's' : '-') + '</td></tr>';
+			});
+			document.getElementById('labRelocationTable').innerHTML = html;
+		}
+
 		function renderVisitorTable(rows) {
 			if (!rows || !rows.length) { document.getElementById('labVisitorTable').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;">No data</td></tr>'; return; }
 			var html = '';
@@ -810,12 +932,14 @@ function pl_injection_lab_render() {
 		}
 
 		function renderFeed(rows) {
-			if (!rows || !rows.length) { document.getElementById('labFeedTable').innerHTML = '<tr><td colspan="12" style="text-align:center;color:#888;">No recent injections</td></tr>'; return; }
+			if (!rows || !rows.length) { document.getElementById('labFeedTable').innerHTML = '<tr><td colspan="14" style="text-align:center;color:#888;">No recent injections</td></tr>'; return; }
 			var html = '';
 			rows.forEach(function(r) {
 				var timeStr = r.time ? r.time.split(' ')[1] || r.time : '-';
 				var imgBadge = r.nearImage ? '<span class="badge-yes" title="Near image">&#128247;</span>' : '-';
-				html += '<tr><td style="white-space:nowrap">' + timeStr + '</td><td><code>' + (r.session || '-') + '</code></td><td><code>' + (r.slot || '-') + '</code></td><td>' + badgeType(r.type) + '</td><td>' + badgeDir(r.direction) + '</td><td>' + imgBadge + '</td><td>' + (r.visitor || '-') + '</td><td class="num">' + (r.speed || '-') + '</td><td class="num">' + (r.spacing || '-') + '</td><td>' + yn(r.filled) + '</td><td>' + yn(r.viewable) + '</td><td class="num">' + fmtMs(r.ttv) + '</td></tr>';
+				var gptMs = r.gptResponseMs > 0 ? r.gptResponseMs + 'ms' : '-';
+				var relBadge = r.relocated ? '<span class="badge-yes">&#8644;</span>' : '-';
+				html += '<tr><td style="white-space:nowrap">' + timeStr + '</td><td><code>' + (r.session || '-') + '</code></td><td><code>' + (r.slot || '-') + '</code></td><td>' + badgeType(r.type) + '</td><td>' + badgeDir(r.direction) + '</td><td>' + imgBadge + '</td><td>' + (r.visitor || '-') + '</td><td class="num">' + (r.speed || '-') + '</td><td class="num">' + (r.spacing || '-') + '</td><td>' + yn(r.filled) + '</td><td>' + yn(r.viewable) + '</td><td class="num">' + fmtMs(r.ttv) + '</td><td class="num">' + gptMs + '</td><td>' + relBadge + '</td></tr>';
 			});
 			document.getElementById('labFeedTable').innerHTML = html;
 		}
