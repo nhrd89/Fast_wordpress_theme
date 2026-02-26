@@ -727,7 +727,12 @@ function showHouseAd(rec) {
  * near the viewport center, respecting spacing rules.
  */
 function relocateFilledAd(rec) {
-	if (rec.relocated || rec.destroyed) return;
+	if (rec.relocated || rec.destroyed) {
+		console.log('[SmartAds] relocateFilledAd blocked:', rec.divId,
+			'relocated:', rec.relocated, 'destroyed:', rec.destroyed);
+		return;
+	}
+	console.log('[SmartAds] relocateFilledAd called for', rec.divId);
 
 	var scrollY = window.pageYOffset || 0;
 	var viewportMiddle = scrollY + (window.innerHeight * 0.6);
@@ -779,7 +784,9 @@ function relocateFilledAd(rec) {
 	}
 
 	if (!bestTarget || bestDistance > 800) {
-		log('Relocate: no valid position for', rec.divId);
+		console.log('[SmartAds] Relocate: no valid position for', rec.divId,
+			'bestDistance:', Math.round(bestDistance),
+			'bestTarget:', bestTarget ? 'found' : 'null');
 		return;
 	}
 
@@ -1282,16 +1289,45 @@ function onDynamicSlotRenderEnded(event) {
 		'FILLED' + (size ? ' ' + size[0] + 'x' + size[1] : ''),
 		rec.gptResponseMs + 'ms');
 
-	// Relocate filled-but-missed ads: if user has scrolled far past this ad,
+	// Relocate filled-but-missed ads: if user has scrolled past this ad,
 	// move it near their current position to salvage the impression.
 	var rect = rec.el.getBoundingClientRect();
-	var isFarBelow = rect.top > window.innerHeight + 500;
-	var isFarAbove = rect.bottom < -500;
+	var isFarBelow = rect.top > window.innerHeight + 200;
+	var isFarAbove = rect.bottom < -200;
+
+	console.log('[SmartAds] Relocation check:', rec.divId,
+		'rect.top:', Math.round(rect.top),
+		'rect.bottom:', Math.round(rect.bottom),
+		'viewport:', window.innerHeight,
+		'farBelow:', isFarBelow,
+		'farAbove:', isFarAbove,
+		'scrollDir:', _scrollDirection,
+		'gptMs:', rec.gptResponseMs);
+
 	if ((isFarBelow || isFarAbove) && !rec.relocated) {
 		// Don't relocate if user is scrolling toward the ad
 		if (!(isFarBelow && _scrollDirection === 'up')) {
 			relocateFilledAd(rec);
 		}
+	}
+
+	// Delayed relocation recheck: if the ad filled near-viewport but the user
+	// scrolled past it before it became viewable, relocate after 2s.
+	if (!rec.relocated) {
+		(function(r) {
+			setTimeout(function() {
+				if (r.destroyed || r.viewable || r.relocated) return;
+				if (!r.el || !r.el.parentNode) return;
+				var delayRect = r.el.getBoundingClientRect();
+				var inView = delayRect.top < window.innerHeight && delayRect.bottom > 0;
+				if (!inView) {
+					console.log('[SmartAds] Delayed relocation for', r.divId,
+						'rect.top:', Math.round(delayRect.top),
+						'rect.bottom:', Math.round(delayRect.bottom));
+					relocateFilledAd(r);
+				}
+			}, 2000);
+		})(rec);
 	}
 
 	// Last-chance refresh: watch for this ad to exit viewport top
