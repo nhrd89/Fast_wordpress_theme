@@ -117,6 +117,19 @@ function pl_page_ad_record_event( $request ) {
 }
 
 /**
+ * AJAX handler: clear all page ad stats data.
+ */
+function pl_clear_page_ad_stats_handler() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
+	}
+	check_ajax_referer( 'pl_clear_page_ad_stats' );
+	delete_option( 'pl_page_ad_stats' );
+	wp_send_json_success( array( 'message' => 'All page ad data cleared' ) );
+}
+add_action( 'wp_ajax_pl_clear_page_ad_stats', 'pl_clear_page_ad_stats_handler' );
+
+/**
  * Get page ad stats for admin dashboard.
  *
  * Returns structured breakdowns: today, last_7_days, last_30_days, by_domain, by_format.

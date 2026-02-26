@@ -116,11 +116,13 @@ function pl_page_ad_render_tab() {
 	<div id="pl-page-ad-stats" style="background:#f9f9f9;border:1px solid #ddd;padding:16px 20px;margin:10px 0 20px;border-radius:6px">
 		<h3 style="margin-top:0">Page Ad Stats</h3>
 		<div id="plPaStatsBody"><em>Loading...</em></div>
+		<button type="button" id="pl-clear-page-ad-stats" class="button" style="color:#dc3545;border-color:#dc3545;margin-top:10px;">Clear All Page Ad Data</button>
 	</div>
 	<script>
 	(function(){
 		var url = <?php echo wp_json_encode( $stats_url ); ?>;
 		var nonce = <?php echo wp_json_encode( $nonce ); ?>;
+		var clearNonce = <?php echo wp_json_encode( wp_create_nonce( 'pl_clear_page_ad_stats' ) ); ?>;
 		fetch(url + '?days=30', { headers: { 'X-WP-Nonce': nonce } })
 			.then(function(r){ return r.json(); })
 			.then(function(data){
@@ -168,6 +170,30 @@ function pl_page_ad_render_tab() {
 				body.innerHTML = html;
 			})
 			.catch(function(){ document.getElementById('plPaStatsBody').innerHTML = '<p style="color:#c00">Failed to load stats.</p>'; });
+
+		document.getElementById('pl-clear-page-ad-stats').addEventListener('click', function() {
+			if (!confirm('Are you sure? This will permanently delete ALL page ad analytics data across all sites.')) return;
+			var btn = this;
+			btn.disabled = true;
+			btn.textContent = 'Clearing...';
+			fetch(ajaxurl + '?action=pl_clear_page_ad_stats&_ajax_nonce=' + clearNonce, { method: 'POST' })
+				.then(function(r){ return r.json(); })
+				.then(function(d){
+					if (d.success) {
+						alert('Page ad data cleared.');
+						location.reload();
+					} else {
+						alert('Failed to clear data: ' + (d.data && d.data.message || 'Unknown error'));
+						btn.disabled = false;
+						btn.textContent = 'Clear All Page Ad Data';
+					}
+				})
+				.catch(function(){
+					alert('Request failed.');
+					btn.disabled = false;
+					btn.textContent = 'Clear All Page Ad Data';
+				});
+		});
 	})();
 	</script>
 
