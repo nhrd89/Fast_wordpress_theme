@@ -34,31 +34,45 @@ if ( $hero_post ) {
 }
 wp_reset_postdata();
 
-// ── Trending posts (4, diverse categories — no two share the same primary cat) ──
-$trending_pool = new WP_Query( array(
-	'posts_per_page'         => 20,
+// ── Trending posts (4 recent, excluding hero) ──
+$trending_query = new WP_Query( array(
+	'posts_per_page'         => 4,
 	'post_status'            => 'publish',
 	'post__not_in'           => $shown_ids,
-	'orderby'                => 'comment_count',
+	'orderby'                => 'date',
 	'order'                  => 'DESC',
 	'ignore_sticky_posts'    => true,
 	'no_found_rows'          => true,
 	'update_post_meta_cache' => false,
 ) );
-$trending_posts   = array();
-$trending_cat_ids = array();
-foreach ( $trending_pool->posts as $p ) {
-	$p_cats = wp_get_post_categories( $p->ID, array( 'fields' => 'ids' ) );
-	$p_cat  = ! empty( $p_cats ) ? $p_cats[0] : 0;
-	if ( in_array( $p_cat, $trending_cat_ids, true ) ) {
-		continue;
-	}
-	$trending_posts[]   = $p;
-	$trending_cat_ids[] = $p_cat;
-	$shown_ids[]        = $p->ID;
-	if ( count( $trending_posts ) >= 4 ) {
-		break;
-	}
+// Fallback: if excluding hero leaves < 4, only exclude hero ID.
+if ( $trending_query->post_count < 4 && ! empty( $shown_ids ) ) {
+	$trending_query = new WP_Query( array(
+		'posts_per_page'         => 4,
+		'post_status'            => 'publish',
+		'post__not_in'           => array( $shown_ids[0] ),
+		'orderby'                => 'date',
+		'order'                  => 'DESC',
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+}
+// Final fallback: no exclusions at all.
+if ( $trending_query->post_count < 4 ) {
+	$trending_query = new WP_Query( array(
+		'posts_per_page'         => 4,
+		'post_status'            => 'publish',
+		'orderby'                => 'date',
+		'order'                  => 'DESC',
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+}
+$trending_posts = $trending_query->posts;
+foreach ( $trending_posts as $p ) {
+	$shown_ids[] = $p->ID;
 }
 wp_reset_postdata();
 
@@ -99,41 +113,6 @@ if ( count( $latest_posts ) < 6 ) {
 			break;
 		}
 	}
-}
-wp_reset_postdata();
-
-// ── Popular / Most Loved posts (8, skip all above) ──
-$popular_args = array(
-	'posts_per_page'         => 8,
-	'post_status'            => 'publish',
-	'post__not_in'           => $shown_ids,
-	'orderby'                => 'comment_count',
-	'order'                  => 'DESC',
-	'ignore_sticky_posts'    => true,
-	'no_found_rows'          => true,
-	'update_post_meta_cache' => false,
-);
-$popular_query = new WP_Query( $popular_args );
-// Fallback: if comment_count returns nothing, try rand from last 30 days.
-if ( ! $popular_query->have_posts() ) {
-	$popular_query = new WP_Query( array_merge( $popular_args, array(
-		'orderby'    => 'rand',
-		'date_query' => array( array( 'after' => '30 days ago' ) ),
-	) ) );
-}
-// Final fallback: rand with no date limit, allow previously shown posts.
-if ( ! $popular_query->have_posts() ) {
-	$popular_query = new WP_Query( array(
-		'posts_per_page'         => 8,
-		'post_status'            => 'publish',
-		'orderby'                => 'rand',
-		'ignore_sticky_posts'    => true,
-		'no_found_rows'          => true,
-		'update_post_meta_cache' => false,
-	) );
-}
-foreach ( $popular_query->posts as $p ) {
-	$shown_ids[] = $p->ID;
 }
 wp_reset_postdata();
 
@@ -305,6 +284,14 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 		</article>
 		<?php endforeach; wp_reset_postdata(); ?>
 	</div>
+	<div class="ee-load-more-wrap">
+		<button class="ee-load-more" id="eeLoadMore"
+			data-exclude="<?php echo esc_attr( implode( ',', $shown_ids ) ); ?>"
+			data-page="2"
+			data-rest="<?php echo esc_url( rest_url( 'wp/v2/posts' ) ); ?>">
+			Load More Stories
+		</button>
+	</div>
 </section>
 
 <!-- ====== SECTION 5: NEWSLETTER BANNER ====== -->
@@ -322,28 +309,6 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 		<div class="ee-newsletter-msg" id="eeNewsletterMsg"></div>
 	</div>
 </section>
-
-<!-- ====== SECTION 6: MOST LOVED ====== -->
-<?php if ( $popular_query->have_posts() ) : ?>
-<section class="ee-popular">
-	<h2 class="ee-section-title">Most Loved</h2>
-	<div class="ee-grid-4">
-		<?php while ( $popular_query->have_posts() ) : $popular_query->the_post(); ?>
-		<a href="<?php the_permalink(); ?>" class="ee-portrait">
-			<?php if ( has_post_thumbnail() ) :
-				the_post_thumbnail( 'medium_large', array(
-					'loading' => 'lazy',
-					'decoding' => 'async',
-				) );
-			endif; ?>
-			<div class="ee-portrait-overlay">
-				<div class="ee-portrait-title"><?php the_title(); ?></div>
-			</div>
-		</a>
-		<?php endwhile; wp_reset_postdata(); ?>
-	</div>
-</section>
-<?php endif; ?>
 
 <!-- Newsletter inline JS (no jQuery, tiny) -->
 <script>
@@ -372,6 +337,72 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 			btn.disabled=false;btn.textContent=<?php echo wp_json_encode( $nl_btn ); ?>;
 		});
 	});
+})();
+</script>
+
+<!-- Load More inline JS (no jQuery) -->
+<script>
+(function(){
+	var btn=document.getElementById('eeLoadMore');
+	if(!btn)return;
+	var grid=document.querySelector('.ee-grid-3');
+	var rest=btn.getAttribute('data-rest');
+	var exclude=btn.getAttribute('data-exclude');
+	var page=parseInt(btn.getAttribute('data-page'),10);
+	var perPage=6;
+	var loading=false;
+	var label='Load More Stories';
+
+	btn.addEventListener('click',function(){
+		if(loading)return;
+		loading=true;
+		btn.disabled=true;
+		btn.textContent='Loading...';
+		var url=rest+'?per_page='+perPage+'&page='+page+'&_embed&exclude='+encodeURIComponent(exclude);
+		fetch(url).then(function(r){
+			var totalPages=parseInt(r.headers.get('X-WP-TotalPages'),10)||1;
+			if(!r.ok)throw new Error(r.status);
+			return r.json().then(function(posts){return{posts:posts,totalPages:totalPages}});
+		}).then(function(data){
+			var posts=data.posts;
+			var ids=exclude?exclude.split(','):[];
+			for(var i=0;i<posts.length;i++){
+				var p=posts[i];
+				ids.push(p.id);
+				var img='';
+				var media=p._embedded&&p._embedded['wp:featuredmedia']&&p._embedded['wp:featuredmedia'][0];
+				if(media&&media.source_url){
+					img='<a href="'+esc(p.link)+'"><img src="'+esc(media.source_url)+'" alt="'+esc(p.title.rendered)+'" loading="lazy" decoding="async" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block"></a>';
+				}
+				var catTag='';
+				var terms=p._embedded&&p._embedded['wp:term']&&p._embedded['wp:term'][0];
+				if(terms&&terms.length){catTag='<div class="ee-cat-tag">'+esc(terms[0].name)+'</div>';}
+				var excerpt=p.excerpt&&p.excerpt.rendered?p.excerpt.rendered.replace(/<[^>]+>/g,''):'';
+				if(excerpt.length>120)excerpt=excerpt.substring(0,120)+'...';
+				var date='';
+				if(p.date){var d=new Date(p.date);date=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+				var card=document.createElement('article');
+				card.className='ee-card';
+				card.innerHTML=img+'<div class="ee-card-body">'+catTag+'<h3 class="ee-card-title"><a href="'+esc(p.link)+'">'+p.title.rendered+'</a></h3><p class="ee-card-excerpt">'+esc(excerpt)+'</p><div class="ee-card-meta">'+esc(date)+'</div></div>';
+				grid.appendChild(card);
+			}
+			exclude=ids.join(',');
+			btn.setAttribute('data-exclude',exclude);
+			page++;
+			btn.setAttribute('data-page',page);
+			if(page>data.totalPages||posts.length<perPage){
+				btn.style.display='none';
+			}else{
+				btn.disabled=false;
+				btn.textContent=label;
+			}
+			loading=false;
+		}).catch(function(){
+			btn.style.display='none';
+			loading=false;
+		});
+	});
+	function esc(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML;}
 })();
 </script>
 
