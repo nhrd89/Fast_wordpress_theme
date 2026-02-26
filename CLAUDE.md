@@ -194,7 +194,7 @@ Two separate ad systems, completely isolated:
 
 **Anchor placement:**
 - Homepage templates: 3 anchors with `data-format` attrs (leaderboard→rectangle→leaderboard)
-- Category archives: first anchor before post #1 (leaderboard), then every 3 posts with format rotation (leaderboard→rectangle→banner→rectangle→repeat)
+- Category archives: rectangle ads ONLY — first anchor before post grid, then every 3 posts inside the grid. Injected directly in category.php's custom foreach loop (NOT via `the_post`/`loop_start` hooks — category.php uses `pl_get_category_posts()` custom query, not standard WP loop). Load-more JS also injects ad anchors every 3 new posts + calls `__plPageAds.rescan()`. CSS `column-span: all` for full-width ads in CSS columns layout.
 - Static pages: auto-injected via `the_content` filter, evenly spaced between paragraphs
 
 **Spacing:** 300px desktop, 250px mobile for category; 600px desktop, 400px mobile for homepage/static (enforced at runtime)
@@ -667,12 +667,18 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Category Page Ad Fix + Rectangle-Only (Feb 26, 2026)
+- **fix: category page ad injection** — category.php uses a custom `foreach` loop with `pl_get_category_posts()`, NOT a standard WordPress loop. The `loop_start`/`the_post` hooks in page-ad-engine.php never fired. Fixed by injecting ad anchors directly into category.php's foreach loop. Ad anchor before the grid + after every 3rd post card. Load-more JS also injects ad anchors every 3 new posts and calls `__plPageAds.rescan()`.
+- **Category ads: rectangle only** — All category ads now use rectangle format (300x250 / 336x280) exclusively. No leaderboards, no banners. Triple-enforced: (1) PHP anchors all have `data-format="rectangle"`, (2) page-ads.js forces `fmt = 'rectangle'` for category pages regardless of data-format attr, (3) `getSizesForFormat()` returns `CAT_SIZES` (300x250 + 336x280) for category pages.
+- **CSS `column-span: all`** — Category grid uses CSS `columns:3 300px`. Ad anchors inside the grid use `column-span: all; -webkit-column-span: all` to span full width across all columns.
+- **MutationObserver + rescan** — MutationObserver watches `.pl-cat-grid` for new children. Load-more JS calls `__plPageAds.rescan()` after appending to trigger IO observation of new anchors.
+
 ### Page Ad System Enhancement (Feb 26, 2026)
 - **feat: anchor/interstitial ads, 3-position homepage, aggressive category ads, stats dashboard**
 - **Overlay ads** — Anchor ad (fixed bottom bar, close button, once per session via sessionStorage `pl_pg_anchor_shown`, GPT BOTTOM_ANCHOR). Interstitial (full-screen overlay, 3s delay, 10s auto-close, once per session via `pl_pg_interstitial_shown`, homepage+category only). Both have dummy mode placeholders.
 - **Format system** — Three format types with responsive sizes: leaderboard (970x250/728x90 desktop, 320x100/320x50 mobile), rectangle (336x280/300x250 desktop, 300x250 mobile), banner (728x90 desktop, 320x50 mobile). Homepage uses fixed format-per-position via `data-format` attribute.
 - **Homepage ads** — Exactly 3 fixed-position inline ads: TOP (leaderboard), MIDDLE (rectangle), BOTTOM (leaderboard). All 3 templates (front-page.php, emerald, coral) updated with `data-format` attributes on anchor divs.
-- **Category ads** — Aggressive: first ad before post #1 (leaderboard via `loop_start` hook), then every 3 posts (was 4). Format rotation: leaderboard→rectangle→banner→rectangle→repeat. Reduced spacing: 300px desktop, 250px mobile. MutationObserver for dynamically loaded posts (watches `.pl-cat-grid, main, .cb-grid-4, .ee-grid-3, .pl-post-grid`).
+- **Category ads** — Rectangle only. First ad before grid, then every 3 posts. Reduced spacing: 300px desktop, 250px mobile. MutationObserver for dynamically loaded posts (watches `.pl-cat-grid, main, .cb-grid-4, .ee-grid-3, .pl-post-grid`).
 - **Settings defaults** — `homepage_max=3`, `category_max=10`, `page_max=3`, `desktop_spacing=300`, `mobile_spacing=250`, `category_every_n=3`.
 - **Stats dashboard** — Admin "Page Ads" tab shows today/7d/30d stats fetched from REST API. Stats endpoint returns structured breakdowns: `{ today, last_7_days, last_30_days, by_domain, by_format }` with fill_rate calculation. Storage now keyed by date/domain/page-type/format (backwards compatible with legacy flat structure).
 - **Enhanced event reporting** — `sendEvent()` includes adFormat, device, viewportWidth, renderedSize, url, timestamp. Console logging: `[PageAds] Event: type | slot: name | format: fmt | page: type`.
