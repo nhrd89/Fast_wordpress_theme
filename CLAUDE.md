@@ -290,8 +290,10 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - `initExitIntent()` called at script load time (NOT inside `init()` — catches exits before engagement gate)
 - 3 triggers: `visibilitychange` (tab switch), `mouseleave` (clientY<10), `beforeunload`
 - Guards: `exit_interstitial` admin toggle, 15s minimum session, fires once per page
-- **Destroys Layer 1 interstitial first** (GPT only allows one per page), then `defineOutOfPageSlot` + `display` for a fresh slot
-- Cannot refresh existing interstitial — GPT interstitials are one-shot (`maxRefresh: 0`), refresh yields 0 fills
+- **Checks `__plOverlayStatus.interstitial` before acting:**
+  - If `'pending'`: Layer 1 interstitial not yet shown by GPT. Don't destroy — `refresh()` it to nudge GPT into showing now. Layer 1's existing handlers track the result.
+  - If `'filled'`/`'viewable'`/`'empty'`: Already showed/failed. Safe to destroy and create a new exit-intent slot.
+- Cannot refresh a SHOWN interstitial — GPT interstitials are one-shot (`maxRefresh: 0`), but refreshing a pending one nudges GPT to attempt display
 - Full analytics: `_exitRecord` tracks fill/viewable/size via targeted `slotRenderEnded` + `impressionViewable` listeners
 - `_exitRecord` NOT pushed to `_dynamicSlots` (no DOM element — would crash engine loop); instead appended to zones in beacon/heartbeat
 - Shows as zone row with `injectionType: 'exit_intent'` in Live Sessions Ad Detail (highlighted yellow)
@@ -571,6 +573,10 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Bug Fixes — Event Pipeline + Interstitial (Feb 26, 2026)
+- **Fix: event tracking pipeline — force v5 migration, defensive INSERT** — `pl_ad_ensure_tables()` early-exit checked for version '4' but v5 migration was added after. Existing v4 installs returned early, ALTER TABLE for `gpt_response_ms` + `relocated` never ran, every `$wpdb->insert()` failed (0 events stored). Fix: early-exit now checks '5', on-demand migration in event handler with static guard, defensive INSERT fallback without v5 columns.
+- **Fix: Layer 1 interstitial — prevent exit-intent from destroying pending slot** — `tryExitInterstitial()` unconditionally destroyed the Layer 1 interstitial before GPT could show it (interstitials show at GPT's discretion, not immediately). Fix: check `__plOverlayStatus.interstitial` — if 'pending', refresh() existing slot to nudge GPT; if already showed/failed, destroy and create new exit slot.
 
 ### Round 4 — Fill Rate + Response Tracking (Feb 26, 2026)
 - **10s patient GPT timeout** — Replaced aggressive 3s `showHouseAd()` timeout with patient 10s collapse-only timeout. Real empties handled by `slotRenderEnded` (house ad on isEmpty:true). 10s catches truly stuck GPT, avoids killing ads that would fill in 4-5s.
