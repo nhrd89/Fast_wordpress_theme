@@ -5,7 +5,8 @@
  * Separate REST endpoints for page ad analytics.
  * Completely isolated from post ad recorder (ad-data-recorder.php).
  *
- * Storage: wp_option 'pl_page_ad_stats' (JSON, keyed by date/domain/page-type).
+ * Storage: wp_option 'pl_page_ad_stats' (JSON).
+ * Structure: date > domain > page_type > format > counters.
  *
  * @package PinLightning
  * @since   1.0.0
@@ -34,7 +35,7 @@ add_action( 'rest_api_init', function() {
 } );
 
 /**
- * Record a page ad event (impression, viewable, click).
+ * Record a page ad event (impression, viewable, click, empty, filled).
  *
  * @param WP_REST_Request $request Request object.
  * @return WP_REST_Response
@@ -64,6 +65,7 @@ function pl_page_ad_record_event( $request ) {
 	$page_type = sanitize_text_field( $body['pageType'] ?? 'unknown' );
 	$slot_id   = sanitize_text_field( $body['slotId'] ?? '' );
 	$domain    = sanitize_text_field( $body['domain'] ?? '' );
+	$ad_format = sanitize_text_field( $body['adFormat'] ?? 'unknown' );
 	$date_key  = gmdate( 'Y-m-d' );
 
 	// Allowed events.
@@ -75,7 +77,7 @@ function pl_page_ad_record_event( $request ) {
 	// Read current stats.
 	$stats = get_option( 'pl_page_ad_stats', array() );
 
-	// Initialize structure: date > domain > page_type > counters.
+	// Initialize structure: date > domain > page_type > format > counters.
 	if ( ! isset( $stats[ $date_key ] ) ) {
 		$stats[ $date_key ] = array();
 	}
@@ -83,7 +85,10 @@ function pl_page_ad_record_event( $request ) {
 		$stats[ $date_key ][ $domain ] = array();
 	}
 	if ( ! isset( $stats[ $date_key ][ $domain ][ $page_type ] ) ) {
-		$stats[ $date_key ][ $domain ][ $page_type ] = array(
+		$stats[ $date_key ][ $domain ][ $page_type ] = array();
+	}
+	if ( ! isset( $stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ] ) ) {
+		$stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ] = array(
 			'impressions' => 0,
 			'viewable'    => 0,
 			'clicks'      => 0,
@@ -94,8 +99,8 @@ function pl_page_ad_record_event( $request ) {
 
 	// Increment counter.
 	$counter_key = $event === 'impression' ? 'impressions' : $event;
-	if ( isset( $stats[ $date_key ][ $domain ][ $page_type ][ $counter_key ] ) ) {
-		$stats[ $date_key ][ $domain ][ $page_type ][ $counter_key ]++;
+	if ( isset( $stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ][ $counter_key ] ) ) {
+		$stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ][ $counter_key ]++;
 	}
 
 	// Keep only last 30 days.
@@ -114,20 +119,106 @@ function pl_page_ad_record_event( $request ) {
 /**
  * Get page ad stats for admin dashboard.
  *
+ * Returns structured breakdowns: today, last_7_days, last_30_days, by_domain, by_format.
+ *
  * @param WP_REST_Request $request Request object.
  * @return WP_REST_Response
  */
 function pl_page_ad_get_stats( $request ) {
-	$stats = get_option( 'pl_page_ad_stats', array() );
-	$days  = absint( $request->get_param( 'days' ) ) ?: 7;
+	$stats   = get_option( 'pl_page_ad_stats', array() );
+	$today   = gmdate( 'Y-m-d' );
+	$cutoff7 = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
+	$cutoff30 = gmdate( 'Y-m-d', strtotime( '-30 days' ) );
 
-	$cutoff  = gmdate( 'Y-m-d', strtotime( '-' . $days . ' days' ) );
-	$filtered = array();
-	foreach ( $stats as $date => $data ) {
-		if ( $date >= $cutoff ) {
-			$filtered[ $date ] = $data;
+	$empty_counters = array(
+		'impressions' => 0,
+		'viewable'    => 0,
+		'clicks'      => 0,
+		'empty'       => 0,
+		'filled'      => 0,
+	);
+
+	// Aggregate helpers.
+	$by_period    = array( 'today' => array(), 'last_7_days' => array(), 'last_30_days' => array() );
+	$by_domain    = array();
+	$by_format    = array();
+
+	foreach ( $stats as $date => $domains ) {
+		if ( $date < $cutoff30 ) {
+			continue;
+		}
+
+		// Determine which periods this date falls into.
+		$periods = array();
+		if ( $date === $today ) {
+			$periods[] = 'today';
+		}
+		if ( $date >= $cutoff7 ) {
+			$periods[] = 'last_7_days';
+		}
+		$periods[] = 'last_30_days';
+
+		foreach ( $domains as $domain => $page_types ) {
+			foreach ( $page_types as $page_type => $formats ) {
+				// Handle legacy flat structure (format counters directly under page_type).
+				if ( isset( $formats['impressions'] ) || isset( $formats['viewable'] ) ) {
+					$formats = array( 'unknown' => $formats );
+				}
+
+				foreach ( $formats as $format => $counters ) {
+					if ( ! is_array( $counters ) ) {
+						continue;
+					}
+
+					// Aggregate by period + page_type.
+					foreach ( $periods as $period ) {
+						if ( ! isset( $by_period[ $period ][ $page_type ] ) ) {
+							$by_period[ $period ][ $page_type ] = $empty_counters;
+						}
+						foreach ( $empty_counters as $key => $_ ) {
+							$by_period[ $period ][ $page_type ][ $key ] += ( $counters[ $key ] ?? 0 );
+						}
+					}
+
+					// Aggregate by domain.
+					if ( ! isset( $by_domain[ $domain ] ) ) {
+						$by_domain[ $domain ] = $empty_counters;
+					}
+					foreach ( $empty_counters as $key => $_ ) {
+						$by_domain[ $domain ][ $key ] += ( $counters[ $key ] ?? 0 );
+					}
+
+					// Aggregate by format.
+					if ( ! isset( $by_format[ $format ] ) ) {
+						$by_format[ $format ] = $empty_counters;
+					}
+					foreach ( $empty_counters as $key => $_ ) {
+						$by_format[ $format ][ $key ] += ( $counters[ $key ] ?? 0 );
+					}
+				}
+			}
 		}
 	}
 
-	return new WP_REST_Response( $filtered, 200 );
+	// Calculate fill_rate for each aggregation.
+	$add_fill_rate = function( &$data ) {
+		foreach ( $data as &$counters ) {
+			$total = ( $counters['filled'] ?? 0 ) + ( $counters['empty'] ?? 0 );
+			$counters['fill_rate'] = $total > 0 ? round( ( $counters['filled'] / $total ) * 100, 1 ) : 0;
+		}
+	};
+
+	foreach ( $by_period as &$period_data ) {
+		$add_fill_rate( $period_data );
+	}
+	$add_fill_rate( $by_domain );
+	$add_fill_rate( $by_format );
+
+	return new WP_REST_Response( array(
+		'today'        => $by_period['today'],
+		'last_7_days'  => $by_period['last_7_days'],
+		'last_30_days' => $by_period['last_30_days'],
+		'by_domain'    => $by_domain,
+		'by_format'    => $by_format,
+	), 200 );
 }

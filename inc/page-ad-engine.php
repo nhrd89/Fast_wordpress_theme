@@ -18,11 +18,6 @@ if ( ! defined( 'ABSPATH' ) ) {
  * 1. DEFAULTS & SETTINGS
  * ================================================================ */
 
-/**
- * Default settings for page ads.
- *
- * @return array
- */
 function pl_page_ad_defaults() {
 	return array(
 		'enabled'          => true,
@@ -37,27 +32,22 @@ function pl_page_ad_defaults() {
 
 		// Slot limits per page type.
 		'homepage_max'     => 3,
-		'category_max'     => 4,
-		'page_max'         => 2,
+		'category_max'     => 10,
+		'page_max'         => 3,
 
 		// Format toggles.
 		'fmt_anchor'       => true,
 		'fmt_interstitial' => false,
 
 		// Spacing.
-		'desktop_spacing'  => 600,
-		'mobile_spacing'   => 400,
+		'desktop_spacing'  => 300,
+		'mobile_spacing'   => 250,
 
 		// Category archive: inject after every Nth post.
-		'category_every_n' => 4,
+		'category_every_n' => 3,
 	);
 }
 
-/**
- * Get merged page ad settings.
- *
- * @return array
- */
 function pl_page_ad_settings() {
 	static $cached = null;
 	if ( null !== $cached ) {
@@ -73,9 +63,6 @@ function pl_page_ad_settings() {
  * 2. SETTINGS REGISTRATION
  * ================================================================ */
 
-/**
- * Register page ad settings with the Settings API.
- */
 function pl_page_ad_register_settings() {
 	register_setting( 'pl_page_ad_settings_group', 'pl_page_ad_settings', array(
 		'type'              => 'array',
@@ -84,17 +71,10 @@ function pl_page_ad_register_settings() {
 }
 add_action( 'admin_init', 'pl_page_ad_register_settings' );
 
-/**
- * Sanitize page ad settings.
- *
- * @param array $input Raw input.
- * @return array Sanitized settings.
- */
 function pl_page_ad_sanitize( $input ) {
 	$defaults = pl_page_ad_defaults();
 	$clean    = array();
 
-	// Booleans (checkboxes).
 	$bools = array(
 		'enabled', 'dummy_mode',
 		'homepage_enabled', 'category_enabled', 'page_enabled',
@@ -104,7 +84,6 @@ function pl_page_ad_sanitize( $input ) {
 		$clean[ $key ] = ! empty( $input[ $key ] );
 	}
 
-	// Integers.
 	$ints = array(
 		'homepage_max', 'category_max', 'page_max',
 		'desktop_spacing', 'mobile_spacing', 'category_every_n',
@@ -113,15 +92,13 @@ function pl_page_ad_sanitize( $input ) {
 		$clean[ $key ] = isset( $input[ $key ] ) ? absint( $input[ $key ] ) : $defaults[ $key ];
 	}
 
-	// Strings.
 	$strings = array( 'slot_prefix', 'network_code' );
 	foreach ( $strings as $key ) {
 		$clean[ $key ] = isset( $input[ $key ] ) ? sanitize_text_field( $input[ $key ] ) : $defaults[ $key ];
 	}
 
-	// Enforce minimum spacing.
-	$clean['desktop_spacing'] = max( 400, $clean['desktop_spacing'] );
-	$clean['mobile_spacing']  = max( 300, $clean['mobile_spacing'] );
+	$clean['desktop_spacing'] = max( 200, $clean['desktop_spacing'] );
+	$clean['mobile_spacing']  = max( 200, $clean['mobile_spacing'] );
 
 	return $clean;
 }
@@ -130,14 +107,70 @@ function pl_page_ad_sanitize( $input ) {
  * 3. ADMIN TAB RENDERING
  * ================================================================ */
 
-/**
- * Render the Page Ads tab content inside the ad engine admin page.
- *
- * Called from pl_ad_settings_page() when tab=pageads.
- */
 function pl_page_ad_render_tab() {
 	$s = pl_page_ad_settings();
+	$stats_url = rest_url( 'pl/v1/page-ad-stats' );
+	$nonce     = wp_create_nonce( 'wp_rest' );
 	?>
+	<!-- Stats Dashboard -->
+	<div id="pl-page-ad-stats" style="background:#f9f9f9;border:1px solid #ddd;padding:16px 20px;margin:10px 0 20px;border-radius:6px">
+		<h3 style="margin-top:0">Page Ad Stats</h3>
+		<div id="plPaStatsBody"><em>Loading...</em></div>
+	</div>
+	<script>
+	(function(){
+		var url = <?php echo wp_json_encode( $stats_url ); ?>;
+		var nonce = <?php echo wp_json_encode( $nonce ); ?>;
+		fetch(url + '?days=30', { headers: { 'X-WP-Nonce': nonce } })
+			.then(function(r){ return r.json(); })
+			.then(function(data){
+				var body = document.getElementById('plPaStatsBody');
+				if (!data || !data.today) { body.innerHTML = '<p>No data yet.</p>'; return; }
+
+				var html = '<table class="widefat striped" style="max-width:800px"><thead><tr>'
+					+ '<th>Period</th><th>Page Type</th><th>Impressions</th><th>Viewable</th><th>Clicks</th><th>Fill Rate</th>'
+					+ '</tr></thead><tbody>';
+
+				var periods = [
+					{ key: 'today', label: 'Today' },
+					{ key: 'last_7_days', label: 'Last 7 Days' },
+					{ key: 'last_30_days', label: 'Last 30 Days' }
+				];
+				var types = ['homepage', 'category', 'page'];
+
+				periods.forEach(function(p) {
+					var pd = data[p.key];
+					if (!pd) return;
+					types.forEach(function(t) {
+						var d = pd[t];
+						if (!d) return;
+						var total = (d.filled || 0) + (d.empty || 0);
+						var fr = total > 0 ? Math.round((d.filled || 0) / total * 100) + '%' : '-';
+						html += '<tr><td>' + p.label + '</td><td>' + t + '</td>'
+							+ '<td>' + (d.impressions || 0) + '</td>'
+							+ '<td>' + (d.viewable || 0) + '</td>'
+							+ '<td>' + (d.clicks || 0) + '</td>'
+							+ '<td>' + fr + '</td></tr>';
+					});
+				});
+				html += '</tbody></table>';
+
+				if (data.by_domain) {
+					html += '<h4 style="margin-top:16px">By Domain</h4><table class="widefat striped" style="max-width:600px"><thead><tr>'
+						+ '<th>Domain</th><th>Impressions</th><th>Viewable</th><th>Clicks</th></tr></thead><tbody>';
+					for (var dom in data.by_domain) {
+						var dd = data.by_domain[dom];
+						html += '<tr><td>' + dom + '</td><td>' + (dd.impressions||0) + '</td><td>' + (dd.viewable||0) + '</td><td>' + (dd.clicks||0) + '</td></tr>';
+					}
+					html += '</tbody></table>';
+				}
+
+				body.innerHTML = html;
+			})
+			.catch(function(){ document.getElementById('plPaStatsBody').innerHTML = '<p style="color:#c00">Failed to load stats.</p>'; });
+	})();
+	</script>
+
 	<form method="post" action="options.php">
 		<?php settings_fields( 'pl_page_ad_settings_group' ); ?>
 
@@ -166,33 +199,40 @@ function pl_page_ad_render_tab() {
 				<th>Homepage</th>
 				<td>
 					<label><input type="checkbox" name="pl_page_ad_settings[homepage_enabled]" value="1" <?php checked( $s['homepage_enabled'] ); ?>> Enable ads on homepage</label>
-					&nbsp;&mdash;&nbsp; Max slots: <input type="number" name="pl_page_ad_settings[homepage_max]" value="<?php echo esc_attr( $s['homepage_max'] ); ?>" min="0" max="10" style="width:60px">
+					&nbsp;&mdash;&nbsp; Max inline slots: <input type="number" name="pl_page_ad_settings[homepage_max]" value="<?php echo esc_attr( $s['homepage_max'] ); ?>" min="0" max="10" style="width:60px">
+					<p class="description">3 fixed positions (top leaderboard, middle rectangle, bottom leaderboard) + optional anchor + interstitial.</p>
 				</td>
 			</tr>
 			<tr>
 				<th>Category Archives</th>
 				<td>
 					<label><input type="checkbox" name="pl_page_ad_settings[category_enabled]" value="1" <?php checked( $s['category_enabled'] ); ?>> Enable ads on category pages</label>
-					&nbsp;&mdash;&nbsp; Max slots: <input type="number" name="pl_page_ad_settings[category_max]" value="<?php echo esc_attr( $s['category_max'] ); ?>" min="0" max="10" style="width:60px">
+					&nbsp;&mdash;&nbsp; Max inline slots: <input type="number" name="pl_page_ad_settings[category_max]" value="<?php echo esc_attr( $s['category_max'] ); ?>" min="0" max="20" style="width:60px">
 					<br>Inject ad after every <input type="number" name="pl_page_ad_settings[category_every_n]" value="<?php echo esc_attr( $s['category_every_n'] ); ?>" min="2" max="10" style="width:60px"> posts
+					<p class="description">First ad before post #1 (leaderboard), then every N posts. Format rotates: leaderboard → rectangle → banner → rectangle.</p>
 				</td>
 			</tr>
 			<tr>
 				<th>Static Pages</th>
 				<td>
 					<label><input type="checkbox" name="pl_page_ad_settings[page_enabled]" value="1" <?php checked( $s['page_enabled'] ); ?>> Enable ads on static pages</label>
-					&nbsp;&mdash;&nbsp; Max slots: <input type="number" name="pl_page_ad_settings[page_max]" value="<?php echo esc_attr( $s['page_max'] ); ?>" min="0" max="10" style="width:60px">
+					&nbsp;&mdash;&nbsp; Max inline slots: <input type="number" name="pl_page_ad_settings[page_max]" value="<?php echo esc_attr( $s['page_max'] ); ?>" min="0" max="10" style="width:60px">
 				</td>
 			</tr>
 		</table>
 
-		<h3>Formats</h3>
+		<h3>Overlay Formats</h3>
 		<table class="form-table">
 			<tr>
-				<th>Overlay Formats</th>
+				<th>Bottom Anchor</th>
 				<td>
-					<label><input type="checkbox" name="pl_page_ad_settings[fmt_anchor]" value="1" <?php checked( $s['fmt_anchor'] ); ?>> Bottom Anchor</label><br>
-					<label><input type="checkbox" name="pl_page_ad_settings[fmt_interstitial]" value="1" <?php checked( $s['fmt_interstitial'] ); ?>> Interstitial</label>
+					<label><input type="checkbox" name="pl_page_ad_settings[fmt_anchor]" value="1" <?php checked( $s['fmt_anchor'] ); ?>> Show anchor ad (once per session)</label>
+				</td>
+			</tr>
+			<tr>
+				<th>Interstitial</th>
+				<td>
+					<label><input type="checkbox" name="pl_page_ad_settings[fmt_interstitial]" value="1" <?php checked( $s['fmt_interstitial'] ); ?>> Show interstitial after 3s delay (homepage + category only, once per session)</label>
 				</td>
 			</tr>
 		</table>
@@ -202,13 +242,14 @@ function pl_page_ad_render_tab() {
 			<tr>
 				<th>Desktop (&ge;1025px)</th>
 				<td>
-					<input type="number" name="pl_page_ad_settings[desktop_spacing]" value="<?php echo esc_attr( $s['desktop_spacing'] ); ?>" min="400" max="1500" style="width:80px"> px between ads
+					<input type="number" name="pl_page_ad_settings[desktop_spacing]" value="<?php echo esc_attr( $s['desktop_spacing'] ); ?>" min="200" max="1500" style="width:80px"> px between ads
+					<p class="description">Category pages use 300px (desktop) / 250px (mobile) regardless of this setting.</p>
 				</td>
 			</tr>
 			<tr>
 				<th>Mobile (&lt;1025px)</th>
 				<td>
-					<input type="number" name="pl_page_ad_settings[mobile_spacing]" value="<?php echo esc_attr( $s['mobile_spacing'] ); ?>" min="300" max="1500" style="width:80px"> px between ads
+					<input type="number" name="pl_page_ad_settings[mobile_spacing]" value="<?php echo esc_attr( $s['mobile_spacing'] ); ?>" min="200" max="1500" style="width:80px"> px between ads
 				</td>
 			</tr>
 		</table>
@@ -234,12 +275,7 @@ function pl_page_ad_render_tab() {
  * 4. FRONTEND ENQUEUE — !is_single() ONLY
  * ================================================================ */
 
-/**
- * Output page ad config as inline global variable.
- * Only on non-single pages when page ads are enabled.
- */
 function pl_page_ads_enqueue() {
-	// Double-lock: PHP-side condition.
 	if ( is_single() ) {
 		return;
 	}
@@ -250,7 +286,6 @@ function pl_page_ads_enqueue() {
 		return;
 	}
 
-	// Determine page type and whether this type is enabled.
 	$page_type = 'other';
 	$max_slots = 0;
 
@@ -273,32 +308,27 @@ function pl_page_ads_enqueue() {
 		$page_type = 'page';
 		$max_slots = (int) $s['page_max'];
 	} else {
-		// Not a supported page type.
 		return;
 	}
 
-	$is_desktop = ! wp_is_mobile();
-
 	$config = array(
-		'dummy'          => (bool) $s['dummy_mode'],
-		'pageType'       => $page_type,
-		'maxSlots'       => $max_slots,
-		'slotPrefix'     => $s['slot_prefix'],
-		'networkCode'    => $s['network_code'],
-		'fmtAnchor'      => (bool) $s['fmt_anchor'],
-		'fmtInterstitial' => (bool) $s['fmt_interstitial'],
-		'desktopSpacing' => (int) $s['desktop_spacing'],
-		'mobileSpacing'  => (int) $s['mobile_spacing'],
-		'eventEndpoint'  => rest_url( 'pl/v1/page-ad-event' ),
-		'nonce'          => wp_create_nonce( 'wp_rest' ),
+		'dummy'            => (bool) $s['dummy_mode'],
+		'pageType'         => $page_type,
+		'maxSlots'         => $max_slots,
+		'slotPrefix'       => $s['slot_prefix'],
+		'networkCode'      => $s['network_code'],
+		'fmtAnchor'        => (bool) $s['fmt_anchor'],
+		'fmtInterstitial'  => (bool) $s['fmt_interstitial'],
+		'desktopSpacing'   => (int) $s['desktop_spacing'],
+		'mobileSpacing'    => (int) $s['mobile_spacing'],
+		'eventEndpoint'    => rest_url( 'pl/v1/page-ad-event' ),
+		'nonce'            => wp_create_nonce( 'wp_rest' ),
 	);
 
-	// Enqueue page-ads.js (deferred, loads after window.load).
 	add_action( 'wp_footer', function() use ( $config ) {
 		echo '<script>var plPageAds=' . wp_json_encode( $config ) . ';</script>' . "\n";
 	}, 97 );
 
-	// Load the page-ads.js script post-window.load (same pattern as post ads).
 	add_action( 'wp_footer', function() {
 		$file = PINLIGHTNING_DIR . '/assets/js/page-ads.js';
 		$src  = PINLIGHTNING_URI . '/assets/js/page-ads.js?ver=' . filemtime( $file );
@@ -309,11 +339,11 @@ add_action( 'wp_enqueue_scripts', 'pl_page_ads_enqueue', 20 );
 
 /* ================================================================
  * 5. CATEGORY ARCHIVE AD ANCHORS (via the_post hook)
+ *
+ * Injects ad anchor: FIRST one before post #1 (top leaderboard),
+ * then after every Nth post (default 3).
  * ================================================================ */
 
-/**
- * Inject ad anchor divs between posts in category archives.
- */
 function pl_page_ad_category_anchors() {
 	if ( ! is_category() || is_single() ) {
 		return;
@@ -324,20 +354,28 @@ function pl_page_ad_category_anchors() {
 		return;
 	}
 
-	$every_n = max( 2, (int) $s['category_every_n'] );
-	$max     = (int) $s['category_max'];
-	$count   = 0;
+	$every_n  = max( 2, (int) $s['category_every_n'] );
+	$count    = 0;
 	$injected = 0;
 
-	add_action( 'the_post', function( $post, $query ) use ( $every_n, $max, &$count, &$injected ) {
+	// Top leaderboard anchor before the first post.
+	add_action( 'loop_start', function( $query ) use ( &$injected ) {
+		if ( ! $query->is_main_query() || ! is_category() ) {
+			return;
+		}
+		$injected++;
+		echo '<div class="pl-page-ad-anchor" data-slot="cat-' . esc_attr( $injected ) . '" data-format="leaderboard"></div>' . "\n";
+	} );
+
+	// After every Nth post.
+	add_action( 'the_post', function( $post, $query ) use ( $every_n, &$count, &$injected ) {
 		if ( ! $query->is_main_query() ) {
 			return;
 		}
 		$count++;
-		// Inject BEFORE the Nth+1 post (i.e. between post N and N+1).
-		if ( $count > 1 && ( ( $count - 1 ) % $every_n === 0 ) && $injected < $max ) {
+		if ( $count % $every_n === 0 ) {
 			$injected++;
-			echo '<div class="pl-page-ad-anchor" data-slot="category-' . esc_attr( $injected ) . '"></div>' . "\n";
+			echo '<div class="pl-page-ad-anchor" data-slot="cat-' . esc_attr( $injected ) . '"></div>' . "\n";
 		}
 	}, 10, 2 );
 }
@@ -347,9 +385,6 @@ add_action( 'template_redirect', 'pl_page_ad_category_anchors' );
  * 6. STATIC PAGE AD ANCHORS (via the_content filter)
  * ================================================================ */
 
-/**
- * Inject ad anchors into static page content.
- */
 function pl_page_ad_static_content( $content ) {
 	if ( ! is_page() || is_single() || is_admin() ) {
 		return $content;
@@ -365,13 +400,11 @@ function pl_page_ad_static_content( $content ) {
 		return $content;
 	}
 
-	// Split on </p> and inject anchors evenly.
 	$parts = preg_split( '/(<\/p>)/i', $content, -1, PREG_SPLIT_DELIM_CAPTURE );
 	if ( ! $parts ) {
 		return $content;
 	}
 
-	// Count paragraphs.
 	$p_count = 0;
 	foreach ( $parts as $part ) {
 		if ( strtolower( trim( $part ) ) === '</p>' ) {
@@ -383,7 +416,6 @@ function pl_page_ad_static_content( $content ) {
 		return $content;
 	}
 
-	// Calculate spacing: inject after every N paragraphs.
 	$interval = max( 2, (int) floor( $p_count / ( $max + 1 ) ) );
 	$p_idx    = 0;
 	$injected = 0;
