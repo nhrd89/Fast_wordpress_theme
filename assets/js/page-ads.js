@@ -55,8 +55,8 @@
 		banner:      { desktop: [[728, 90]],              mobile: [[320, 50]] }
 	};
 
-	// Category format rotation: top=leaderboard, then rect/banner alternation.
-	var CAT_FORMAT_SEQ = ['leaderboard', 'rectangle', 'banner', 'rectangle'];
+	// Category: rectangle only (no leaderboards, no banners).
+	var CAT_SIZES = { desktop: [[300, 250], [336, 280]], mobile: [[300, 250], [336, 280]] };
 
 	// ── State ──
 	var _slots        = [];
@@ -84,14 +84,18 @@
 	}
 
 	function getSizesForFormat( fmt ) {
+		// Category pages: always rectangle sizes regardless of data-format.
+		if ( PAGE_TYPE === 'category' ) {
+			return IS_DESKTOP ? CAT_SIZES.desktop : CAT_SIZES.mobile;
+		}
 		var f = FORMATS[fmt] || FORMATS.rectangle;
 		return IS_DESKTOP ? f.desktop : f.mobile;
 	}
 
 	function getFormatForPosition( idx ) {
-		// idx is 0-based position in category sequence
+		// Category: always rectangle.
 		if ( PAGE_TYPE === 'category' ) {
-			return idx < CAT_FORMAT_SEQ.length ? CAT_FORMAT_SEQ[idx] : (idx % 2 === 0 ? 'rectangle' : 'banner');
+			return 'rectangle';
 		}
 		// Homepage / static: read from data-format attribute or default
 		return 'rectangle';
@@ -197,7 +201,8 @@
 		}
 
 		// Read format from data attribute or determine by position index.
-		var fmt = anchorEl.getAttribute('data-format') || getFormatForPosition( inlineSlotCount() );
+		// Category pages: always rectangle regardless of data-format.
+		var fmt = PAGE_TYPE === 'category' ? 'rectangle' : (anchorEl.getAttribute('data-format') || getFormatForPosition( inlineSlotCount() ));
 		var sizes = getSizesForFormat( fmt );
 		var primarySize = sizes[0];
 

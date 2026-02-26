@@ -209,7 +209,7 @@ function pl_page_ad_render_tab() {
 					<label><input type="checkbox" name="pl_page_ad_settings[category_enabled]" value="1" <?php checked( $s['category_enabled'] ); ?>> Enable ads on category pages</label>
 					&nbsp;&mdash;&nbsp; Max inline slots: <input type="number" name="pl_page_ad_settings[category_max]" value="<?php echo esc_attr( $s['category_max'] ); ?>" min="0" max="20" style="width:60px">
 					<br>Inject ad after every <input type="number" name="pl_page_ad_settings[category_every_n]" value="<?php echo esc_attr( $s['category_every_n'] ); ?>" min="2" max="10" style="width:60px"> posts
-					<p class="description">First ad before post #1 (leaderboard), then every N posts. Format rotates: leaderboard → rectangle → banner → rectangle.</p>
+					<p class="description">First ad before post #1, then every N posts. All category ads use rectangle format (300x250 / 336x280).</p>
 				</td>
 			</tr>
 			<tr>
@@ -358,13 +358,15 @@ function pl_page_ad_category_anchors() {
 	$count    = 0;
 	$injected = 0;
 
-	// Top leaderboard anchor before the first post.
+	// Top rectangle anchor before the first post.
+	// NOTE: category.php uses a custom foreach loop, so this only fires if
+	// a category page happens to use the standard WP loop (fallback safety).
 	add_action( 'loop_start', function( $query ) use ( &$injected ) {
 		if ( ! $query->is_main_query() || ! is_category() ) {
 			return;
 		}
 		$injected++;
-		echo '<div class="pl-page-ad-anchor" data-slot="cat-' . esc_attr( $injected ) . '" data-format="leaderboard"></div>' . "\n";
+		echo '<div class="pl-page-ad-anchor" data-slot="cat-' . esc_attr( $injected ) . '" data-format="rectangle"></div>' . "\n";
 	} );
 
 	// After every Nth post.

@@ -85,6 +85,9 @@ $has_more   = $posts_data['has_more'];
 	.pl-cat-empty .icon{font-size:48px;margin-bottom:12px}
 	.pl-cat-empty h2{font-size:20px;color:#666;margin:0 0 8px}
 
+	/* Page Ad Anchors (column-spanning) */
+	.pl-page-ad-anchor[data-slot^="cat-"]{break-inside:avoid;column-span:all;-webkit-column-span:all;width:100%;display:flex;justify-content:center;margin:12px 0}
+
 	/* Responsive */
 	@media(max-width:900px){.pl-cat-grid{columns:2}.pl-cat-header{flex-direction:column;align-items:flex-start}}
 	@media(max-width:580px){.pl-cat-grid{columns:1}.pl-cat-name{font-size:22px}.pl-cat-icon{width:44px;height:44px;font-size:22px;border-radius:12px}}
@@ -117,7 +120,19 @@ $has_more   = $posts_data['has_more'];
 		</div>
 
 		<!-- Post Grid -->
-		<?php if ( ! empty( $cat_posts ) ) : ?>
+		<?php if ( ! empty( $cat_posts ) ) :
+			// Page ad injection: rectangle ads every 3 posts.
+			$pa_s = function_exists( 'pl_page_ad_settings' ) ? pl_page_ad_settings() : array();
+			$pa_enabled = ! empty( $pa_s['enabled'] ) && ! empty( $pa_s['category_enabled'] );
+			$pa_every_n = isset( $pa_s['category_every_n'] ) ? max( 2, (int) $pa_s['category_every_n'] ) : 3;
+			$pa_count   = 0;
+			$pa_inject  = 0;
+		?>
+
+		<?php if ( $pa_enabled ) : $pa_inject++; ?>
+		<div class="pl-page-ad-anchor" data-slot="cat-<?php echo $pa_inject; ?>" data-format="rectangle"></div>
+		<?php endif; ?>
+
 		<div class="pl-cat-grid" id="plCatGrid">
 			<?php foreach ( $cat_posts as $post ) :
 				setup_postdata( $post );
@@ -183,6 +198,13 @@ $has_more   = $posts_data['has_more'];
 					</div>
 				</div>
 			</article>
+			<?php
+				$pa_count++;
+				if ( $pa_enabled && $pa_count % $pa_every_n === 0 ) :
+					$pa_inject++;
+			?>
+			<div class="pl-page-ad-anchor" data-slot="cat-<?php echo $pa_inject; ?>" data-format="rectangle"></div>
+			<?php endif; ?>
 			<?php endforeach; wp_reset_postdata(); ?>
 		</div>
 
@@ -212,6 +234,10 @@ $has_more   = $posts_data['has_more'];
 	var btn=document.getElementById('plCatLoadMore');
 	if(!btn)return;
 	var grid=document.getElementById('plCatGrid');
+	var lmCount=0;
+	var lmEvery=<?php echo (int) $pa_every_n; ?>;
+	var lmAdIdx=<?php echo (int) $pa_inject; ?>;
+	var lmAdsEnabled=<?php echo $pa_enabled ? 'true' : 'false'; ?>;
 
 	btn.addEventListener('click',function(){
 		var cat=btn.dataset.cat;
@@ -227,9 +253,23 @@ $has_more   = $posts_data['has_more'];
 			if(data.html){
 				var temp=document.createElement('div');
 				temp.innerHTML=data.html;
-				while(temp.firstChild){
-					grid.appendChild(temp.firstChild);
+				var nodes=[];
+				while(temp.firstChild){nodes.push(temp.firstChild);temp.removeChild(temp.firstChild);}
+				for(var i=0;i<nodes.length;i++){
+					grid.appendChild(nodes[i]);
+					if(nodes[i].nodeType===1&&nodes[i].classList&&nodes[i].classList.contains('pl-cat-card')){
+						lmCount++;
+						if(lmAdsEnabled&&lmCount%lmEvery===0){
+							lmAdIdx++;
+							var a=document.createElement('div');
+							a.className='pl-page-ad-anchor';
+							a.dataset.slot='cat-'+lmAdIdx;
+							a.dataset.format='rectangle';
+							grid.appendChild(a);
+						}
+					}
 				}
+				if(window.__plPageAds&&window.__plPageAds.rescan)window.__plPageAds.rescan();
 			}
 			btn.dataset.offset=offset+18;
 			btn.disabled=false;
