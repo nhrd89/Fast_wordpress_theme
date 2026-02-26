@@ -576,6 +576,9 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Engagement UI Fix (Feb 26, 2026)
+- **Fix: move engagement sprite + heart above anchor ad** — Girl sprite (`bottom:70px`) and heart button (`bottom:20px`) were covered by GPT bottom anchor ad on mobile. Moved to right-center: heart at `bottom:50%; transform:translateY(50%)`, sprite at `bottom:calc(50%+10px)`, speech bubble/chat at `bottom:calc(50%+100px)`. Z-index lowered from 1000 to 99 so anchor ad stays on top. Updated `.pl-v-wrap`, `.pl-e-heart`, `.pl-e-sp`, `.pl-chat-wrap`, `.pl-e-sk` in scroll-engage.js, `.eb-char-bubble` in engagement.css, `.pl-heart-progress`/`.pl-combo` in main.css.
+
 ### Bug Fixes — Event Pipeline + Interstitial + Relocation (Feb 26, 2026)
 - **Fix: event tracking pipeline — force v5 migration, defensive INSERT** — `pl_ad_ensure_tables()` early-exit checked for version '4' but v5 migration was added after. Existing v4 installs returned early, ALTER TABLE for `gpt_response_ms` + `relocated` never ran, every `$wpdb->insert()` failed (0 events stored). Fix: early-exit now checks '5', on-demand migration in event handler with static guard, defensive INSERT fallback without v5 columns.
 - **Fix: Layer 1 interstitial — prevent exit-intent from destroying pending slot** — `tryExitInterstitial()` unconditionally destroyed the Layer 1 interstitial before GPT could show it (interstitials show at GPT's discretion, not immediately). Fix: check `__plOverlayStatus.interstitial` — if 'pending', refresh() existing slot to nudge GPT; if already showed/failed, destroy and create new exit slot.
