@@ -151,9 +151,6 @@ body.single .sidebar{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgb
 .eb-trending-badge,.eb-save-count,.eb-fav-heart,.eb-collectible{position:absolute}
 .eb-reveal-overlay{position:absolute;inset:0}
 .eb-achievement,.eb-milestone,.eb-exit,.eb-speed-warn{display:none}
-/* ====== CMP CONSENT POPUP — position:fixed prevents CLS + LCP hijack ====== */
-.qc-cmp2-container{position:fixed!important;z-index:999999!important}
-#qcCmpUi{z-index:999999!important}
 /* ====== AD ANCHORS — v5 Dynamic Injection ====== */
 /* Zero-height invisible markers until JS activates them */
 .ad-anchor{height:0;overflow:hidden;clear:both}

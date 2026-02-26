@@ -24,7 +24,7 @@
 - **CDN:** Contabo (myquickurl.com) for content images
 - **CI/CD:** GitHub Actions — push to `main` or dev branch triggers deploy
 - **Ad Network:** Ad.Plus (Google Ad Manager / GPT)
-- **Consent:** InMobi CMP (TCF v2.2/v2.3)
+- **Consent:** Google Ad Manager built-in CMP (via GPT)
 
 ### Revenue Model
 - **Primary:** Ad.Plus display ads (GPT programmatic)
@@ -440,18 +440,11 @@ Gated behind `pl_ad_settings()['enabled']` check.
 
 ## 4. CMP / Consent
 
-- **Provider:** InMobi CMP (formerly Quantcast Choice)
-- **Property ID:** `M65A7dGLumC_E`
-- **TCF Version:** v2.2/v2.3 compliant
-- **Script:** First `<script>` in `<head>`, output by `pinlightning_output_cmp_tag()`
-- **Loading:** `__tcfapi` stub runs sync; `choice.js` loads async
-- **Consent Audience:** EEA only (no popup for US/Asia/other)
-- **Google Basic Consent:** enabled, all 7 purposes, default denied
-- **Google Vendors:** enabled (required for GPT to read consent string)
-- **String Format:** Both (GPP + TCF)
-- **US Regulation:** enabled (CCPA opt-out for US visitors)
-- **CSS:** `.qc-cmp2-container { z-index: 999999 }` (above all content)
-- **Complianz plugin:** deactivated (replaced by InMobi CMP)
+- **Provider:** Google Ad Manager built-in CMP (delivered via GPT)
+- **TCF Version:** v2.2 compliant
+- **How it works:** GPT (`securepubads.g.doubleclick.net/tag/js/gpt.js`) includes Google's own CMP. No separate consent script needed.
+- **Consent Audience:** EEA visitors see consent popup automatically; US/Asia/other do not.
+- **Previous provider:** InMobi CMP (removed Feb 2026) — `pinlightning_output_cmp_tag()`, `choice.js`, `.qc-cmp2-container` CSS all deleted.
 
 ---
 
@@ -712,7 +705,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ### Multi-Site Deployment (Feb 26, 2026)
 - **feat: make ad slot path and video config dynamic** — `SLOT_PATH` in initial-ads.js and smart-ads.js now reads from `plAds.slotPrefix` (falls back to hardcoded default). Video player `C_WEBSITE` uses `window.location.hostname`, `C_NETWORK_CODE` reads from `plAds.networkCode`. CDN proxy (`cdn/img.php`) allowlists all 3 domains.
 - **ci: deploy to all 3 sites as parallel jobs** — Added `deploy-inspireinlet` and `deploy-pulsepathlife` jobs to `deploy.yml` (parallel, no `needs:`). Each job: checkout, build, rsync, cache flush, plugin list. PageSpeed + perf-check remain cheerlives-only for now. Separate workflow files don't trigger from non-default branches, so all jobs are in one workflow.
-- **GA4 already configurable** — `pl_ga4_measurement_id` via Customizer. InMobi CMP already dynamic via `window.location.hostname`. Ad.Plus network settings already in ad-engine.php settings page.
+- **GA4 already configurable** — `pl_ga4_measurement_id` via Customizer. Ad.Plus network settings already in ad-engine.php settings page.
 
 ### Engagement UI Fix (Feb 26, 2026)
 - **Fix: move engagement sprite + heart above anchor ad** — Girl sprite (`bottom:70px`) and heart button (`bottom:20px`) were covered by GPT bottom anchor ad on mobile. Moved to right-center: heart at `bottom:50%; transform:translateY(50%)`, sprite at `bottom:calc(50%+30px)`, speech bubble/chat at `bottom:calc(50%+120px)`. Z-index lowered from 1000 to 99 so anchor ad stays on top. Updated `.pl-v-wrap`, `.pl-e-heart`, `.pl-e-sp`, `.pl-chat-wrap`, `.pl-e-sk` in scroll-engage.js, `.eb-char-bubble` in engagement.css, `.pl-heart-progress`/`.pl-combo` in main.css.
@@ -773,8 +766,8 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - `3ebd483`: MIN_PIXEL_SPACING 200→400px
 - `4f21aa3`: Scroll-up spacing 0.8x→1.3x
 - `301e82a`: Pause frequency: speed 50→80, sustain 200→150ms
-- `504e5f4`: CMP z-index fix
-- `4439c1f`: InMobi CMP deployment
+- `504e5f4`: CMP z-index fix (InMobi — now removed)
+- `4439c1f`: InMobi CMP deployment (now removed — using Google Ad Manager built-in CMP)
 - `a3f4ff6`: Top anchor removal
 
 ### Earlier (Feb 2026)
@@ -792,7 +785,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Working
 - Ad injection engine with all 4 rounds of viewability + fill rate optimization
-- InMobi CMP for GDPR/TCF compliance (EEA only)
+- Google Ad Manager built-in CMP for GDPR/TCF compliance (EEA only)
 - Viewport refresh, lazy-render, sticky inline, last-chance refresh
 - Tab visibility pause, retry logic, house ad backfill
 - Patient 10s GPT timeout (replaces aggressive 3s), explicit refresh() after display()
