@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function pl_page_ad_defaults() {
 	return array(
-		'enabled'          => false,
+		'enabled'          => true,
 		'dummy_mode'       => true,
 		'slot_prefix'      => '/21849154601,22953639975/',
 		'network_code'     => '22953639975',
@@ -300,8 +300,9 @@ function pl_page_ads_enqueue() {
 
 	// Load the page-ads.js script post-window.load (same pattern as post ads).
 	add_action( 'wp_footer', function() {
-		$src = PINLIGHTNING_URI . '/assets/js/page-ads.js?v=' . PINLIGHTNING_VERSION;
-		echo '<script>window.addEventListener("load",function(){var s=document.createElement("script");s.src="' . esc_url( $src ) . '";s.defer=true;document.body.appendChild(s)},{ once:true });</script>' . "\n";
+		$file = PINLIGHTNING_DIR . '/assets/js/page-ads.js';
+		$src  = PINLIGHTNING_URI . '/assets/js/page-ads.js?ver=' . filemtime( $file );
+		echo '<script>window.addEventListener("load",function(){var s=document.createElement("script");s.src="' . esc_url( $src ) . '";document.body.appendChild(s)},{ once:true });</script>' . "\n";
 	}, 100 );
 }
 add_action( 'wp_enqueue_scripts', 'pl_page_ads_enqueue', 20 );
