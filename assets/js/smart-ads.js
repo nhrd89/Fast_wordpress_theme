@@ -1956,17 +1956,37 @@ function tryExitInterstitial(trigger) {
 		destroyed:       false
 	};
 
-	// Define a NEW interstitial slot instead of refreshing the existing one.
-	// GPT interstitials are one-shot — refresh on maxRefresh:0 slots yields 0 fills.
-	// Must destroy the Layer 1 interstitial first (GPT only allows one per page).
+	// Check Layer 1 interstitial status before deciding strategy.
+	// GPT interstitials don't show immediately — GPT decides when.
+	// If still 'pending', DON'T destroy it (it hasn't had a chance to show).
+	// Instead, nudge GPT to show it now via refresh().
+	var overlayStatus = window.__plOverlayStatus || {};
+	var interstitialStatus = overlayStatus.interstitial || 'off';
+
 	googletag.cmd.push(function() {
-		// Destroy existing interstitial to free up the format
 		var slotMap = (window.__initialAds && window.__initialAds.getSlotMap)
 			? window.__initialAds.getSlotMap() : {};
 		var existing = slotMap['__interstitial'];
+
+		if (interstitialStatus === 'pending' && existing && existing.slot) {
+			// GPT hasn't shown the interstitial yet — don't destroy it.
+			// Refresh to nudge GPT into showing it now as exit trigger.
+			log('Exit intent: Layer 1 interstitial still pending, refreshing instead of destroying');
+			googletag.pubads().refresh([existing.slot]);
+			// Layer 1's existing slotRenderEnded/impressionViewable handlers will track this.
+			// We still mark exit as fired to prevent double-trigger.
+			pushEvent('exit_interstitial_fired_refresh', {
+				trigger: trigger,
+				sessionSeconds: Math.round(sessionSeconds)
+			});
+			return;
+		}
+
+		// Layer 1 interstitial already showed (filled/viewable/empty) or doesn't exist.
+		// Safe to destroy and create a NEW exit-intent interstitial slot.
 		if (existing && existing.slot) {
 			googletag.destroySlots([existing.slot]);
-			log('Destroyed Layer 1 interstitial to free format');
+			log('Destroyed Layer 1 interstitial (status:', interstitialStatus + ') to free format');
 		}
 
 		// Define fresh interstitial slot
