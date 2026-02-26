@@ -1035,7 +1035,7 @@
 .pl-combo {
 	position: fixed;
 	right: 24px;
-	bottom: calc(50% + 50px);
+	bottom: calc(50% + 70px);
 	z-index: 99;
 	display: flex;
 	flex-direction: column;
