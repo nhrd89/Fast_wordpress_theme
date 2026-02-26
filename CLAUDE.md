@@ -257,10 +257,33 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - Tracks `house_ad_shown` and `house_ad_click` events
 - Links to `/free-pinterest-guide` (landing page, not yet built)
 
-**Slow-Creative Timeout:**
-- 3s timer starts after `renderSlot()` is called
-- If `rec.filled` is still false, collapses via `showHouseAd()`
-- Prevents persistent 250px blank gaps from slow/no-fill auctions
+**GPT Patient Timeout (10s):**
+- 10s timer starts after `renderSlot()` is called
+- If `rec.filled` is still false after 10s, collapses the container (height:0, margin:0)
+- Does NOT show house ad — real empties handled by `slotRenderEnded` (house ad on isEmpty:true)
+- 10s catches truly stuck GPT requests (programmatic ads commonly take 2-5s through RTB waterfall)
+- `rec._fillTimeout` cleared in `slotRenderEnded` when GPT responds
+
+**renderSlot() Explicit Refresh:**
+- After `googletag.display(record.divId)`, calls `googletag.pubads().refresh([slot])`
+- Required because `enableSingleRequest()` (SRA) mode is ON — post-initial slots need explicit refresh
+- Retry logic already had this pattern, but initial render was missing it
+
+**Ad Relocation (`relocateFilledAd()`):**
+- When GPT responds with a fill after user has scrolled 500+ px past the ad, relocates it
+- Moves the existing DOM element (keeps GPT iframe alive) to a paragraph near viewport center
+- Guards: only once per ad (`rec.relocated`), respects `MIN_PIXEL_SPACING` + Layer 1 exclusion zones
+- Does NOT relocate if user is scrolling toward the ad (it'll come into view naturally)
+- Max distance: 800px from viewport center to best target paragraph
+- Tracked: `rec.relocated`, `rec.relocatedFromY`, `rec.relocatedToY`, `rec.relocatedAt`
+- Resets `rec.viewable` and `_slotViewStart` (fresh viewability measurement at new position)
+
+**GPT Response Time Tracking:**
+- `rec.renderRequestedAt` — timestamp set when `renderSlot()` is called
+- `rec.gptResponseMs` — calculated in `slotRenderEnded` as `Date.now() - rec.renderRequestedAt`
+- Sent in beacon/heartbeat zones arrays and `dynamic_ad_filled` events
+- Stored in `pl_ad_events` table (`gpt_response_ms` column, v5 migration)
+- Injection Lab: response time bracket analysis (0-1s, 1-2s, 2-3s, 3-5s, 5-8s, 8-10s, 10s+)
 
 **Exit-Intent Interstitial (`tryExitInterstitial()`):**
 - Fires a **new** GPT interstitial slot on user exit (tab switch, mouse-leave, beforeunload)
@@ -305,7 +328,9 @@ var _exitTrigger    = '';    // which trigger fired it
     adsInViewport, adDensityPercent, adSpacing, predictedDistance,
     viewable: false, viewableEver: false, refreshCount: 0,
     lastRefresh: 0, renderedSize: null, filled: false,
-    destroyed: false, rendered: false, retried: false
+    destroyed: false, rendered: false, retried: false,
+    renderRequestedAt: 0, gptResponseMs: 0,
+    relocated: false, relocatedFromY: 0, relocatedToY: 0, relocatedAt: 0
 }
 ```
 
@@ -547,6 +572,13 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Round 4 — Fill Rate + Response Tracking (Feb 26, 2026)
+- **10s patient GPT timeout** — Replaced aggressive 3s `showHouseAd()` timeout with patient 10s collapse-only timeout. Real empties handled by `slotRenderEnded` (house ad on isEmpty:true). 10s catches truly stuck GPT, avoids killing ads that would fill in 4-5s.
+- **Explicit refresh() after display()** — Added `googletag.pubads().refresh([slot])` after `googletag.display()` in `renderSlot()`. Required for SRA mode — post-initial slots need explicit refresh for reliable fill.
+- **Ad relocation** — `relocateFilledAd()` moves DOM element (keeps GPT iframe alive) when user has scrolled 500+ px past a filled ad. Respects spacing rules + Layer 1 exclusion zones. Tracked in beacon/heartbeat.
+- **GPT response time tracking** — `renderRequestedAt` timestamp in `renderSlot()`, `gptResponseMs` calculated in `slotRenderEnded`. Stored in `pl_ad_events` table (v5 migration: `gpt_response_ms`, `relocated` columns). Injection Lab: response time bracket table + relocation stats table. Live Sessions: GPT ms + Relocated columns in Ad Detail.
+- **Event tracking pipeline update** — `trackAdEvent()` in initial-ads.js: new short keys `grm` (GPT response ms) and `rel` (relocated). ad-data-recorder.php: v4→v5 migration for new columns. Beacon/heartbeat zones: `gptResponseMs`, `relocated`, `relocatedFromY`, `relocatedToY` fields.
+
 ### Exit-Intent + Image Tap Tracking (Feb 25, 2026)
 - **Fix: exit interstitial uses new slot instead of refresh** — GPT interstitials are one-shot (`maxRefresh: 0`), refreshing yields 0 fills (108 fires, 0 fills). Fix: destroy Layer 1 interstitial via `googletag.destroySlots()`, then `defineOutOfPageSlot` + `display` for a fresh slot. GPT only allows one interstitial per page, so the old one must be destroyed first.
 - **Exit-intent interstitial** — `tryExitInterstitial()` in smart-ads.js fires a new GPT interstitial slot on tab switch (visibilitychange), mouse-leave (clientY<10), or beforeunload. 15s minimum session. Admin toggle `exit_interstitial` in ad-engine.php. `initExitIntent()` runs at script load (not gated by engagement). Tracked in beacon + heartbeat.
@@ -565,7 +597,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - `8634570`: **Tab visibility pause** — `_tabVisible` gates engineLoop, lazy-render, fast-scroller timeout; resets `_slotViewStart` on tab return
 - `64a0eca`: **Viewport-aware sizes** — `getDynamicAdSizes()`: mobile (<768px) = 300x250 only (single auction, ~200ms faster); desktop = full multi-size
 - `d142cbe`: **Last-chance refresh** — `observeForLastChanceRefresh()`: IO watches filled ads exiting viewport top, refreshes if viewableEver + 30s cooldown
-- `b9d2698`: **Slow-creative timeout** — 3s timer after `renderSlot()`, collapses via `showHouseAd()` if creative hasn't arrived
+- `b9d2698`: **Slow-creative timeout** — 3s timer after `renderSlot()`, collapses via `showHouseAd()` if creative hasn't arrived (replaced in Round 4 with patient 10s collapse-only timeout)
 
 ### Round 2 — Preconnect + Retry + Backfill (Feb 25, 2026)
 - `5a92fd8`: Preconnect to ad CDNs (GPT, syndication, Ad.Plus, TPC)
@@ -608,11 +640,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ## 14. Current Status
 
 ### Working
-- Ad injection engine with all 3 rounds of viewability optimization
+- Ad injection engine with all 4 rounds of viewability + fill rate optimization
 - InMobi CMP for GDPR/TCF compliance (EEA only)
 - Viewport refresh, lazy-render, sticky inline, last-chance refresh
 - Tab visibility pause, retry logic, house ad backfill
-- Creative timeout, viewport-aware size selection
+- Patient 10s GPT timeout (replaces aggressive 3s), explicit refresh() after display()
+- Ad relocation for filled-but-missed ads (DOM move preserves GPT iframe)
+- GPT response time tracking (beacon/heartbeat/DB/injection lab/live sessions)
+- Viewport-aware size selection
 - 400px minimum spacing enforced everywhere
 - Stable snapshot system for ad engine files (save/revert from admin)
 - Next-post auto-load (IO trigger at 70% read, max 3 posts, smart-ads rescan)
@@ -622,9 +657,10 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Monitoring (check after 24-48 hours)
 - Viewability trend: 43.8% → 48.8% → 54% → target 63-70%
-- Fill rate stability
+- Fill rate: was 51.2% — expect improvement from refresh() + 10s patient timeout
+- GPT response time distribution (injection lab brackets)
+- Ad relocation count and viewability lift
 - Last-chance refresh count
-- Creative timeout frequency
 - House ad impressions and clicks
 
 ### Known Issues
