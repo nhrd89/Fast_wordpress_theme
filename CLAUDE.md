@@ -183,22 +183,39 @@ Two separate ad systems, completely isolated:
 
 **Two-phase injection:**
 - **Phase 1** (DOMContentLoaded): Above-fold `.pl-page-ad-anchor` divs rendered immediately
-- **Phase 2** (scroll): Below-fold anchors rendered via IntersectionObserver (600px rootMargin lookahead)
+- **Phase 2** (scroll): Below-fold anchors rendered via IntersectionObserver (400px rootMargin lookahead)
+
+**Format system:**
+| Format | Desktop Sizes | Mobile Sizes |
+|--------|--------------|-------------|
+| leaderboard | 970x250, 728x90 | 320x100, 320x50 |
+| rectangle | 336x280, 300x250 | 300x250 |
+| banner | 728x90 | 320x50 |
 
 **Anchor placement:**
-- Homepage templates: 3 anchors between sections (hero→categories, categories→latest, latest→newsletter)
-- Category archives: auto-injected via `the_post` hook every Nth post (configurable, default 4)
+- Homepage templates: 3 anchors with `data-format` attrs (leaderboard→rectangle→leaderboard)
+- Category archives: first anchor before post #1 (leaderboard), then every 3 posts with format rotation (leaderboard→rectangle→banner→rectangle→repeat)
 - Static pages: auto-injected via `the_content` filter, evenly spaced between paragraphs
 
-**Spacing:** 600px desktop, 400px mobile (enforced at runtime)
+**Spacing:** 300px desktop, 250px mobile for category; 600px desktop, 400px mobile for homepage/static (enforced at runtime)
 
-**Dummy mode:** Colored placeholder boxes with gradient + dashed border + size label. Enabled by default for safe testing.
+**Overlay ads:**
+- **Anchor ad:** Fixed bottom bar, close button, once per session (`sessionStorage: pl_pg_anchor_shown`), GPT BOTTOM_ANCHOR format
+- **Interstitial:** Full-screen overlay after 3s delay, auto-close 10s, once per session (`sessionStorage: pl_pg_interstitial_shown`), homepage+category only
+
+**Dummy mode:** Colored placeholder boxes (blue gradient inline, yellow anchor, red interstitial) with dashed border + size label. Enabled by default for safe testing.
+
+**Category MutationObserver:** Watches `.pl-cat-grid, main, #primary, .site-main, .cb-grid-4, .ee-grid-3, .pl-post-grid` for dynamically loaded posts, auto-injects ads into new content.
 
 **Settings:** Separate `pl_page_ad_settings` option with per-page-type toggles, slot limits, format toggles, spacing config.
 
 **Viewability:** IntersectionObserver with 50% threshold + 1s dwell → "viewable" event. Beacon on page hide via `navigator.sendBeacon`.
 
-**Analytics:** `/pl/v1/page-ad-event` REST endpoint → `wp_option` storage keyed by date/domain/page-type. 30-day retention.
+**Event reporting:** `sendEvent()` includes: event, pageType, slotId, adFormat, domain, device, viewportWidth, renderedSize, url, timestamp. Console logging: `[PageAds] Event: type | slot: name | format: fmt | page: type`.
+
+**Analytics:** `/pl/v1/page-ad-event` REST endpoint → `wp_option` storage keyed by date/domain/page-type/format. 30-day retention. Stats endpoint returns structured breakdowns (today/7d/30d, by_domain, by_format) with fill_rate calculation. Stats dashboard in admin "Page Ads" tab.
+
+**Public API:** `window.__plPageAds = { getSlots, getConfig, rescan }`
 
 ### Layer 1 — Initial Viewport Ads (`initial-ads.js`)
 
@@ -650,14 +667,25 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Page Ad System Enhancement (Feb 26, 2026)
+- **feat: anchor/interstitial ads, 3-position homepage, aggressive category ads, stats dashboard**
+- **Overlay ads** — Anchor ad (fixed bottom bar, close button, once per session via sessionStorage `pl_pg_anchor_shown`, GPT BOTTOM_ANCHOR). Interstitial (full-screen overlay, 3s delay, 10s auto-close, once per session via `pl_pg_interstitial_shown`, homepage+category only). Both have dummy mode placeholders.
+- **Format system** — Three format types with responsive sizes: leaderboard (970x250/728x90 desktop, 320x100/320x50 mobile), rectangle (336x280/300x250 desktop, 300x250 mobile), banner (728x90 desktop, 320x50 mobile). Homepage uses fixed format-per-position via `data-format` attribute.
+- **Homepage ads** — Exactly 3 fixed-position inline ads: TOP (leaderboard), MIDDLE (rectangle), BOTTOM (leaderboard). All 3 templates (front-page.php, emerald, coral) updated with `data-format` attributes on anchor divs.
+- **Category ads** — Aggressive: first ad before post #1 (leaderboard via `loop_start` hook), then every 3 posts (was 4). Format rotation: leaderboard→rectangle→banner→rectangle→repeat. Reduced spacing: 300px desktop, 250px mobile. MutationObserver for dynamically loaded posts (watches `.pl-cat-grid, main, .cb-grid-4, .ee-grid-3, .pl-post-grid`).
+- **Settings defaults** — `homepage_max=3`, `category_max=10`, `page_max=3`, `desktop_spacing=300`, `mobile_spacing=250`, `category_every_n=3`.
+- **Stats dashboard** — Admin "Page Ads" tab shows today/7d/30d stats fetched from REST API. Stats endpoint returns structured breakdowns: `{ today, last_7_days, last_30_days, by_domain, by_format }` with fill_rate calculation. Storage now keyed by date/domain/page-type/format (backwards compatible with legacy flat structure).
+- **Enhanced event reporting** — `sendEvent()` includes adFormat, device, viewportWidth, renderedSize, url, timestamp. Console logging: `[PageAds] Event: type | slot: name | format: fmt | page: type`.
+- **Public API** — `window.__plPageAds = { getSlots, getConfig, rescan }`.
+
 ### Page Ad System (Feb 26, 2026)
 - **feat: separate page ad system for non-post pages** — Completely isolated ad system for homepages, category archives, and static pages. Zero overlap with post ads (smart-ads.js / initial-ads.js).
 - **inc/page-ad-engine.php** — Settings (`pl_page_ad_settings` option, `enabled` defaults to `true`, `dummy_mode` defaults to `true`), "Page Ads" admin tab in Ad Engine, enqueue with `!is_single()` guard, `plPageAds` config output, category archive injection via `the_post` hook (every Nth post), static page injection via `the_content` filter (priority 50).
-- **inc/page-ad-recorder.php** — POST `/pl/v1/page-ad-event` (impression/viewable/click/empty/filled), GET `/pl/v1/page-ad-stats` (admin-only). Storage in `wp_option` keyed by date/domain/page-type, 30-day retention.
-- **assets/js/page-ads.js** — IIFE with runtime bail-out (`document.querySelector('.single-post') || window.plAds`). Two-phase injection: Phase 1 (above-fold immediate), Phase 2 (IO with 600px rootMargin). Responsive sizing (desktop multi-size, mobile 300x250 only). Dummy mode with colored placeholders. Viewability tracking (IO 50% threshold + 1s dwell). Beacon on page hide. GPT slot names use `_pg_` infix.
+- **inc/page-ad-recorder.php** — POST `/pl/v1/page-ad-event` (impression/viewable/click/empty/filled), GET `/pl/v1/page-ad-stats` (admin-only). Storage in `wp_option` keyed by date/domain/page-type/format, 30-day retention.
+- **assets/js/page-ads.js** — IIFE with runtime bail-out (`document.querySelector('.single-post') || window.plAds`). Two-phase injection: Phase 1 (above-fold immediate), Phase 2 (IO with 400px rootMargin). Responsive sizing per format type. Dummy mode with colored placeholders. Viewability tracking (IO 50% threshold + 1s dwell). Beacon on page hide. GPT slot names use `_pg_` infix.
 - **inc/ad-engine.php** — Added `is_single()` guard to `pinlightning_ads_enqueue()` (post ads skip non-single pages). Added "Page Ads" tab link in admin nav.
 - **functions.php** — Added `require_once` for `page-ad-engine.php` and `page-ad-recorder.php`. Added `is_single()` guard to `initial-ads.js` loading in `pinlightning_postload_scripts()` (was loading on all pages without config).
-- **Homepage templates** — Added 3 `.pl-page-ad-anchor` divs each to `front-page.php`, `template-emerald-editorial.php`, `template-coral-breeze.php` (between sections).
+- **Homepage templates** — Added 3 `.pl-page-ad-anchor` divs each to `front-page.php`, `template-emerald-editorial.php`, `template-coral-breeze.php` (between sections, with `data-format` attributes).
 - **fix: page ads not loading** — Three bugs: (1) `enabled` defaulted to `false` so enqueue returned early, changed to `true`. (2) `initial-ads.js` loaded on all pages via `pinlightning_postload_scripts()` without `is_single()` guard — ran on homepages with hardcoded fallbacks creating rogue overlays. Added guard. (3) page-ads.js cache-busting used static version instead of `filemtime()`.
 
 ### Coral Breeze Homepage (Feb 26, 2026)
