@@ -123,11 +123,78 @@ function pl_clear_page_ad_stats_handler() {
 	if ( ! current_user_can( 'manage_options' ) ) {
 		wp_send_json_error( array( 'message' => 'Unauthorized' ), 403 );
 	}
-	check_ajax_referer( 'pl_clear_page_ad_stats' );
+	check_ajax_referer( 'pl_page_ad_stats_action' );
 	delete_option( 'pl_page_ad_stats' );
 	wp_send_json_success( array( 'message' => 'All page ad data cleared' ) );
 }
 add_action( 'wp_ajax_pl_clear_page_ad_stats', 'pl_clear_page_ad_stats_handler' );
+
+/**
+ * AJAX handler: export page ad stats as CSV download.
+ */
+function pl_export_page_ad_stats_handler() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'Unauthorized', 403 );
+	}
+	check_ajax_referer( 'pl_page_ad_stats_action' );
+
+	$stats    = get_option( 'pl_page_ad_stats', array() );
+	$filename = 'page-ad-stats-' . gmdate( 'Y-m-d' ) . '.csv';
+
+	header( 'Content-Type: text/csv; charset=utf-8' );
+	header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+	header( 'Pragma: no-cache' );
+	header( 'Expires: 0' );
+
+	$out = fopen( 'php://output', 'w' );
+	fputcsv( $out, array( 'Date', 'Domain', 'Page Type', 'Format', 'Impressions', 'Viewable', 'Clicks', 'Filled', 'Empty', 'Fill Rate' ) );
+
+	foreach ( $stats as $date => $domains ) {
+		if ( ! is_array( $domains ) ) {
+			continue;
+		}
+		foreach ( $domains as $domain => $page_types ) {
+			if ( ! is_array( $page_types ) ) {
+				continue;
+			}
+			foreach ( $page_types as $page_type => $formats ) {
+				if ( ! is_array( $formats ) ) {
+					continue;
+				}
+				// Handle legacy flat structure (counters directly under page_type).
+				if ( isset( $formats['impressions'] ) || isset( $formats['viewable'] ) ) {
+					$formats = array( 'unknown' => $formats );
+				}
+				foreach ( $formats as $format => $counters ) {
+					if ( ! is_array( $counters ) ) {
+						continue;
+					}
+					$filled = isset( $counters['filled'] ) ? (int) $counters['filled'] : 0;
+					$empty  = isset( $counters['empty'] ) ? (int) $counters['empty'] : 0;
+					$total  = $filled + $empty;
+					$rate   = $total > 0 ? round( $filled / $total * 100, 1 ) . '%' : '0%';
+
+					fputcsv( $out, array(
+						$date,
+						$domain,
+						$page_type,
+						$format,
+						isset( $counters['impressions'] ) ? (int) $counters['impressions'] : 0,
+						isset( $counters['viewable'] ) ? (int) $counters['viewable'] : 0,
+						isset( $counters['clicks'] ) ? (int) $counters['clicks'] : 0,
+						$filled,
+						$empty,
+						$rate,
+					) );
+				}
+			}
+		}
+	}
+
+	fclose( $out );
+	exit;
+}
+add_action( 'wp_ajax_pl_export_page_ad_stats', 'pl_export_page_ad_stats_handler' );
 
 /**
  * Get page ad stats for admin dashboard.
