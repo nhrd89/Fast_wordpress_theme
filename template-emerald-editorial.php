@@ -34,87 +34,122 @@ if ( $hero_post ) {
 }
 wp_reset_postdata();
 
-// ── Trending posts (4 recent, excluding hero) ──
-$trending_query = new WP_Query( array(
-	'posts_per_page'         => 4,
-	'post_status'            => 'publish',
-	'post__not_in'           => $shown_ids,
-	'orderby'                => 'date',
-	'order'                  => 'DESC',
-	'ignore_sticky_posts'    => true,
-	'no_found_rows'          => true,
-	'update_post_meta_cache' => false,
+// ── Shared category list (used by both Trending + Latest) ──
+$ee_cats = get_categories( array(
+	'orderby'    => 'count',
+	'order'      => 'DESC',
+	'number'     => 20,
+	'hide_empty' => true,
 ) );
-// Fallback: if excluding hero leaves < 4, only exclude hero ID.
-if ( $trending_query->post_count < 4 && ! empty( $shown_ids ) ) {
-	$trending_query = new WP_Query( array(
-		'posts_per_page'         => 4,
-		'post_status'            => 'publish',
-		'post__not_in'           => array( $shown_ids[0] ),
-		'orderby'                => 'date',
-		'order'                  => 'DESC',
-		'ignore_sticky_posts'    => true,
-		'no_found_rows'          => true,
-		'update_post_meta_cache' => false,
-	) );
-}
-// Final fallback: no exclusions at all.
-if ( $trending_query->post_count < 4 ) {
-	$trending_query = new WP_Query( array(
-		'posts_per_page'         => 4,
-		'post_status'            => 'publish',
-		'orderby'                => 'date',
-		'order'                  => 'DESC',
-		'ignore_sticky_posts'    => true,
-		'no_found_rows'          => true,
-		'update_post_meta_cache' => false,
-	) );
-}
-$trending_posts = $trending_query->posts;
-foreach ( $trending_posts as $p ) {
-	$shown_ids[] = $p->ID;
-}
-wp_reset_postdata();
 
-// ── Latest posts (6, diverse — aim for 3+ different categories) ──
-$latest_pool = new WP_Query( array(
-	'posts_per_page'         => 24,
-	'post_status'            => 'publish',
-	'post__not_in'           => $shown_ids,
-	'ignore_sticky_posts'    => true,
-	'no_found_rows'          => true,
-	'update_post_meta_cache' => false,
-) );
-$latest_posts    = array();
-$latest_cat_used = array(); // cat_id => count
-foreach ( $latest_pool->posts as $p ) {
-	$p_cats = wp_get_post_categories( $p->ID, array( 'fields' => 'ids' ) );
-	$p_cat  = ! empty( $p_cats ) ? $p_cats[0] : 0;
-	// Allow max 2 posts per category to guarantee diversity.
-	if ( isset( $latest_cat_used[ $p_cat ] ) && $latest_cat_used[ $p_cat ] >= 2 ) {
-		continue;
+// ── Trending posts (4, one per category for diversity) ──
+$trending_posts = array();
+foreach ( $ee_cats as $cat ) {
+	if ( count( $trending_posts ) >= 4 ) {
+		break;
 	}
-	$latest_posts[] = $p;
-	$latest_cat_used[ $p_cat ] = ( $latest_cat_used[ $p_cat ] ?? 0 ) + 1;
-	$shown_ids[]    = $p->ID;
+	$q = new WP_Query( array(
+		'posts_per_page'         => 1,
+		'post_status'            => 'publish',
+		'cat'                    => $cat->term_id,
+		'post__not_in'           => $shown_ids,
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+	if ( $q->have_posts() ) {
+		$trending_posts[] = $q->posts[0];
+		$shown_ids[]      = $q->posts[0]->ID;
+	}
+	wp_reset_postdata();
+}
+// Backfill if fewer than 4 categories had posts.
+if ( count( $trending_posts ) < 4 ) {
+	$backfill = new WP_Query( array(
+		'posts_per_page'         => 4 - count( $trending_posts ),
+		'post_status'            => 'publish',
+		'post__not_in'           => $shown_ids,
+		'orderby'                => 'date',
+		'order'                  => 'DESC',
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+	foreach ( $backfill->posts as $p ) {
+		$trending_posts[] = $p;
+		$shown_ids[]      = $p->ID;
+	}
+	wp_reset_postdata();
+}
+
+// ── Latest posts (6, max 2 per category — round-robin across categories) ──
+$latest_posts    = array();
+$latest_cat_used = array();
+// Pass 1: one post per category.
+foreach ( $ee_cats as $cat ) {
 	if ( count( $latest_posts ) >= 6 ) {
 		break;
 	}
+	$q = new WP_Query( array(
+		'posts_per_page'         => 1,
+		'post_status'            => 'publish',
+		'cat'                    => $cat->term_id,
+		'post__not_in'           => $shown_ids,
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+	if ( $q->have_posts() ) {
+		$latest_posts[] = $q->posts[0];
+		$shown_ids[]    = $q->posts[0]->ID;
+		$latest_cat_used[ $cat->term_id ] = 1;
+	}
+	wp_reset_postdata();
 }
-// If diversity filter is too strict and we have fewer than 6, backfill.
+// Pass 2: second post per category if still need more.
 if ( count( $latest_posts ) < 6 ) {
-	foreach ( $latest_pool->posts as $p ) {
-		if ( in_array( $p->ID, $shown_ids, true ) ) {
-			continue;
-		}
-		$latest_posts[] = $p;
-		$shown_ids[]    = $p->ID;
+	foreach ( $ee_cats as $cat ) {
 		if ( count( $latest_posts ) >= 6 ) {
 			break;
 		}
+		if ( ( $latest_cat_used[ $cat->term_id ] ?? 0 ) >= 2 ) {
+			continue;
+		}
+		$q = new WP_Query( array(
+			'posts_per_page'         => 1,
+			'post_status'            => 'publish',
+			'cat'                    => $cat->term_id,
+			'post__not_in'           => $shown_ids,
+			'ignore_sticky_posts'    => true,
+			'no_found_rows'          => true,
+			'update_post_meta_cache' => false,
+		) );
+		if ( $q->have_posts() ) {
+			$latest_posts[] = $q->posts[0];
+			$shown_ids[]    = $q->posts[0]->ID;
+			$latest_cat_used[ $cat->term_id ] = ( $latest_cat_used[ $cat->term_id ] ?? 0 ) + 1;
+		}
+		wp_reset_postdata();
 	}
 }
-wp_reset_postdata();
+// Final backfill: any remaining posts.
+if ( count( $latest_posts ) < 6 ) {
+	$backfill = new WP_Query( array(
+		'posts_per_page'         => 6 - count( $latest_posts ),
+		'post_status'            => 'publish',
+		'post__not_in'           => $shown_ids,
+		'orderby'                => 'date',
+		'order'                  => 'DESC',
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+	foreach ( $backfill->posts as $p ) {
+		$latest_posts[] = $p;
+		$shown_ids[]    = $p->ID;
+	}
+	wp_reset_postdata();
+}
 
 // ── Category circles ──
 $cat_circles = pl_get_category_circles( 8 );
