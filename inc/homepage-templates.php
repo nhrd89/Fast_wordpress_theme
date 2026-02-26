@@ -111,6 +111,27 @@ function pl_emerald_critical_css() {
 add_action( 'wp_head', 'pl_emerald_critical_css', 3 );
 
 /**
+ * Inline critical CSS for coral homepage.
+ * Hooked at wp_head priority 3 — after theme critical.css (p1) and main.css (p2).
+ */
+function pl_coral_critical_css() {
+	if ( ! is_front_page() || 'coral' !== pl_resolve_homepage_template() ) {
+		return;
+	}
+
+	$file = PINLIGHTNING_DIR . '/assets/css/homepage-coral.css';
+	if ( ! file_exists( $file ) ) {
+		return;
+	}
+
+	$css = file_get_contents( $file );
+	if ( $css ) {
+		echo '<style id="coral-homepage">' . $css . '</style>' . "\n";
+	}
+}
+add_action( 'wp_head', 'pl_coral_critical_css', 3 );
+
+/**
  * Get category circles data with transient caching.
  *
  * @param int $count Number of categories.
