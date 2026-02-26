@@ -458,7 +458,7 @@ function pinlightning_summarize_ad_data($sessions) {
  */
 function pl_ad_ensure_tables() {
     $installed_ver = get_option( 'pl_ad_tables_ver', '0' );
-    if ( '4' === $installed_ver ) {
+    if ( '5' === $installed_ver ) {
         return;
     }
 
@@ -605,6 +605,24 @@ function pl_ad_handle_event_batch() {
     $table_events = $wpdb->prefix . 'pl_ad_events';
     $table_hourly = $wpdb->prefix . 'pl_ad_hourly_stats';
 
+    // On-demand v5 migration: ensure gpt_response_ms + relocated columns exist.
+    // The admin_init migration may not have run yet (e.g. version stuck at 4).
+    static $v5_checked = false;
+    if ( ! $v5_checked ) {
+        $v5_checked = true;
+        $ver = get_option( 'pl_ad_tables_ver', '0' );
+        if ( (int) $ver < 5 ) {
+            $cols = $wpdb->get_col( "SHOW COLUMNS FROM {$table_events}", 0 );
+            if ( is_array( $cols ) && ! in_array( 'gpt_response_ms', $cols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$table_events}
+                    ADD COLUMN gpt_response_ms int(10) unsigned NOT NULL DEFAULT 0 AFTER ad_density_percent,
+                    ADD COLUMN relocated tinyint(1) unsigned NOT NULL DEFAULT 0 AFTER gpt_response_ms" );
+                error_log( '[PL-AdEvents] v5 migration: added gpt_response_ms + relocated columns' );
+            }
+            update_option( 'pl_ad_tables_ver', '5' );
+        }
+    }
+
     // Shared fields from envelope.
     $sid         = sanitize_text_field( substr( $data['sid'] ?? '', 0, 32 ) );
     $device      = sanitize_text_field( substr( $data['device'] ?? '', 0, 10 ) );
@@ -642,8 +660,8 @@ function pl_ad_handle_event_batch() {
         $gptResponseMs    = absint( $evt['grm'] ?? 0 );
         $relocated        = ! empty( $evt['rel'] ) ? 1 : 0;
 
-        // Insert event row.
-        $wpdb->insert( $table_events, array(
+        // Insert event row (with v5 columns; fallback without them if table not migrated).
+        $row = array(
             'session_id'         => $sid,
             'event_type'         => $eventType,
             'slot_id'            => $slotId,
@@ -669,7 +687,14 @@ function pl_ad_handle_event_batch() {
             'gpt_response_ms'    => $gptResponseMs,
             'relocated'          => $relocated,
             'created_at'         => current_time( 'mysql' ),
-        ) );
+        );
+        $result = $wpdb->insert( $table_events, $row );
+
+        // Defensive fallback: if INSERT failed (v5 columns missing), retry without them.
+        if ( false === $result && $wpdb->last_error ) {
+            unset( $row['gpt_response_ms'], $row['relocated'] );
+            $wpdb->insert( $table_events, $row );
+        }
 
         // Hourly aggregation via INSERT ... ON DUPLICATE KEY UPDATE.
         $col = '';
