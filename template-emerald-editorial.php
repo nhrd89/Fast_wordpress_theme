@@ -3,8 +3,8 @@
  * Template: Emerald Editorial Homepage
  *
  * Design A — loads on inspireinlet.com (or when Customizer override is set to 'emerald').
- * Self-contained: uses own header/footer markup, does NOT call get_header()/get_footer()
- * for the nav/footer sections, but still fires wp_head/wp_footer for scripts/styles.
+ * Uses own header markup, shared footer via get_footer() (emerald colors via CSS overrides).
+ * Fires wp_head/wp_footer for scripts/styles.
  *
  * @package PinLightning
  */
@@ -34,9 +34,9 @@ if ( $hero_post ) {
 }
 wp_reset_postdata();
 
-// ── Trending posts (4, skip hero) ──
-$trending_query = new WP_Query( array(
-	'posts_per_page'         => 4,
+// ── Trending posts (4, diverse categories — no two share the same primary cat) ──
+$trending_pool = new WP_Query( array(
+	'posts_per_page'         => 20,
 	'post_status'            => 'publish',
 	'post__not_in'           => $shown_ids,
 	'orderby'                => 'comment_count',
@@ -45,27 +45,65 @@ $trending_query = new WP_Query( array(
 	'no_found_rows'          => true,
 	'update_post_meta_cache' => false,
 ) );
-foreach ( $trending_query->posts as $p ) {
-	$shown_ids[] = $p->ID;
+$trending_posts   = array();
+$trending_cat_ids = array();
+foreach ( $trending_pool->posts as $p ) {
+	$p_cats = wp_get_post_categories( $p->ID, array( 'fields' => 'ids' ) );
+	$p_cat  = ! empty( $p_cats ) ? $p_cats[0] : 0;
+	if ( in_array( $p_cat, $trending_cat_ids, true ) ) {
+		continue;
+	}
+	$trending_posts[]   = $p;
+	$trending_cat_ids[] = $p_cat;
+	$shown_ids[]        = $p->ID;
+	if ( count( $trending_posts ) >= 4 ) {
+		break;
+	}
 }
 wp_reset_postdata();
 
-// ── Latest posts (6, skip hero + trending) ──
-$latest_query = new WP_Query( array(
-	'posts_per_page'         => 6,
+// ── Latest posts (6, diverse — aim for 3+ different categories) ──
+$latest_pool = new WP_Query( array(
+	'posts_per_page'         => 24,
 	'post_status'            => 'publish',
 	'post__not_in'           => $shown_ids,
 	'ignore_sticky_posts'    => true,
 	'no_found_rows'          => true,
 	'update_post_meta_cache' => false,
 ) );
-foreach ( $latest_query->posts as $p ) {
-	$shown_ids[] = $p->ID;
+$latest_posts    = array();
+$latest_cat_used = array(); // cat_id => count
+foreach ( $latest_pool->posts as $p ) {
+	$p_cats = wp_get_post_categories( $p->ID, array( 'fields' => 'ids' ) );
+	$p_cat  = ! empty( $p_cats ) ? $p_cats[0] : 0;
+	// Allow max 2 posts per category to guarantee diversity.
+	if ( isset( $latest_cat_used[ $p_cat ] ) && $latest_cat_used[ $p_cat ] >= 2 ) {
+		continue;
+	}
+	$latest_posts[] = $p;
+	$latest_cat_used[ $p_cat ] = ( $latest_cat_used[ $p_cat ] ?? 0 ) + 1;
+	$shown_ids[]    = $p->ID;
+	if ( count( $latest_posts ) >= 6 ) {
+		break;
+	}
+}
+// If diversity filter is too strict and we have fewer than 6, backfill.
+if ( count( $latest_posts ) < 6 ) {
+	foreach ( $latest_pool->posts as $p ) {
+		if ( in_array( $p->ID, $shown_ids, true ) ) {
+			continue;
+		}
+		$latest_posts[] = $p;
+		$shown_ids[]    = $p->ID;
+		if ( count( $latest_posts ) >= 6 ) {
+			break;
+		}
+	}
 }
 wp_reset_postdata();
 
-// ── Popular posts (8, skip all above) ──
-$popular_query = new WP_Query( array(
+// ── Popular / Most Loved posts (8, skip all above) ──
+$popular_args = array(
 	'posts_per_page'         => 8,
 	'post_status'            => 'publish',
 	'post__not_in'           => $shown_ids,
@@ -74,15 +112,36 @@ $popular_query = new WP_Query( array(
 	'ignore_sticky_posts'    => true,
 	'no_found_rows'          => true,
 	'update_post_meta_cache' => false,
-) );
+);
+$popular_query = new WP_Query( $popular_args );
+// Fallback: if comment_count returns nothing, try rand from last 30 days.
+if ( ! $popular_query->have_posts() ) {
+	$popular_query = new WP_Query( array_merge( $popular_args, array(
+		'orderby'    => 'rand',
+		'date_query' => array( array( 'after' => '30 days ago' ) ),
+	) ) );
+}
+// Final fallback: rand with no date limit, allow previously shown posts.
+if ( ! $popular_query->have_posts() ) {
+	$popular_query = new WP_Query( array(
+		'posts_per_page'         => 8,
+		'post_status'            => 'publish',
+		'orderby'                => 'rand',
+		'ignore_sticky_posts'    => true,
+		'no_found_rows'          => true,
+		'update_post_meta_cache' => false,
+	) );
+}
+foreach ( $popular_query->posts as $p ) {
+	$shown_ids[] = $p->ID;
+}
 wp_reset_postdata();
 
 // ── Category circles ──
 $cat_circles = pl_get_category_circles( 8 );
 
 // ── Site info ──
-$brand_name  = get_theme_mod( 'pl_brand_name', get_bloginfo( 'name' ) );
-$footer_desc = get_theme_mod( 'pl_footer_desc', 'Curated inspiration for modern living.' );
+$brand_name = get_theme_mod( 'pl_brand_name', get_bloginfo( 'name' ) );
 
 // ── Categories for nav + footer ──
 $nav_cats = get_categories( array(
@@ -174,28 +233,25 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 
 	<aside class="ee-trending">
 		<h3 class="ee-trending-title">Trending Now</h3>
-		<?php
-		$t_num = 0;
-		while ( $trending_query->have_posts() ) :
-			$trending_query->the_post();
-			$t_num++;
-			$t_cats = get_the_category();
+		<?php foreach ( $trending_posts as $t_idx => $t_post ) :
+			setup_postdata( $t_post );
+			$t_cats = get_the_category( $t_post->ID );
 		?>
 		<div class="ee-trending-item">
-			<span class="ee-trending-num"><?php echo str_pad( $t_num, 2, '0', STR_PAD_LEFT ); ?></span>
-			<?php if ( has_post_thumbnail() ) : ?>
-				<img class="ee-trending-thumb" src="<?php echo esc_url( get_the_post_thumbnail_url( null, 'thumbnail' ) ); ?>"
-					 alt="<?php echo esc_attr( get_the_title() ); ?>"
+			<span class="ee-trending-num"><?php echo str_pad( $t_idx + 1, 2, '0', STR_PAD_LEFT ); ?></span>
+			<?php if ( has_post_thumbnail( $t_post ) ) : ?>
+				<img class="ee-trending-thumb" src="<?php echo esc_url( get_the_post_thumbnail_url( $t_post, 'thumbnail' ) ); ?>"
+					 alt="<?php echo esc_attr( get_the_title( $t_post ) ); ?>"
 					 width="80" height="80" loading="lazy">
 			<?php endif; ?>
 			<div class="ee-trending-text">
 				<?php if ( ! empty( $t_cats ) ) : ?>
 					<div class="ee-cat-tag"><?php echo esc_html( $t_cats[0]->name ); ?></div>
 				<?php endif; ?>
-				<h4><a href="<?php the_permalink(); ?>"><?php the_title(); ?></a></h4>
+				<h4><a href="<?php echo esc_url( get_permalink( $t_post ) ); ?>"><?php echo esc_html( get_the_title( $t_post ) ); ?></a></h4>
 			</div>
 		</div>
-		<?php endwhile; wp_reset_postdata(); ?>
+		<?php endforeach; wp_reset_postdata(); ?>
 	</aside>
 </section>
 
@@ -223,15 +279,14 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 <section class="ee-latest">
 	<h2 class="ee-section-title">Latest Stories</h2>
 	<div class="ee-grid-3">
-		<?php
-		while ( $latest_query->have_posts() ) :
-			$latest_query->the_post();
-			$l_cats = get_the_category();
+		<?php foreach ( $latest_posts as $l_post ) :
+			setup_postdata( $l_post );
+			$l_cats = get_the_category( $l_post->ID );
 		?>
 		<article class="ee-card">
-			<?php if ( has_post_thumbnail() ) : ?>
-				<a href="<?php the_permalink(); ?>">
-					<?php the_post_thumbnail( 'medium_large', array(
+			<?php if ( has_post_thumbnail( $l_post ) ) : ?>
+				<a href="<?php echo esc_url( get_permalink( $l_post ) ); ?>">
+					<?php echo get_the_post_thumbnail( $l_post, 'medium_large', array(
 						'loading' => 'lazy',
 						'decoding' => 'async',
 					) ); ?>
@@ -241,14 +296,14 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 				<?php if ( ! empty( $l_cats ) ) : ?>
 					<div class="ee-cat-tag"><?php echo esc_html( $l_cats[0]->name ); ?></div>
 				<?php endif; ?>
-				<h3 class="ee-card-title"><a href="<?php the_permalink(); ?>"><?php the_title(); ?></a></h3>
-				<p class="ee-card-excerpt"><?php echo esc_html( wp_trim_words( get_the_excerpt(), 18 ) ); ?></p>
+				<h3 class="ee-card-title"><a href="<?php echo esc_url( get_permalink( $l_post ) ); ?>"><?php echo esc_html( get_the_title( $l_post ) ); ?></a></h3>
+				<p class="ee-card-excerpt"><?php echo esc_html( wp_trim_words( $l_post->post_excerpt ?: wp_strip_all_tags( $l_post->post_content ), 18 ) ); ?></p>
 				<div class="ee-card-meta">
-					<?php echo esc_html( get_the_date( 'M j, Y' ) ); ?>
+					<?php echo esc_html( get_the_date( 'M j, Y', $l_post ) ); ?>
 				</div>
 			</div>
 		</article>
-		<?php endwhile; wp_reset_postdata(); ?>
+		<?php endforeach; wp_reset_postdata(); ?>
 	</div>
 </section>
 
@@ -290,51 +345,6 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 </section>
 <?php endif; ?>
 
-<!-- ====== SECTION 7: FOOTER ====== -->
-<footer class="ee-footer">
-	<div class="ee-footer-inner">
-		<div>
-			<div class="ee-footer-brand"><?php echo esc_html( $brand_name ); ?></div>
-			<p class="ee-footer-desc"><?php echo esc_html( $footer_desc ); ?></p>
-		</div>
-		<div>
-			<h4>Quick Links</h4>
-			<ul>
-				<li><a href="<?php echo esc_url( home_url( '/' ) ); ?>">Home</a></li>
-				<?php
-				$about_page = get_page_by_path( 'about' );
-				if ( $about_page ) :
-				?>
-					<li><a href="<?php echo esc_url( get_permalink( $about_page ) ); ?>">About</a></li>
-				<?php endif; ?>
-				<?php
-				$contact_page = get_page_by_path( 'contact' );
-				if ( $contact_page ) :
-				?>
-					<li><a href="<?php echo esc_url( get_permalink( $contact_page ) ); ?>">Contact</a></li>
-				<?php endif; ?>
-				<?php
-				$privacy_page = get_privacy_policy_url();
-				if ( $privacy_page ) :
-				?>
-					<li><a href="<?php echo esc_url( $privacy_page ); ?>">Privacy Policy</a></li>
-				<?php endif; ?>
-			</ul>
-		</div>
-		<div>
-			<h4>Categories</h4>
-			<ul>
-				<?php foreach ( array_slice( $nav_cats, 0, 6 ) as $cat ) : ?>
-					<li><a href="<?php echo esc_url( get_category_link( $cat->term_id ) ); ?>"><?php echo esc_html( $cat->name ); ?></a></li>
-				<?php endforeach; ?>
-			</ul>
-		</div>
-	</div>
-	<div class="ee-footer-bottom">
-		&copy; <?php echo esc_html( gmdate( 'Y' ) . ' ' . $brand_name ); ?>. All rights reserved.
-	</div>
-</footer>
-
 <!-- Newsletter inline JS (no jQuery, tiny) -->
 <script>
 (function(){
@@ -365,6 +375,8 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 })();
 </script>
 
-<?php wp_footer(); ?>
-</body>
-</html>
+<?php
+// footer.php expects to close </main>, so open one.
+echo '<main id="primary" role="main">';
+get_footer();
+?>
