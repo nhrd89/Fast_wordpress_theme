@@ -62,6 +62,7 @@ Fast_wordpress_theme/
 │   │   ├── critical.css    # Inlined in <head> at wp_head p1 (keep under 3KB, layout-only)
 │   │   ├── main.css        # Inlined in <head> at wp_head p2 (~2.7KB gzipped, visual styles)
 │   │   ├── engagement.css  # Non-critical, loaded via preload onload trick (deferred)
+│   │   ├── homepage-emerald.css # Emerald Editorial homepage (inlined at wp_head p3)
 │   │   └── dist/           # Build output (gitignored — production falls back to source)
 │   ├── js/
 │   │   ├── core.js         # Minimal theme script (hamburger menu, etc.)
@@ -100,7 +101,11 @@ Fast_wordpress_theme/
 │   ├── customizer-scroll-engage.php # Scroll-engage Customizer settings
 │   ├── ai-chat.php         # AI chat integration
 │   ├── visitor-tracker.php # Visitor tracking server-side handler
-│   └── contact-messages.php # Contact form message handling
+│   ├── contact-messages.php # Contact form message handling
+│   └── homepage-templates.php # Multi-site homepage routing, emerald CSS inliner,
+│                              # category circles cache, Customizer template setting
+│
+├── template-emerald-editorial.php # Emerald Editorial homepage (inspireinlet.com)
 │
 ├── template-parts/
 │   └── content-card.php    # Reusable card component for grids
@@ -131,6 +136,7 @@ inc/contact-messages.php
 inc/engagement-config.php
 inc/engagement-breaks.php
 inc/engagement-customizer.php
+inc/homepage-templates.php
 ```
 
 ---
@@ -468,6 +474,7 @@ All CSS is **inlined in `<head>`** — zero external stylesheet requests.
 | `critical.css` | `wp_head` | 1 | `file_get_contents` → inline `<style>` |
 | `main.css` | `wp_head` | 2 | `file_get_contents` → inline `<style>` |
 | `engagement.css` | `wp_head` | 99 | `<link rel="preload" onload>` (deferred) |
+| `homepage-emerald.css` | `wp_head` | 3 | `file_get_contents` → inline `<style>` (emerald homepage only) |
 
 ### Critical CSS Rules
 - **Must stay under 3KB** — layout-only properties
@@ -590,6 +597,12 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Emerald Editorial Homepage (Feb 26, 2026)
+- **feat: Emerald Editorial homepage for inspireinlet.com** — Domain-based routing via `pl_resolve_homepage_template()`: inspireinlet→emerald, pulsepathlife→coral, cheerlives→default. Customizer override `pl_homepage_template` (auto/default/emerald/coral). `template_include` filter at priority 99.
+- **template-emerald-editorial.php** — Self-contained 7-section layout: hero (sticky post preferred, eager+fetchpriority), trending sidebar (4 posts by comment_count), category circles (transient-cached), latest grid (6 posts), newsletter CTA (inline JS, `/pl/v1/subscribe` endpoint), most loved (8 posts), footer. Post deduplication via accumulating `$shown_ids` across 4 WP_Query instances. All queries use `no_found_rows => true`.
+- **assets/css/homepage-emerald.css** — Playfair Display headings (font-display:swap from gstatic), emerald/gold palette (CSS custom properties), responsive breakpoints at 1200/768/480px. Inlined at wp_head priority 3 by `pl_emerald_critical_css()`.
+- **inc/homepage-templates.php** — Router, Customizer setting, CSS inliner, `pl_get_category_circles()` with 1hr transient cache.
 
 ### Multi-Site Deployment (Feb 26, 2026)
 - **feat: make ad slot path and video config dynamic** — `SLOT_PATH` in initial-ads.js and smart-ads.js now reads from `plAds.slotPrefix` (falls back to hardcoded default). Video player `C_WEBSITE` uses `window.location.hostname`, `C_NETWORK_CODE` reads from `plAds.networkCode`. CDN proxy (`cdn/img.php`) allowlists all 3 domains.
