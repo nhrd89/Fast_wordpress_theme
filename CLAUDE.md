@@ -270,7 +270,9 @@ Two-layer client-side ad system, both loaded post-`window.load` (invisible to Li
 - Retry logic already had this pattern, but initial render was missing it
 
 **Ad Relocation (`relocateFilledAd()`):**
-- When GPT responds with a fill after user has scrolled 500+ px past the ad, relocates it
+- When GPT responds with a fill after user has scrolled 200+ px past the ad, relocates it
+- **Immediate check** in `onDynamicSlotRenderEnded`: if ad is >200px outside viewport, relocate now
+- **Delayed recheck** (2s): if ad filled near-viewport but user scrolled past before viewable, relocate
 - Moves the existing DOM element (keeps GPT iframe alive) to a paragraph near viewport center
 - Guards: only once per ad (`rec.relocated`), respects `MIN_PIXEL_SPACING` + Layer 1 exclusion zones
 - Does NOT relocate if user is scrolling toward the ad (it'll come into view naturally)
@@ -574,14 +576,15 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
-### Bug Fixes — Event Pipeline + Interstitial (Feb 26, 2026)
+### Bug Fixes — Event Pipeline + Interstitial + Relocation (Feb 26, 2026)
 - **Fix: event tracking pipeline — force v5 migration, defensive INSERT** — `pl_ad_ensure_tables()` early-exit checked for version '4' but v5 migration was added after. Existing v4 installs returned early, ALTER TABLE for `gpt_response_ms` + `relocated` never ran, every `$wpdb->insert()` failed (0 events stored). Fix: early-exit now checks '5', on-demand migration in event handler with static guard, defensive INSERT fallback without v5 columns.
 - **Fix: Layer 1 interstitial — prevent exit-intent from destroying pending slot** — `tryExitInterstitial()` unconditionally destroyed the Layer 1 interstitial before GPT could show it (interstitials show at GPT's discretion, not immediately). Fix: check `__plOverlayStatus.interstitial` — if 'pending', refresh() existing slot to nudge GPT; if already showed/failed, destroy and create new exit slot.
+- **Fix: lower relocation threshold to 200px, add 2s delayed recheck** — Relocation showed 0 despite 47% of filled ads not being viewable. Root cause: 500px threshold too conservative — ads 200-499px outside viewport weren't relocated. Fix: threshold 500→200px, added 2s delayed recheck (if ad filled near viewport but user scrolled past, relocate after 2s), added detailed console.log throughout relocation pipeline for diagnostics.
 
 ### Round 4 — Fill Rate + Response Tracking (Feb 26, 2026)
 - **10s patient GPT timeout** — Replaced aggressive 3s `showHouseAd()` timeout with patient 10s collapse-only timeout. Real empties handled by `slotRenderEnded` (house ad on isEmpty:true). 10s catches truly stuck GPT, avoids killing ads that would fill in 4-5s.
 - **Explicit refresh() after display()** — Added `googletag.pubads().refresh([slot])` after `googletag.display()` in `renderSlot()`. Required for SRA mode — post-initial slots need explicit refresh for reliable fill.
-- **Ad relocation** — `relocateFilledAd()` moves DOM element (keeps GPT iframe alive) when user has scrolled 500+ px past a filled ad. Respects spacing rules + Layer 1 exclusion zones. Tracked in beacon/heartbeat.
+- **Ad relocation** — `relocateFilledAd()` moves DOM element (keeps GPT iframe alive) when user has scrolled 200+ px past a filled ad. Immediate check on GPT fill + 2s delayed recheck for near-viewport fills. Respects spacing rules + Layer 1 exclusion zones. Tracked in beacon/heartbeat.
 - **GPT response time tracking** — `renderRequestedAt` timestamp in `renderSlot()`, `gptResponseMs` calculated in `slotRenderEnded`. Stored in `pl_ad_events` table (v5 migration: `gpt_response_ms`, `relocated` columns). Injection Lab: response time bracket table + relocation stats table. Live Sessions: GPT ms + Relocated columns in Ad Detail.
 - **Event tracking pipeline update** — `trackAdEvent()` in initial-ads.js: new short keys `grm` (GPT response ms) and `rel` (relocated). ad-data-recorder.php: v4→v5 migration for new columns. Beacon/heartbeat zones: `gptResponseMs`, `relocated`, `relocatedFromY`, `relocatedToY` fields.
 
