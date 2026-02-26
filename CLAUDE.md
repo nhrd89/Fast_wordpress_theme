@@ -63,6 +63,7 @@ Fast_wordpress_theme/
 │   │   ├── main.css        # Inlined in <head> at wp_head p2 (~2.7KB gzipped, visual styles)
 │   │   ├── engagement.css  # Non-critical, loaded via preload onload trick (deferred)
 │   │   ├── homepage-emerald.css # Emerald Editorial homepage (inlined at wp_head p3)
+│   │   ├── homepage-coral.css # Coral Breeze homepage (inlined at wp_head p3)
 │   │   └── dist/           # Build output (gitignored — production falls back to source)
 │   ├── js/
 │   │   ├── core.js         # Minimal theme script (hamburger menu, etc.)
@@ -106,6 +107,7 @@ Fast_wordpress_theme/
 │                              # category circles cache, Customizer template setting
 │
 ├── template-emerald-editorial.php # Emerald Editorial homepage (inspireinlet.com)
+├── template-coral-breeze.php # Coral Breeze homepage (pulsepathlife.com)
 │
 ├── template-parts/
 │   └── content-card.php    # Reusable card component for grids
@@ -475,6 +477,7 @@ All CSS is **inlined in `<head>`** — zero external stylesheet requests.
 | `main.css` | `wp_head` | 2 | `file_get_contents` → inline `<style>` |
 | `engagement.css` | `wp_head` | 99 | `<link rel="preload" onload>` (deferred) |
 | `homepage-emerald.css` | `wp_head` | 3 | `file_get_contents` → inline `<style>` (emerald homepage only) |
+| `homepage-coral.css` | `wp_head` | 3 | `file_get_contents` → inline `<style>` (coral homepage only) |
 
 ### Critical CSS Rules
 - **Must stay under 3KB** — layout-only properties
@@ -597,6 +600,12 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Coral Breeze Homepage (Feb 26, 2026)
+- **feat: Coral Breeze homepage for pulsepathlife.com** — 9-section layout: sticky white header, twin hero cards (2-col, diverse categories), category pills (top 8, coral outline), trending now (6 posts, 3-col, per-category diversity), category spotlight (navy strip, top category featured image + 3 posts), latest stories (8 posts, 4-col, per-category diversity), load more (REST API inline JS), newsletter (`/pl/v1/subscribe`), shared footer via `get_footer()` with coral/navy CSS overrides.
+- **template-coral-breeze.php** — Per-category round-robin queries for hero, trending, latest. Category spotlight uses top category by count. `$shown_ids` accumulates across all sections into Load More `data-exclude`. All WP_Query use `no_found_rows => true`. CSS prefix: `cb-`.
+- **assets/css/homepage-coral.css** — Playfair Display headings (font-display:swap), coral/navy palette (CSS custom properties), responsive 1200/768/480px breakpoints. Inlined at wp_head priority 3 by `pl_coral_critical_css()`.
+- **inc/homepage-templates.php** — Added `pl_coral_critical_css()` inliner. Domain routing and template_include already wired from initial build.
 
 ### Emerald Editorial Homepage (Feb 26, 2026)
 - **feat: Emerald Editorial homepage for inspireinlet.com** — Domain-based routing via `pl_resolve_homepage_template()`: inspireinlet→emerald, pulsepathlife→coral, cheerlives→default. Customizer override `pl_homepage_template` (auto/default/emerald/coral). `template_include` filter at priority 99.
