@@ -69,6 +69,7 @@ Fast_wordpress_theme/
 │   │   ├── core.js         # Minimal theme script (hamburger menu, etc.)
 │   │   ├── initial-ads.js  # Layer 1: GPT setup, initial viewport slots, overlay refresh
 │   │   ├── smart-ads.js    # Layer 2: Dynamic predictive injection engine
+│   │   ├── page-ads.js     # Page ad system: viewport-aware injection for non-post pages
 │   │   ├── engagement.js   # Engagement IIFE: observers, counters, milestones, polls
 │   │   ├── scroll-engage.js # Gamified character system + header stats reveal
 │   │   ├── infinite-scroll.js # Next-post auto-loader (IO at 70% read, max 3 posts)
@@ -103,8 +104,10 @@ Fast_wordpress_theme/
 │   ├── ai-chat.php         # AI chat integration
 │   ├── visitor-tracker.php # Visitor tracking server-side handler
 │   ├── contact-messages.php # Contact form message handling
-│   └── homepage-templates.php # Multi-site homepage routing, emerald CSS inliner,
-│                              # category circles cache, Customizer template setting
+│   ├── homepage-templates.php # Multi-site homepage routing, emerald CSS inliner,
+│   │                          # category circles cache, Customizer template setting
+│   ├── page-ad-engine.php  # Page ad settings, admin tab, enqueue, config, archive/page hooks
+│   └── page-ad-recorder.php # Page ad REST endpoints (impression/viewable/click tracking)
 │
 ├── template-emerald-editorial.php # Emerald Editorial homepage (inspireinlet.com)
 ├── template-coral-breeze.php # Coral Breeze homepage (pulsepathlife.com)
@@ -139,6 +142,8 @@ inc/engagement-config.php
 inc/engagement-breaks.php
 inc/engagement-customizer.php
 inc/homepage-templates.php
+inc/page-ad-engine.php
+inc/page-ad-recorder.php
 ```
 
 ---
@@ -146,12 +151,54 @@ inc/homepage-templates.php
 ## 3. Ad System Architecture
 
 ### Overview
-Two-layer client-side ad system, both loaded post-`window.load` (invisible to Lighthouse):
+Two separate ad systems, completely isolated:
+
+**Post Ads** (single posts only — `is_single()`):
 
 | Layer | File | Boot Trigger | Purpose |
 |-------|------|-------------|---------|
 | Layer 1 | `initial-ads.js` | window.load + 100ms | GPT setup, static slots, overlays, refresh |
 | Layer 2 | `smart-ads.js` | First user interaction (scroll/click/touch) | Dynamic below-fold injection |
+
+**Page Ads** (non-post pages — `!is_single()`):
+
+| Layer | File | Boot Trigger | Purpose |
+|-------|------|-------------|---------|
+| Page Ads | `page-ads.js` | window.load + DOMContentLoaded | Viewport-aware injection for homepages, category, static pages |
+
+### Page Ad System Isolation
+| Aspect | Post Ads | Page Ads |
+|--------|----------|----------|
+| PHP guard | `is_single()` | `!is_single()` |
+| JS guard | N/A | bail if `.single-post` or `window.plAds` |
+| Global | `window.plAds` | `window.plPageAds` |
+| CSS class | `.pl-initial-ad`, `.pl-dynamic-ad` | `.pl-page-ad-slot`, `.pl-page-ad-anchor` |
+| GPT ID prefix | `initial-ad-`, `smart-ad-` | `pl-page-ad-` |
+| Slot name | `{site}_{format}` | `{site}_pg_{format}` |
+| REST endpoint | `/pinlightning/v1/ad-data` | `/pl/v1/page-ad-event` |
+| Settings key | `pl_ad_settings` | `pl_page_ad_settings` |
+| Admin tab | Global Controls / Ad Codes | Page Ads |
+
+### Page Ads — Architecture (`page-ads.js`)
+
+**Two-phase injection:**
+- **Phase 1** (DOMContentLoaded): Above-fold `.pl-page-ad-anchor` divs rendered immediately
+- **Phase 2** (scroll): Below-fold anchors rendered via IntersectionObserver (600px rootMargin lookahead)
+
+**Anchor placement:**
+- Homepage templates: 3 anchors between sections (hero→categories, categories→latest, latest→newsletter)
+- Category archives: auto-injected via `the_post` hook every Nth post (configurable, default 4)
+- Static pages: auto-injected via `the_content` filter, evenly spaced between paragraphs
+
+**Spacing:** 600px desktop, 400px mobile (enforced at runtime)
+
+**Dummy mode:** Colored placeholder boxes with gradient + dashed border + size label. Enabled by default for safe testing.
+
+**Settings:** Separate `pl_page_ad_settings` option with per-page-type toggles, slot limits, format toggles, spacing config.
+
+**Viewability:** IntersectionObserver with 50% threshold + 1s dwell → "viewable" event. Beacon on page hide via `navigator.sendBeacon`.
+
+**Analytics:** `/pl/v1/page-ad-event` REST endpoint → `wp_option` storage keyed by date/domain/page-type. 30-day retention.
 
 ### Layer 1 — Initial Viewport Ads (`initial-ads.js`)
 
@@ -567,6 +614,8 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 | GET | `/pl/v1/unsubscribe` | `email-leads.php` | Email unsubscribe |
 | GET | `/pl/v1/home-posts` | `functions.php` | Homepage load more |
 | GET | `/pl/v1/category-posts` | `functions.php` | Category page load more |
+| POST | `/pl/v1/page-ad-event` | `page-ad-recorder.php` | Page ad impression/viewable/click tracking |
+| GET | `/pl/v1/page-ad-stats` | `page-ad-recorder.php` | Page ad aggregate stats (admin-only) |
 
 ---
 
@@ -600,6 +649,15 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Page Ad System (Feb 26, 2026)
+- **feat: separate page ad system for non-post pages** — Completely isolated ad system for homepages, category archives, and static pages. Zero overlap with post ads (smart-ads.js / initial-ads.js).
+- **inc/page-ad-engine.php** — Settings (`pl_page_ad_settings` option), "Page Ads" admin tab in Ad Engine, enqueue with `!is_single()` guard, `plPageAds` config output, category archive injection via `the_post` hook (every Nth post), static page injection via `the_content` filter (priority 50).
+- **inc/page-ad-recorder.php** — POST `/pl/v1/page-ad-event` (impression/viewable/click/empty/filled), GET `/pl/v1/page-ad-stats` (admin-only). Storage in `wp_option` keyed by date/domain/page-type, 30-day retention.
+- **assets/js/page-ads.js** — IIFE with runtime bail-out (`document.querySelector('.single-post') || window.plAds`). Two-phase injection: Phase 1 (above-fold immediate), Phase 2 (IO with 600px rootMargin). Responsive sizing (desktop multi-size, mobile 300x250 only). Dummy mode with colored placeholders. Viewability tracking (IO 50% threshold + 1s dwell). Beacon on page hide. GPT slot names use `_pg_` infix.
+- **inc/ad-engine.php** — Added `is_single()` guard to `pinlightning_ads_enqueue()` (post ads skip non-single pages). Added "Page Ads" tab link in admin nav.
+- **Homepage templates** — Added 3 `.pl-page-ad-anchor` divs each to `front-page.php`, `template-emerald-editorial.php`, `template-coral-breeze.php` (between sections).
+- **functions.php** — Added `require_once` for `page-ad-engine.php` and `page-ad-recorder.php`.
 
 ### Coral Breeze Homepage (Feb 26, 2026)
 - **feat: Coral Breeze homepage for pulsepathlife.com** — 9-section layout: sticky white header, twin hero cards (2-col, diverse categories), category pills (top 8, coral outline), trending now (6 posts, 3-col, per-category diversity), category spotlight (navy strip, top category featured image + 3 posts), latest stories (8 posts, 4-col, per-category diversity), load more (REST API inline JS), newsletter (`/pl/v1/subscribe`), shared footer via `get_footer()` with coral/navy CSS overrides.
@@ -709,6 +767,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Next-post auto-load (IO trigger at 70% read, max 3 posts, smart-ads rescan)
 - Exit-intent interstitial (fires GPT interstitial on tab switch/mouse-leave/beforeunload)
 - Image tap tracker (click tracking on post images, stored in session data)
+- Page ad system for non-post pages (homepage, category, static) — fully isolated from post ads
 - PageSpeed scores maintained at 100/100/100/100
 
 ### Monitoring (check after 24-48 hours)

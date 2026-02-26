@@ -269,6 +269,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 	</aside>
 </section>
 
+<!-- Page Ad Anchor: between hero and categories -->
+<div class="pl-page-ad-anchor" data-slot="homepage-1"></div>
+
 <!-- ====== SECTION 3: CATEGORY CIRCLES ====== -->
 <?php if ( ! empty( $cat_circles ) ) : ?>
 <section class="ee-categories-strip">
@@ -288,6 +291,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 	</div>
 </section>
 <?php endif; ?>
+
+<!-- Page Ad Anchor: between categories and latest -->
+<div class="pl-page-ad-anchor" data-slot="homepage-2"></div>
 
 <!-- ====== SECTION 4: LATEST POSTS ====== -->
 <section class="ee-latest">
@@ -328,6 +334,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 		</button>
 	</div>
 </section>
+
+<!-- Page Ad Anchor: between latest and newsletter -->
+<div class="pl-page-ad-anchor" data-slot="homepage-3"></div>
 
 <!-- ====== SECTION 5: NEWSLETTER BANNER ====== -->
 <section class="ee-newsletter">

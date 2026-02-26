@@ -223,6 +223,9 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 	</section>
 	<?php endif; ?>
 
+	<!-- Page Ad Anchor: between Liv strip and category pills -->
+	<div class="pl-page-ad-anchor" data-slot="homepage-1"></div>
+
 	<?php if ( $pl_cats_show ) : ?>
 	<!-- ========== CATEGORY PILLS ========== -->
 	<section class="pl-container">
@@ -322,6 +325,9 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 		<?php endif; ?>
 	</section>
 
+	<!-- Page Ad Anchor: between post grid and explore -->
+	<div class="pl-page-ad-anchor" data-slot="homepage-2"></div>
+
 	<?php if ( $pl_explore_show ) : ?>
 	<!-- ========== EXPLORE BY CATEGORY ========== -->
 	<section class="pl-container">
@@ -343,6 +349,9 @@ $grid_posts = pl_get_smart_grid_posts( $pl_grid_count, $hero_ids );
 		</div>
 	</section>
 	<?php endif; ?>
+
+	<!-- Page Ad Anchor: between explore and newsletter -->
+	<div class="pl-page-ad-anchor" data-slot="homepage-3"></div>
 
 	<?php if ( $pl_newsletter_show ) : ?>
 	<!-- ========== NEWSLETTER ========== -->

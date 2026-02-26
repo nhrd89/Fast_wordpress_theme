@@ -322,6 +322,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 	<?php endforeach; ?>
 </section>
 
+<!-- Page Ad Anchor: between hero and category pills -->
+<div class="pl-page-ad-anchor" data-slot="homepage-1"></div>
+
 <!-- ====== SECTION 3: CATEGORY PILLS ====== -->
 <?php if ( ! empty( $cat_pills ) ) : ?>
 <section class="cb-cat-pills-section">
@@ -371,6 +374,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 </section>
 <?php endif; ?>
 
+<!-- Page Ad Anchor: between trending and spotlight -->
+<div class="pl-page-ad-anchor" data-slot="homepage-2"></div>
+
 <!-- ====== SECTION 5: CATEGORY SPOTLIGHT ====== -->
 <?php if ( $spotlight_cat && ! empty( $spotlight_posts ) ) :
 	$spot_featured = $spotlight_posts[0];
@@ -402,6 +408,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 	</div>
 </section>
 <?php endif; ?>
+
+<!-- Page Ad Anchor: between spotlight and latest -->
+<div class="pl-page-ad-anchor" data-slot="homepage-3"></div>
 
 <!-- ====== SECTION 6: LATEST STORIES ====== -->
 <?php if ( ! empty( $latest_posts ) ) : ?>

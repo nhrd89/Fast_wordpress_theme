@@ -956,6 +956,10 @@ require_once PINLIGHTNING_DIR . '/inc/engagement-customizer.php';
 // Homepage template routing (multi-site).
 require_once PINLIGHTNING_DIR . '/inc/homepage-templates.php';
 
+// Page ad system (non-post pages: homepage, category, static pages).
+require_once PINLIGHTNING_DIR . '/inc/page-ad-engine.php';
+require_once PINLIGHTNING_DIR . '/inc/page-ad-recorder.php';
+
 // Auto-assign contact template to the contact page (run once).
 add_action( 'init', function() {
 	if ( get_option( 'pl_contact_template_set' ) ) return;

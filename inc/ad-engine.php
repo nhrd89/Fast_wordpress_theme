@@ -339,11 +339,14 @@ function pl_ad_settings_page() {
 		<nav class="nav-tab-wrapper">
 			<a href="?page=pl-ad-engine&tab=global" class="nav-tab <?php echo 'global' === $tab ? 'nav-tab-active' : ''; ?>">Global Controls</a>
 			<a href="?page=pl-ad-engine&tab=codes" class="nav-tab <?php echo 'codes' === $tab ? 'nav-tab-active' : ''; ?>">Ad Codes</a>
+			<a href="?page=pl-ad-engine&tab=pageads" class="nav-tab <?php echo 'pageads' === $tab ? 'nav-tab-active' : ''; ?>">Page Ads</a>
 			<a href="?page=pl-ad-engine&tab=adstxt" class="nav-tab <?php echo 'adstxt' === $tab ? 'nav-tab-active' : ''; ?>">ads.txt</a>
 		</nav>
 
 		<?php if ( 'adstxt' === $tab ) : ?>
 			<?php pl_ad_render_ads_txt_tab(); ?>
+		<?php elseif ( 'pageads' === $tab ) : ?>
+			<?php if ( function_exists( 'pl_page_ad_render_tab' ) ) { pl_page_ad_render_tab(); } ?>
 		<?php else : ?>
 			<form method="post" action="options.php">
 				<?php settings_fields( 'pl_ad_settings_group' ); ?>
@@ -929,6 +932,11 @@ function pinlightning_ad_zone( $zone_id, $mobile_size = '300x250', $desktop_size
  * The plAds global must be available before the script executes.
  */
 function pinlightning_ads_enqueue() {
+	// Post ads run on single posts ONLY. Page ads (page-ad-engine.php) handle non-post pages.
+	if ( ! is_single() ) {
+		return;
+	}
+
 	$s = pl_ad_settings();
 
 	if ( ! $s['enabled'] ) {
