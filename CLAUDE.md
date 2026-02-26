@@ -106,10 +106,8 @@ Fast_wordpress_theme/
 │   └── content-card.php    # Reusable card component for grids
 │
 ├── .github/workflows/
-│   ├── deploy.yml                # cheerlives.com deploy + PageSpeed
-│   ├── deploy-inspireinlet.yml   # inspireinlet.com deploy + PageSpeed
-│   ├── deploy-pulsepathlife.yml  # pulsepathlife.com deploy + PageSpeed
-│   └── wp-audit.yml              # WordPress audit checks
+│   ├── deploy.yml          # All 3 sites deploy (parallel jobs) + PageSpeed
+│   └── wp-audit.yml        # WordPress audit checks
 │
 └── scripts/
     └── perf-check.sh       # Performance budget enforcement
@@ -387,14 +385,14 @@ Gated behind `pl_ad_settings()['enabled']` check.
 
 ## 5. Deployment Pipeline
 
-### Multi-Site Deploy (3 parallel workflows)
-One push deploys to all 3 sites simultaneously via separate workflow files:
+### Multi-Site Deploy (3 parallel jobs in `deploy.yml`)
+One push triggers a single workflow with 3 parallel jobs (no `needs:` dependency):
 
-| Workflow | File | Secrets Suffix |
-|----------|------|----------------|
-| cheerlives.com | `deploy.yml` | `_CHEERLIVES` |
-| inspireinlet.com | `deploy-inspireinlet.yml` | `_INSPIREINLET` |
-| pulsepathlife.com | `deploy-pulsepathlife.yml` | `_PULSEPATHLIFE` |
+| Job | Site | Secrets Suffix |
+|-----|------|----------------|
+| `deploy` | cheerlives.com | `_CHEERLIVES` |
+| `deploy-inspireinlet` | inspireinlet.com | `_INSPIREINLET` |
+| `deploy-pulsepathlife` | pulsepathlife.com | `_PULSEPATHLIFE` |
 
 - **Triggers:** push to `main` or `claude/setup-pinlightning-theme-5lwUG`
 - **Build:** `npm install` → `npm run build` (lightningcss + terser)
@@ -595,7 +593,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Multi-Site Deployment (Feb 26, 2026)
 - **feat: make ad slot path and video config dynamic** — `SLOT_PATH` in initial-ads.js and smart-ads.js now reads from `plAds.slotPrefix` (falls back to hardcoded default). Video player `C_WEBSITE` uses `window.location.hostname`, `C_NETWORK_CODE` reads from `plAds.networkCode`. CDN proxy (`cdn/img.php`) allowlists all 3 domains.
-- **ci: deploy workflows for inspireinlet.com and pulsepathlife.com** — Separate GitHub Actions workflows (`deploy-inspireinlet.yml`, `deploy-pulsepathlife.yml`) trigger on same branches as cheerlives. All 3 deploy in parallel on push.
+- **ci: deploy to all 3 sites as parallel jobs** — Added `deploy-inspireinlet` and `deploy-pulsepathlife` jobs to `deploy.yml` (parallel, no `needs:`). Each job: checkout, build, rsync, cache flush, plugin list. PageSpeed + perf-check remain cheerlives-only for now. Separate workflow files don't trigger from non-default branches, so all jobs are in one workflow.
 - **GA4 already configurable** — `pl_ga4_measurement_id` via Customizer. InMobi CMP already dynamic via `window.location.hostname`. Ad.Plus network settings already in ad-engine.php settings page.
 
 ### Engagement UI Fix (Feb 26, 2026)
