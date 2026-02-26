@@ -202,7 +202,8 @@
 
 		// Read format from data attribute or determine by position index.
 		// Category pages: always rectangle regardless of data-format.
-		var fmt = PAGE_TYPE === 'category' ? 'rectangle' : (anchorEl.getAttribute('data-format') || getFormatForPosition( inlineSlotCount() ));
+		var isCatCard = PAGE_TYPE === 'category';
+		var fmt = isCatCard ? 'rectangle' : (anchorEl.getAttribute('data-format') || getFormatForPosition( inlineSlotCount() ));
 		var sizes = getSizesForFormat( fmt );
 		var primarySize = sizes[0];
 
@@ -210,7 +211,8 @@
 		var anchorY = anchorRect.top + window.pageYOffset;
 
 		// Homepage: skip spacing check (fixed positions).
-		if ( PAGE_TYPE !== 'homepage' && !checkSpacing( anchorY ) ) {
+		// Category: skip spacing check (positions predefined in PHP).
+		if ( PAGE_TYPE !== 'homepage' && !isCatCard && !checkSpacing( anchorY ) ) {
 			log('Spacing violation at Y:', anchorY);
 			return;
 		}
@@ -222,7 +224,14 @@
 		var container = document.createElement('div');
 		container.className = 'pl-page-ad-slot';
 		container.id = divId;
-		container.style.cssText = 'min-height:' + primarySize[1] + 'px;display:flex;align-items:center;justify-content:center;margin:20px auto;max-width:' + primarySize[0] + 'px;';
+
+		// Category card mode: render inside .pl-cat-ad-card without forced sizing.
+		// The parent card handles dimensions, border-radius, shadow, break-inside.
+		if ( isCatCard ) {
+			container.style.cssText = 'width:100%;display:flex;align-items:center;justify-content:center;';
+		} else {
+			container.style.cssText = 'min-height:' + primarySize[1] + 'px;display:flex;align-items:center;justify-content:center;margin:20px auto;max-width:' + primarySize[0] + 'px;';
+		}
 
 		var record = {
 			divId: divId,
@@ -244,11 +253,19 @@
 		if ( DUMMY ) {
 			var colors = { leaderboard: ['#d5e8f5','#b3d1ef','#2980b9'], rectangle: ['#e8d5f5','#d1b3ef','#7b3fa0'], banner: ['#d5f5e8','#b3efcd','#27ae60'] };
 			var c = colors[fmt] || colors.rectangle;
-			container.style.cssText = 'width:' + primarySize[0] + 'px;height:' + primarySize[1] + 'px;'
-				+ 'background:linear-gradient(135deg,' + c[0] + ',' + c[1] + ');'
-				+ 'border:2px dashed ' + c[2] + ';border-radius:8px;'
-				+ 'display:flex;align-items:center;justify-content:center;'
-				+ 'font:600 13px/1 system-ui;color:' + c[2] + ';margin:20px auto;';
+			if ( isCatCard ) {
+				// Category dummy: fill the card naturally, no forced px width.
+				container.style.cssText = 'width:100%;min-height:250px;'
+					+ 'background:linear-gradient(135deg,' + c[0] + ',' + c[1] + ');'
+					+ 'display:flex;align-items:center;justify-content:center;'
+					+ 'font:600 13px/1 system-ui;color:' + c[2] + ';';
+			} else {
+				container.style.cssText = 'width:' + primarySize[0] + 'px;height:' + primarySize[1] + 'px;'
+					+ 'background:linear-gradient(135deg,' + c[0] + ',' + c[1] + ');'
+					+ 'border:2px dashed ' + c[2] + ';border-radius:8px;'
+					+ 'display:flex;align-items:center;justify-content:center;'
+					+ 'font:600 13px/1 system-ui;color:' + c[2] + ';margin:20px auto;';
+			}
 			container.textContent = fmt.charAt(0).toUpperCase() + fmt.slice(1) + ' (' + primarySize[0] + 'x' + primarySize[1] + ')';
 			record.filled = true;
 			record.renderedSize = primarySize[0] + 'x' + primarySize[1];

@@ -194,7 +194,7 @@ Two separate ad systems, completely isolated:
 
 **Anchor placement:**
 - Homepage templates: 3 anchors with `data-format` attrs (leaderboard→rectangle→leaderboard)
-- Category archives: rectangle ads ONLY — first anchor before post grid, then every 3 posts inside the grid. Injected directly in category.php's custom foreach loop (NOT via `the_post`/`loop_start` hooks — category.php uses `pl_get_category_posts()` custom query, not standard WP loop). Load-more JS also injects ad anchors every 3 new posts + calls `__plPageAds.rescan()`. CSS `column-span: all` for full-width ads in CSS columns layout.
+- Category archives: rectangle ads as **grid cards** — ads occupy one cell like a post card (`.pl-cat-ad-card` matches `.pl-cat-card` exactly: border-radius, shadow, break-inside). Predefined positions `[1, 6, 11, 16, 22, 27, 32, 38, 43, 48]` with varied spacing (5,5,5,6,5,5,6,5,5). PHP while loop interleaves posts and ads at predetermined indices. No "Advertisement" label. Injected directly in category.php (NOT via `the_post`/`loop_start` hooks — uses `pl_get_category_posts()` custom query). page-ads.js renders inside card without forced sizing (no max-width/margin wrapper). Load-more JS uses `AD_PATTERN=[5,5,5,6,5,5,6,5,5]` countdown pattern + `__plPageAds.rescan()`.
 - Static pages: auto-injected via `the_content` filter, evenly spaced between paragraphs
 
 **Spacing:** 300px desktop, 250px mobile for category; 600px desktop, 400px mobile for homepage/static (enforced at runtime)
@@ -667,11 +667,13 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
-### Category Page Ad Fix + Rectangle-Only (Feb 26, 2026)
-- **fix: category page ad injection** — category.php uses a custom `foreach` loop with `pl_get_category_posts()`, NOT a standard WordPress loop. The `loop_start`/`the_post` hooks in page-ad-engine.php never fired. Fixed by injecting ad anchors directly into category.php's foreach loop. Ad anchor before the grid + after every 3rd post card. Load-more JS also injects ad anchors every 3 new posts and calls `__plPageAds.rescan()`.
-- **Category ads: rectangle only** — All category ads now use rectangle format (300x250 / 336x280) exclusively. No leaderboards, no banners. Triple-enforced: (1) PHP anchors all have `data-format="rectangle"`, (2) page-ads.js forces `fmt = 'rectangle'` for category pages regardless of data-format attr, (3) `getSizesForFormat()` returns `CAT_SIZES` (300x250 + 336x280) for category pages.
-- **CSS `column-span: all`** — Category grid uses CSS `columns:3 300px`. Ad anchors inside the grid use `column-span: all; -webkit-column-span: all` to span full width across all columns.
-- **MutationObserver + rescan** — MutationObserver watches `.pl-cat-grid` for new children. Load-more JS calls `__plPageAds.rescan()` after appending to trigger IO observation of new anchors.
+### Category Ads as Grid Cards (Feb 26, 2026)
+- **feat: category ads as grid cards at varying natural positions** — Ads occupy ONE cell like a post card (not full-width column-spanning). `.pl-cat-ad-card` matches `.pl-cat-card` exactly: `break-inside:avoid`, `border-radius:16px`, `box-shadow`, `background:#fff`, `margin-bottom:18px`. No "Advertisement" label.
+- **Predefined positions** — `$pa_positions = [1, 6, 11, 16, 22, 27, 32, 38, 43, 48]` with varied spacing (5,5,5,6,5,5,6,5,5) for natural feel. PHP while loop interleaves posts and ads: `$pa_item_idx++`, if index in `$pa_positions` → output ad card, else → output post card and increment `$pa_post_idx`.
+- **page-ads.js card mode** — `renderSlot()` detects `isCatCard` (`PAGE_TYPE === 'category'`): skips spacing check (positions predefined in PHP), renders container with `width:100%` instead of forced `max-width`/`margin`, dummy mode fills card naturally (no fixed pixel dimensions or dashed border).
+- **Load-more JS** — Uses `AD_PATTERN=[5,5,5,6,5,5,6,5,5]` countdown pattern. Continues `adIdx` from PHP `$pa_ad_idx`. Each post card decrements countdown; at zero, injects `.pl-cat-ad-card.pl-page-ad-anchor` + calls `__plPageAds.rescan()`. Pattern index wraps cyclically.
+- **Category ads: rectangle only** — Triple-enforced: (1) PHP anchors `data-format="rectangle"`, (2) page-ads.js forces `fmt='rectangle'` for category, (3) `getSizesForFormat()` returns `CAT_SIZES` (300x250 + 336x280).
+- **MutationObserver + rescan** — MutationObserver watches `.pl-cat-grid` for new children. Load-more JS calls `__plPageAds.rescan()` after appending.
 
 ### Page Ad System Enhancement (Feb 26, 2026)
 - **feat: anchor/interstitial ads, 3-position homepage, aggressive category ads, stats dashboard**

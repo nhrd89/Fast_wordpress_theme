@@ -85,8 +85,8 @@ $has_more   = $posts_data['has_more'];
 	.pl-cat-empty .icon{font-size:48px;margin-bottom:12px}
 	.pl-cat-empty h2{font-size:20px;color:#666;margin:0 0 8px}
 
-	/* Page Ad Anchors (column-spanning) */
-	.pl-page-ad-anchor[data-slot^="cat-"]{break-inside:avoid;column-span:all;-webkit-column-span:all;width:100%;display:flex;justify-content:center;margin:12px 0}
+	/* Ad card — matches post card exactly */
+	.pl-cat-ad-card{break-inside:avoid;margin-bottom:18px;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.04);display:flex;align-items:center;justify-content:center;min-height:280px}
 
 	/* Responsive */
 	@media(max-width:900px){.pl-cat-grid{columns:2}.pl-cat-header{flex-direction:column;align-items:flex-start}}
@@ -121,27 +121,33 @@ $has_more   = $posts_data['has_more'];
 
 		<!-- Post Grid -->
 		<?php if ( ! empty( $cat_posts ) ) :
-			// Page ad injection: rectangle ads every 3 posts.
+			// Ad positions: predefined item indices where ads appear (1-based).
+			// Spacing varies: 5,5,5,6,5,5,6,5,5 — slightly irregular for natural feel.
 			$pa_s = function_exists( 'pl_page_ad_settings' ) ? pl_page_ad_settings() : array();
 			$pa_enabled = ! empty( $pa_s['enabled'] ) && ! empty( $pa_s['category_enabled'] );
-			$pa_every_n = isset( $pa_s['category_every_n'] ) ? max( 2, (int) $pa_s['category_every_n'] ) : 3;
-			$pa_count   = 0;
-			$pa_inject  = 0;
+			$pa_positions = array( 1, 6, 11, 16, 22, 27, 32, 38, 43, 48 );
+			$pa_item_idx  = 0;
+			$pa_post_idx  = 0;
+			$pa_ad_idx    = 0;
+			$pa_total     = count( $cat_posts );
 		?>
 
-		<?php if ( $pa_enabled ) : $pa_inject++; ?>
-		<div class="pl-page-ad-anchor" data-slot="cat-<?php echo $pa_inject; ?>" data-format="rectangle"></div>
-		<?php endif; ?>
-
 		<div class="pl-cat-grid" id="plCatGrid">
-			<?php foreach ( $cat_posts as $post ) :
+			<?php while ( $pa_post_idx < $pa_total ) :
+				$pa_item_idx++;
+
+				if ( $pa_enabled && in_array( $pa_item_idx, $pa_positions, true ) ) :
+					$pa_ad_idx++;
+			?>
+			<div class="pl-cat-ad-card pl-page-ad-anchor" data-slot="cat-<?php echo $pa_ad_idx; ?>" data-format="rectangle"></div>
+			<?php else :
+				$post = $cat_posts[ $pa_post_idx ];
 				setup_postdata( $post );
 				$pid       = $post->ID;
 				$thumb_id  = get_post_thumbnail_id( $pid );
 				$permalink = get_permalink( $pid );
 				$title     = get_the_title( $pid );
 
-				// Get image with srcset for responsive loading.
 				$img_full   = '';
 				$img_srcset = '';
 				if ( $thumb_id ) {
@@ -150,15 +156,12 @@ $has_more   = $posts_data['has_more'];
 					$img_srcset = wp_get_attachment_image_srcset( $thumb_id, 'medium_large' );
 				}
 
-				// Read time estimate.
 				$content   = get_the_content( null, false, $pid );
 				$words     = str_word_count( strip_tags( $content ) );
 				$read_time = max( 1, round( $words / 200 ) );
 
-				// Pinterest URL.
 				$pin_url = 'https://www.pinterest.com/pin/create/button/?url=' . urlencode( $permalink ) . '&media=' . urlencode( $img_full ) . '&description=' . urlencode( $title );
 
-				// Pin saves count.
 				$pin_saves  = 0;
 				$saved_pins = get_post_meta( $pid, '_pl_pin_saves', true );
 				if ( $saved_pins ) {
@@ -179,7 +182,6 @@ $has_more   = $posts_data['has_more'];
 						     loading="lazy"
 						     decoding="async" />
 					</a>
-					<!-- Pinterest Save -->
 					<a href="<?php echo esc_url( $pin_url ); ?>"
 					   class="pl-cat-pin" target="_blank" rel="noopener">
 						<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
@@ -198,14 +200,8 @@ $has_more   = $posts_data['has_more'];
 					</div>
 				</div>
 			</article>
-			<?php
-				$pa_count++;
-				if ( $pa_enabled && $pa_count % $pa_every_n === 0 ) :
-					$pa_inject++;
-			?>
-			<div class="pl-page-ad-anchor" data-slot="cat-<?php echo $pa_inject; ?>" data-format="rectangle"></div>
-			<?php endif; ?>
-			<?php endforeach; wp_reset_postdata(); ?>
+			<?php $pa_post_idx++; endif; ?>
+			<?php endwhile; wp_reset_postdata(); ?>
 		</div>
 
 		<!-- Load More -->
@@ -234,10 +230,13 @@ $has_more   = $posts_data['has_more'];
 	var btn=document.getElementById('plCatLoadMore');
 	if(!btn)return;
 	var grid=document.getElementById('plCatGrid');
-	var lmCount=0;
-	var lmEvery=<?php echo (int) $pa_every_n; ?>;
-	var lmAdIdx=<?php echo (int) $pa_inject; ?>;
-	var lmAdsEnabled=<?php echo $pa_enabled ? 'true' : 'false'; ?>;
+
+	// Varied ad interval pattern (matches PHP $pa_positions spacing: 5,5,5,6,5,5,6,5,5).
+	var AD_PATTERN=[5,5,5,6,5,5,6,5,5];
+	var patIdx=0;
+	var countdown=AD_PATTERN[0];
+	var adIdx=<?php echo (int) $pa_ad_idx; ?>;
+	var adsEnabled=<?php echo $pa_enabled ? 'true' : 'false'; ?>;
 
 	btn.addEventListener('click',function(){
 		var cat=btn.dataset.cat;
@@ -258,14 +257,16 @@ $has_more   = $posts_data['has_more'];
 				for(var i=0;i<nodes.length;i++){
 					grid.appendChild(nodes[i]);
 					if(nodes[i].nodeType===1&&nodes[i].classList&&nodes[i].classList.contains('pl-cat-card')){
-						lmCount++;
-						if(lmAdsEnabled&&lmCount%lmEvery===0){
-							lmAdIdx++;
+						countdown--;
+						if(adsEnabled&&countdown<=0){
+							adIdx++;
 							var a=document.createElement('div');
-							a.className='pl-page-ad-anchor';
-							a.dataset.slot='cat-'+lmAdIdx;
+							a.className='pl-cat-ad-card pl-page-ad-anchor';
+							a.dataset.slot='cat-'+adIdx;
 							a.dataset.format='rectangle';
 							grid.appendChild(a);
+							patIdx=(patIdx+1)%AD_PATTERN.length;
+							countdown=AD_PATTERN[patIdx];
 						}
 					}
 				}
