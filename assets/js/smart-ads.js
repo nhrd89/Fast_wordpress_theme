@@ -20,7 +20,7 @@
  * CONFIG
  * ================================================================ */
 
-var SLOT_PATH         = '/21849154601,22953639975/';
+var SLOT_PATH         = (typeof plAds !== 'undefined' && plAds.slotPrefix) ? plAds.slotPrefix : '/21849154601,22953639975/';
 var IS_DESKTOP        = window.innerWidth >= 1025;
 var DEBUG             = typeof plAds !== 'undefined' && plAds.debug;
 
@@ -1502,8 +1502,8 @@ function checkVideoInjection() {
 			'id:"z2I717k6zq5b",' +
 			'after:s,' +
 			'appParams:{' +
-				'"C_NETWORK_CODE":"22953639975",' +
-				'"C_WEBSITE":"cheerlives.com"' +
+				'"C_NETWORK_CODE":"' + ((typeof plAds !== 'undefined' && plAds.networkCode) ? plAds.networkCode : '22953639975') + '",' +
+				'"C_WEBSITE":"' + window.location.hostname + '"' +
 			'}' +
 		'});' +
 	'})();';

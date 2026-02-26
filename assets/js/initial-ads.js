@@ -16,7 +16,7 @@
  * CONFIG
  * ================================================================ */
 
-var SLOT_PATH  = '/21849154601,22953639975/';
+var SLOT_PATH  = (typeof plAds !== 'undefined' && plAds.slotPrefix) ? plAds.slotPrefix : '/21849154601,22953639975/';
 var GPT_URL    = 'https://securepubads.g.doubleclick.net/tag/js/gpt.js';
 var DEBUG      = typeof plAds !== 'undefined' && plAds.debug;
 var IS_DESKTOP = window.innerWidth >= 1025;

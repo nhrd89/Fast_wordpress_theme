@@ -31,7 +31,7 @@ define( 'IMG_ALLOWED_EXTENSIONS', array( 'jpg', 'jpeg', 'png', 'webp', 'gif' ) )
 define( 'IMG_MIRROR_TTL', 7 * 24 * 3600 ); // 7 days before re-fetch.
 
 // Domains allowed for remote proxy fetching.
-$PROXY_DOMAINS = array( 'cheerlives.com' );
+$PROXY_DOMAINS = array( 'cheerlives.com', 'inspireinlet.com', 'pulsepathlife.com' );
 
 // ── Helpers ────────────────────────────────────────────────────
 
