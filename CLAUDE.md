@@ -2,13 +2,20 @@
 
 > Complete reference for any Claude Code session to pick up immediately.
 > **Branch:** `claude/setup-pinlightning-theme-5lwUG`
-> **Last updated:** 2026-02-25
+> **Last updated:** 2026-02-26
 
 ---
 
 ## 1. Project Overview
 
-**cheerlives.com** is a fashion/lifestyle content site targeting Pinterest traffic. It publishes listicle-style posts (e.g., "25 Stunning Hairstyles") with curated CDN images, engagement gamification, and monetization via display ads.
+**Multi-site network** of fashion/lifestyle content sites targeting Pinterest traffic. Sites publish listicle-style posts (e.g., "25 Stunning Hairstyles") with curated CDN images, engagement gamification, and monetization via display ads.
+
+### Sites
+| Site | GA4 ID | Status |
+|------|--------|--------|
+| cheerlives.com | G-TD7Z2RMZ1C | Live |
+| inspireinlet.com | G-TLFCKLVE30 | Deploying |
+| pulsepathlife.com | G-1ZRM1FTWRB | Deploying |
 
 ### Tech Stack
 - **CMS:** WordPress (self-hosted)
@@ -99,8 +106,10 @@ Fast_wordpress_theme/
 │   └── content-card.php    # Reusable card component for grids
 │
 ├── .github/workflows/
-│   ├── deploy.yml          # Main deploy + PageSpeed pipeline
-│   └── wp-audit.yml        # WordPress audit checks
+│   ├── deploy.yml                # cheerlives.com deploy + PageSpeed
+│   ├── deploy-inspireinlet.yml   # inspireinlet.com deploy + PageSpeed
+│   ├── deploy-pulsepathlife.yml  # pulsepathlife.com deploy + PageSpeed
+│   └── wp-audit.yml              # WordPress audit checks
 │
 └── scripts/
     └── perf-check.sh       # Performance budget enforcement
@@ -378,7 +387,15 @@ Gated behind `pl_ad_settings()['enabled']` check.
 
 ## 5. Deployment Pipeline
 
-### GitHub Actions (`.github/workflows/deploy.yml`)
+### Multi-Site Deploy (3 parallel workflows)
+One push deploys to all 3 sites simultaneously via separate workflow files:
+
+| Workflow | File | Secrets Suffix |
+|----------|------|----------------|
+| cheerlives.com | `deploy.yml` | `_CHEERLIVES` |
+| inspireinlet.com | `deploy-inspireinlet.yml` | `_INSPIREINLET` |
+| pulsepathlife.com | `deploy-pulsepathlife.yml` | `_PULSEPATHLIFE` |
+
 - **Triggers:** push to `main` or `claude/setup-pinlightning-theme-5lwUG`
 - **Build:** `npm install` → `npm run build` (lightningcss + terser)
 - **Deploy method:** rsync over SSH (sshpass) to Hostinger
@@ -387,7 +404,7 @@ Gated behind `pl_ad_settings()['enabled']` check.
   - PageSpeed Insights API (mobile + desktop)
   - Screenshots saved as artifacts (30-day retention)
   - Active plugin lists captured via WP REST API
-  - Performance budget check via `scripts/perf-check.sh`
+  - Performance budget check via `scripts/perf-check.sh` (cheerlives only)
 - **Excluded from deploy:** `.git/`, `node_modules/`, `.env`, `package.json`, `.github/`, `*.md`, `.gitignore`
 
 ### Build System (`package.json`)
@@ -575,6 +592,11 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Multi-Site Deployment (Feb 26, 2026)
+- **feat: make ad slot path and video config dynamic** — `SLOT_PATH` in initial-ads.js and smart-ads.js now reads from `plAds.slotPrefix` (falls back to hardcoded default). Video player `C_WEBSITE` uses `window.location.hostname`, `C_NETWORK_CODE` reads from `plAds.networkCode`. CDN proxy (`cdn/img.php`) allowlists all 3 domains.
+- **ci: deploy workflows for inspireinlet.com and pulsepathlife.com** — Separate GitHub Actions workflows (`deploy-inspireinlet.yml`, `deploy-pulsepathlife.yml`) trigger on same branches as cheerlives. All 3 deploy in parallel on push.
+- **GA4 already configurable** — `pl_ga4_measurement_id` via Customizer. InMobi CMP already dynamic via `window.location.hostname`. Ad.Plus network settings already in ad-engine.php settings page.
 
 ### Engagement UI Fix (Feb 26, 2026)
 - **Fix: move engagement sprite + heart above anchor ad** — Girl sprite (`bottom:70px`) and heart button (`bottom:20px`) were covered by GPT bottom anchor ad on mobile. Moved to right-center: heart at `bottom:50%; transform:translateY(50%)`, sprite at `bottom:calc(50%+30px)`, speech bubble/chat at `bottom:calc(50%+120px)`. Z-index lowered from 1000 to 99 so anchor ad stays on top. Updated `.pl-v-wrap`, `.pl-e-heart`, `.pl-e-sp`, `.pl-chat-wrap`, `.pl-e-sk` in scroll-engage.js, `.eb-char-bubble` in engagement.css, `.pl-heart-progress`/`.pl-combo` in main.css.
