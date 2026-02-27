@@ -352,10 +352,10 @@ Two separate ad systems, completely isolated:
 - Required because `enableSingleRequest()` (SRA) mode is ON — post-initial slots need explicit refresh
 - Retry logic already had this pattern, but initial render was missing it
 
-**Ad Relocation (`relocateFilledAd()`):**
-- When GPT responds with a fill after user has scrolled 200+ px past the ad, relocates it
-- **Immediate check** in `onDynamicSlotRenderEnded`: if ad is >200px outside viewport, relocate now
-- **Delayed recheck** (2s): if ad filled near-viewport but user scrolled past before viewable, relocate
+**Ad Relocation (`relocateFilledAd()`) — DISABLED:**
+- **DISABLED** (Feb 27, 2026): 82 relocated ads had 0% viewability. Relocation code remains but is never called.
+- Originally: When GPT responds with a fill after user has scrolled 200+ px past the ad, relocated it
+- Immediate check and 2s delayed recheck both removed from `onDynamicSlotRenderEnded`
 - Moves the existing DOM element (keeps GPT iframe alive) to a paragraph near viewport center
 - Guards: only once per ad (`rec.relocated`), respects `MIN_PIXEL_SPACING` + Layer 1 exclusion zones
 - Does NOT relocate if user is scrolling toward the ad (it'll come into view naturally)
@@ -644,6 +644,8 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - **wp-embed, Block library CSS, Dashicons (non-logged-in), Emoji, Global styles** — all removed
 - **Top Anchor ad** — "Format already created" conflict, zero demand in 27 sessions
 - **Read Next bar** (`.eb-next-bar`) — replaced by next-post auto-loader. Don't re-add.
+- **Scroll-up ad injection** — 8% viewability vs 28% scroll-down. Disabled in engineLoop(). Don't re-enable.
+- **Ad relocation** — 0% viewability on 82 relocated ads. Disabled in onDynamicSlotRenderEnded. Don't re-enable.
 
 ### Active Optimizations
 - All CSS inlined in `<head>` (zero external CSS requests)
@@ -665,6 +667,11 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Perf: Disable Relocation + Scroll-Up Injection, Cap TTV (Feb 27, 2026)
+- **Disable ad relocation** — 82 relocated ads had 0% viewability. Removed immediate relocation check and 2s delayed recheck from `onDynamicSlotRenderEnded`. `relocateFilledAd()` function remains but is never called. Ads stay where originally injected.
+- **Disable scroll-up injection** — Only 8% viewability vs 28% for scroll-down. Added `if (_scrollDirection === 'up') return;` guard in `engineLoop()` after dynamic ads enabled check. Viewport refresh and video injection still run on scroll-up (only new ad injection is blocked).
+- **Cap TTV tracking at 30s** — Predictive strategy showed avg TTV of 110,665ms due to outlier sessions. In `onDynamicImpressionViewable`, `timeToViewable` is now capped at 30000ms. Values above 30s are not meaningful viewability signals and were skewing averages.
 
 ### Fix: Hide All Ad HTML on Ezoic Sites (Feb 27, 2026)
 - **Root cause:** JS ad scripts were blocked by `pl_is_ezoic_site()` guards, but hardcoded ad anchor `<div>` elements in PHP templates still rendered as empty containers on tecarticles.com. These included `.pl-page-ad-anchor` divs in homepage templates and `.pl-cat-ad-card` divs in the category grid.
@@ -826,7 +833,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Viewport refresh, lazy-render, sticky inline, last-chance refresh
 - Tab visibility pause, retry logic, house ad backfill
 - Patient 10s GPT timeout (replaces aggressive 3s), explicit refresh() after display()
-- Ad relocation for filled-but-missed ads (DOM move preserves GPT iframe)
+- Ad relocation DISABLED (0% viewability on 82 relocated ads — code remains but never called)
 - GPT response time tracking (beacon/heartbeat/DB/injection lab/live sessions)
 - Viewport-aware size selection
 - 400px minimum spacing enforced everywhere
@@ -842,7 +849,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Viewability trend: 43.8% → 48.8% → 54% → target 63-70%
 - Fill rate: was reported as 0% due to tracking bug (FIXED) — actual fills ~50% per by_response_time data. After fix, injection lab overview should show accurate fill rate
 - GPT response time distribution (injection lab brackets)
-- Ad relocation count and viewability lift
+- Viewability lift from disabling relocation + scroll-up injection
 - Last-chance refresh count
 - House ad impressions and clicks
 - Verify v6 migration ran: check injection lab after first admin page load — existing impression events should now have injection_type populated

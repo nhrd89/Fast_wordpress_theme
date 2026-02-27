@@ -1127,6 +1127,10 @@ function engineLoop() {
 	var dynVal = FMT.dynamic;
 	if (dynVal === false || dynVal === 'false' || dynVal === '' || dynVal === '0' || dynVal === 0) return;
 
+	// Scroll-up injection DISABLED — only 8% viewability vs 28% for scroll-down.
+	// Ads injected while scrolling up are almost never seen.
+	if (_scrollDirection === 'up') return;
+
 	// Active slot count check
 	var activeCount = 0;
 	for (var i = 0; i < _dynamicSlots.length; i++) {
@@ -1297,46 +1301,8 @@ function onDynamicSlotRenderEnded(event) {
 		'FILLED' + (size ? ' ' + size[0] + 'x' + size[1] : ''),
 		rec.gptResponseMs + 'ms');
 
-	// Relocate filled-but-missed ads: if user has scrolled past this ad,
-	// move it near their current position to salvage the impression.
-	var rect = rec.el.getBoundingClientRect();
-	var isFarBelow = rect.top > window.innerHeight + 200;
-	var isFarAbove = rect.bottom < -200;
-
-	console.log('[SmartAds] Relocation check:', rec.divId,
-		'rect.top:', Math.round(rect.top),
-		'rect.bottom:', Math.round(rect.bottom),
-		'viewport:', window.innerHeight,
-		'farBelow:', isFarBelow,
-		'farAbove:', isFarAbove,
-		'scrollDir:', _scrollDirection,
-		'gptMs:', rec.gptResponseMs);
-
-	if ((isFarBelow || isFarAbove) && !rec.relocated) {
-		// Don't relocate if user is scrolling toward the ad
-		if (!(isFarBelow && _scrollDirection === 'up')) {
-			relocateFilledAd(rec);
-		}
-	}
-
-	// Delayed relocation recheck: if the ad filled near-viewport but the user
-	// scrolled past it before it became viewable, relocate after 2s.
-	if (!rec.relocated) {
-		(function(r) {
-			setTimeout(function() {
-				if (r.destroyed || r.viewable || r.relocated) return;
-				if (!r.el || !r.el.parentNode) return;
-				var delayRect = r.el.getBoundingClientRect();
-				var inView = delayRect.top < window.innerHeight && delayRect.bottom > 0;
-				if (!inView) {
-					console.log('[SmartAds] Delayed relocation for', r.divId,
-						'rect.top:', Math.round(delayRect.top),
-						'rect.bottom:', Math.round(delayRect.bottom));
-					relocateFilledAd(r);
-				}
-			}, 2000);
-		})(rec);
-	}
+	// Relocation DISABLED — data shows 0% viewability on 82 relocated ads.
+	// Ads stay where originally injected.
 
 	// Last-chance refresh: watch for this ad to exit viewport top
 	observeForLastChanceRefresh(rec);
@@ -1380,6 +1346,9 @@ function onDynamicImpressionViewable(event) {
 			window.__plViewableCount = (window.__plViewableCount || 0) + 1;
 			log('VIEWABLE: dynamic', divId, '__plViewableCount now=' + window.__plViewableCount);
 			var ttv = Date.now() - rec.injectedAt;
+			// Cap TTV at 30s — outlier sessions with 100s+ TTV skew averages.
+			// Anything >30s is not a meaningful viewability signal.
+			if (ttv > 30000) ttv = 30000;
 			pushEvent('dynamic_ad_viewable', {
 				divId:           divId,
 				timeToViewable:  ttv,
