@@ -195,6 +195,9 @@ add_action( 'admin_init', 'pl_ad_migrate_slot_names' );
  * Register the Ad Engine admin menu page.
  */
 function pl_ad_admin_menu() {
+	if ( pl_is_ezoic_site() ) {
+		return;
+	}
 	add_menu_page(
 		'Ad Engine',
 		'Ad Engine',
@@ -932,6 +935,9 @@ function pinlightning_ad_zone( $zone_id, $mobile_size = '300x250', $desktop_size
  * The plAds global must be available before the script executes.
  */
 function pinlightning_ads_enqueue() {
+	if ( pl_is_ezoic_site() ) {
+		return;
+	}
 	// Post ads run on single posts ONLY. Page ads (page-ad-engine.php) handle non-post pages.
 	if ( ! is_single() ) {
 		return;

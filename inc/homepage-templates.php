@@ -24,10 +24,11 @@ function pl_homepage_template_customizer( $wp_customize ) {
 		'section'     => 'pl_homepage_general',
 		'type'        => 'select',
 		'choices'     => array(
-			'auto'    => 'Auto (by domain)',
-			'default' => 'Default (CheeLives bento)',
-			'emerald' => 'Emerald Editorial',
-			'coral'   => 'Coral Breeze',
+			'auto'      => 'Auto (by domain)',
+			'default'   => 'Default (CheeLives bento)',
+			'emerald'   => 'Emerald Editorial',
+			'coral'     => 'Coral Breeze',
+			'tec-slate' => 'Tec Slate (tecarticles)',
 		),
 	) );
 }
@@ -55,6 +56,9 @@ function pl_resolve_homepage_template() {
 	if ( false !== strpos( $host, 'pulsepathlife' ) ) {
 		return 'coral';
 	}
+	if ( false !== strpos( $host, 'tecarticles' ) ) {
+		return 'tec-slate';
+	}
 
 	return 'default';
 }
@@ -74,8 +78,9 @@ function pl_homepage_template_include( $template ) {
 	}
 
 	$map = array(
-		'emerald' => 'template-emerald-editorial.php',
-		'coral'   => 'template-coral-breeze.php',
+		'emerald'   => 'template-emerald-editorial.php',
+		'coral'     => 'template-coral-breeze.php',
+		'tec-slate' => 'template-tec-slate.php',
 	);
 
 	if ( isset( $map[ $slug ] ) ) {
@@ -130,6 +135,27 @@ function pl_coral_critical_css() {
 	}
 }
 add_action( 'wp_head', 'pl_coral_critical_css', 3 );
+
+/**
+ * Inline critical CSS for tec-slate homepage.
+ * Hooked at wp_head priority 3 — after theme critical.css (p1) and main.css (p2).
+ */
+function pl_tec_slate_critical_css() {
+	if ( ! is_front_page() || 'tec-slate' !== pl_resolve_homepage_template() ) {
+		return;
+	}
+
+	$file = PINLIGHTNING_DIR . '/assets/css/homepage-tec-slate.css';
+	if ( ! file_exists( $file ) ) {
+		return;
+	}
+
+	$css = file_get_contents( $file );
+	if ( $css ) {
+		echo '<style id="tec-slate-homepage">' . $css . '</style>' . "\n";
+	}
+}
+add_action( 'wp_head', 'pl_tec_slate_critical_css', 3 );
 
 /**
  * Get category circles data with transient caching.

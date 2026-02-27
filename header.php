@@ -18,8 +18,9 @@
 pinlightning_early_preconnect();
 pinlightning_preload_lcp_image();
 // Ad CDN preconnects — warm TCP+TLS so first ad creative loads faster.
+// Skip on Ezoic sites — Ezoic handles its own ad CDN connections.
 $__pl_ads = function_exists( 'pl_ad_settings' ) ? pl_ad_settings() : array( 'enabled' => false );
-if ( ! empty( $__pl_ads['enabled'] ) ) {
+if ( ! empty( $__pl_ads['enabled'] ) && ! pl_is_ezoic_site() ) {
 	echo '<link rel="preconnect" href="https://securepubads.g.doubleclick.net" crossorigin>' . "\n";
 	echo '<link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>' . "\n";
 	echo '<link rel="preconnect" href="https://cdn.ad.plus" crossorigin>' . "\n";

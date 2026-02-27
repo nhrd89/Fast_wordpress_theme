@@ -309,6 +309,9 @@ function pl_page_ad_render_tab() {
  * ================================================================ */
 
 function pl_page_ads_enqueue() {
+	if ( pl_is_ezoic_site() ) {
+		return;
+	}
 	if ( is_single() ) {
 		return;
 	}
@@ -378,6 +381,9 @@ add_action( 'wp_enqueue_scripts', 'pl_page_ads_enqueue', 20 );
  * ================================================================ */
 
 function pl_page_ad_category_anchors() {
+	if ( pl_is_ezoic_site() ) {
+		return;
+	}
 	if ( ! is_category() || is_single() ) {
 		return;
 	}
@@ -421,6 +427,9 @@ add_action( 'template_redirect', 'pl_page_ad_category_anchors' );
  * ================================================================ */
 
 function pl_page_ad_static_content( $content ) {
+	if ( pl_is_ezoic_site() ) {
+		return $content;
+	}
 	if ( ! is_page() || is_single() || is_admin() ) {
 		return $content;
 	}

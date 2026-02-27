@@ -39,6 +39,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @return string          Content with ad containers inserted.
  */
 function pl_inject_initial_ads( $content ) {
+	if ( pl_is_ezoic_site() ) {
+		return $content;
+	}
 	if ( ! is_single() || is_admin() || is_feed() ) {
 		return $content;
 	}
@@ -131,7 +134,7 @@ add_filter( 'the_content', 'pl_inject_initial_ads', 30 );
  * the GPT slots when viewport width >= 1025px.
  */
 function pl_render_sidebar_ads() {
-	if ( ! is_single() ) {
+	if ( pl_is_ezoic_site() || ! is_single() ) {
 		return;
 	}
 

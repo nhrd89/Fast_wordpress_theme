@@ -16,6 +16,20 @@ define( 'PINLIGHTNING_DIR', get_template_directory() );
 define( 'PINLIGHTNING_URI', get_template_directory_uri() );
 
 /**
+ * Check if the current site uses Ezoic for ad monetization.
+ *
+ * Ezoic sites must NOT load any of our ad engine code (GPT, smart-ads,
+ * initial-ads, page-ads, ad recorder, injection lab, etc.).
+ *
+ * @return bool True if this is an Ezoic-managed domain.
+ */
+function pl_is_ezoic_site() {
+	$host = parse_url( home_url(), PHP_URL_HOST );
+	$ezoic_domains = array( 'tecarticles.com', 'www.tecarticles.com' );
+	return in_array( $host, $ezoic_domains, true );
+}
+
+/**
  * Theme setup.
  */
 function pinlightning_setup() {
@@ -191,7 +205,8 @@ add_action( 'wp_footer', 'pinlightning_scroll_deferred_assets', 99 );
  * The 100ms setTimeout ensures the load event fully completes first.
  */
 function pinlightning_postload_scripts() {
-	$scripts = array();
+	$scripts   = array();
+	$is_ezoic  = pl_is_ezoic_site();
 
 	// core.js — hamburger menu close (all pages).
 	$core_dist = PINLIGHTNING_DIR . '/assets/js/dist/core.js';
@@ -201,14 +216,16 @@ function pinlightning_postload_scripts() {
 	$scripts[] = wp_json_encode( esc_url( $core_src . '?ver=' . PINLIGHTNING_VERSION ) );
 
 	// initial-ads.js — Layer 1: GPT + initial viewport slots (single posts only).
+	// Skip on Ezoic sites — Ezoic handles its own ad injection.
 	$ad_settings = function_exists( 'pl_ad_settings' ) ? pl_ad_settings() : array( 'enabled' => false );
-	if ( ! empty( $ad_settings['enabled'] ) && is_single() ) {
+	if ( ! $is_ezoic && ! empty( $ad_settings['enabled'] ) && is_single() ) {
 		$init_ads_file = PINLIGHTNING_DIR . '/assets/js/initial-ads.js';
 		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/initial-ads.js?ver=' . filemtime( $init_ads_file ) ) );
 	}
 
 	// smart-ads.js — Layer 2: dynamic below-fold injection (singular only).
-	if ( is_singular() ) {
+	// Skip on Ezoic sites.
+	if ( ! $is_ezoic && is_singular() ) {
 		$smart_ads_file = PINLIGHTNING_DIR . '/assets/js/smart-ads.js';
 		$scripts[] = wp_json_encode( esc_url( PINLIGHTNING_URI . '/assets/js/smart-ads.js?ver=' . filemtime( $smart_ads_file ) ) );
 	}
