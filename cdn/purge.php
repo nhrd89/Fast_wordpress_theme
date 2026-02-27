@@ -5,8 +5,8 @@
  * Deploy to: myquickurl.com/public_html/purge.php
  *
  * Usage:
- *   purge.php?token=SECRET&domain=cheerfultalks.com          Purge all cache for a domain
- *   purge.php?token=SECRET&domain=cheerfultalks.com&path=folder/image.webp  Purge specific image
+ *   purge.php?token=SECRET&domain=cheerlives.com          Purge all cache for a domain
+ *   purge.php?token=SECRET&domain=cheerlives.com&path=folder/image.webp  Purge specific image
  *   purge.php?token=SECRET&all=1                              Purge everything
  *
  * @package PinLightning CDN
@@ -71,7 +71,7 @@ function purge_directory( $dir ) {
 /**
  * Purge cache for a specific image across all size variants.
  *
- * @param string $domain Domain subfolder (e.g. cheerfultalks.com).
+ * @param string $domain Domain subfolder (e.g. cheerlives.com).
  * @param string $path   Relative path within domain (e.g. folder/image.webp).
  * @return array [ 'files' => int, 'bytes' => int ]
  */

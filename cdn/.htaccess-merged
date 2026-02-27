@@ -7,7 +7,7 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  # Clean URL: /img/cheerfultalks.com/image.webp?w=720 → img.php
+  # Clean URL: /img/cheerlives.com/image.webp?w=720 → img.php
   RewriteRule ^img/(.+)$ img.php?src=$1 [QSA,L]
 
   # Direct-serve from cache (bypass PHP entirely)
@@ -102,7 +102,7 @@
 #   RewriteEngine On
 #   RewriteCond %{HTTP_REFERER} !^$
 #   RewriteCond %{HTTP_REFERER} !^https?://(www\.)?myquickurl\.com [NC]
-#   RewriteCond %{HTTP_REFERER} !^https?://(www\.)?cheerfultalks\.com [NC]
+#   RewriteCond %{HTTP_REFERER} !^https?://(www\.)?cheerlives\.com [NC]
 #   RewriteRule \.(jpg|jpeg|png|gif|webp)$ - [F,L]
 # </IfModule>
 

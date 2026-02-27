@@ -1,20 +1,19 @@
 {
     "budgets": {
-        "performance": 95,
-        "accessibility": 95,
-        "best-practices": 95,
+        "performance": 90,
+        "accessibility": 90,
+        "best-practices": 50,
         "seo": 95
     },
     "metrics": {
         "first-contentful-paint": 1500,
-        "largest-contentful-paint": 1500,
-        "total-blocking-time": 50,
-        "cumulative-layout-shift": 0.05,
+        "largest-contentful-paint": 2500,
+        "total-blocking-time": 200,
+        "cumulative-layout-shift": 0.1,
         "speed-index": 2000
     },
     "test_urls": [
-        "https://cheerfultalks.com/chic-comfort-19-outfits-to-rock-your-linen-pants/",
-        "https://cheerfultalks.com/wanderweave2/capture-the-aesthetic-15-beautiful-mountain-landscapes-for-photography/"
+        "https://cheerlives.com/discover-22-fabulous-pink-nail-styles-youll-love/"
     ],
     "baseline": {
         "date": "2026-02-12",

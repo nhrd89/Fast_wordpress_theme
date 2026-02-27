@@ -26,3 +26,6 @@ img-cache/
 
 # Screenshots from wp-check.sh
 screenshot*.png
+
+# Ad engine stable snapshots
+backup/

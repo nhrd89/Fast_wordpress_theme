@@ -46,21 +46,55 @@ add_action('rest_api_init', function() {
 });
 
 function plt_realtime_data() {
-    $now = current_time('timestamp');
+    // CRITICAL: use time() (UTC), NOT current_time('timestamp') (local).
+    // Sessions store 'unix' => time() (UTC). Comparing UTC timestamps against
+    // local-time cutoffs causes the count to drop to 0 on any site with
+    // a timezone ahead of UTC.
+    $now = time();
     $cutoff_5min = $now - 300;
     $cutoff_1min = $now - 60;
+    $cutoff_30min = $now - 1800;
 
-    $today_start = strtotime('today', $now);
+    $today_start = strtotime('today midnight');
     $sessions = plt_get_sessions_in_range($today_start, $now);
 
     $active_5min = [];
     $active_1min = 0;
+    $total_5min = 0;
+    $total_1min = 0;
+    $seen_vids = [];
+    $count_30min = 0;
+    $seen_30_vids = [];
 
     foreach ($sessions as $s) {
         $ts = $s['unix'] ?? strtotime($s['ts'] ?? '');
         if (!$ts) continue;
 
+        $is_human = !empty($s['is_human']);
+        $is_dedup = !empty($s['is_dedup']);
+        // Backwards compat: sessions without is_human field (pre-filter) count as human
+        if (!isset($s['is_human'])) $is_human = true;
+
+        // 30-min active visitors (GA comparison)
+        if ($ts >= $cutoff_30min && $is_human && !$is_dedup) {
+            $vid30 = $s['visitor_id'] ?? '';
+            if (!$vid30 || !isset($seen_30_vids[$vid30])) {
+                $count_30min++;
+                if ($vid30) $seen_30_vids[$vid30] = true;
+            }
+        }
+
         if ($ts >= $cutoff_5min) {
+            $total_5min++;
+            if ($ts >= $cutoff_1min) $total_1min++;
+
+            if (!$is_human || $is_dedup) continue;
+
+            // Deduplicate by visitor_id for unique visitor count
+            $vid = $s['visitor_id'] ?? '';
+            if ($vid && isset($seen_vids[$vid])) continue;
+            if ($vid) $seen_vids[$vid] = true;
+
             $page_url = $s['url'] ?? '';
             $short = preg_replace('#https?://[^/]+#', '', $page_url);
 
@@ -78,14 +112,23 @@ function plt_realtime_data() {
     return [
         'count' => count($active_5min),
         'count_1min' => $active_1min,
+        'count_30min' => $count_30min,
+        'total_sessions_5min' => $total_5min,
+        'total_sessions_1min' => $total_1min,
         'visitors' => array_reverse($active_5min),
-        'timestamp' => date('H:i:s', $now),
+        'timestamp' => current_time('H:i:s'), // Display local time for admin.
     ];
 }
 
 function plt_collect_data($request) {
     $body = $request->get_json_params();
     if (empty($body) || !isset($body['t'])) return new WP_REST_Response(['ok'=>false], 400);
+
+    // Server-side bot detection (backup for JS-side filtering)
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $is_server_bot = preg_match('/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|wget|curl|python-requests|go-http-client|java\/|libwww/i', $ua);
+    // Drop bot requests entirely — don't store them
+    if ($is_server_bot) return new WP_REST_Response(['ok'=>true], 200);
 
     $ip_hash = md5($_SERVER['REMOTE_ADDR'] . date('YmdHi'));
     if (get_transient('plt_r_' . $ip_hash)) return new WP_REST_Response(['ok'=>true], 200);
@@ -113,6 +156,9 @@ function plt_collect_data($request) {
         'vh' => intval($body['vh'] ?? 0),
         'returning' => intval($body['ret'] ?? 0),
         'visitor_id' => sanitize_text_field($body['vid'] ?? ''),
+        'is_human' => intval($body['human'] ?? 0),
+        'has_interacted' => intval($body['has_interacted'] ?? 0),
+        'is_dedup' => intval($body['dedup'] ?? 0),
         'ga4cid' => sanitize_text_field($body['ga4cid'] ?? ''),
         'timezone' => sanitize_text_field($body['tz'] ?? ''),
         'language' => sanitize_text_field($body['lang'] ?? ''),
@@ -1043,6 +1089,212 @@ add_action('admin_enqueue_scripts', function($hook) {
     wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js', [], '4.4', true);
 });
 
+// ─── EXPORT HANDLER (admin_init — sends file before any HTML) ───
+add_action('admin_init', function() {
+    if ( ! isset( $_GET['plt_export'] ) || $_GET['plt_export'] !== 'analytics' ) {
+        return;
+    }
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( 'Unauthorized' );
+    }
+    if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'plt_export_analytics' ) ) {
+        wp_die( 'Invalid nonce' );
+    }
+
+    $period = sanitize_text_field( $_GET['period'] ?? '7d' );
+    $custom_from = sanitize_text_field( $_GET['from'] ?? '' );
+    $custom_to   = sanitize_text_field( $_GET['to'] ?? '' );
+
+    $now = current_time( 'timestamp' );
+    switch ( $period ) {
+        case 'today': $start = strtotime( 'today', $now ); break;
+        case '7d':    $start = $now - 7 * DAY_IN_SECONDS; break;
+        case '14d':   $start = $now - 14 * DAY_IN_SECONDS; break;
+        case '30d':   $start = $now - 30 * DAY_IN_SECONDS; break;
+        case '90d':   $start = $now - 90 * DAY_IN_SECONDS; break;
+        case 'custom':
+            $start = $custom_from ? strtotime( $custom_from ) : $now - 7 * DAY_IN_SECONDS;
+            $now   = $custom_to ? strtotime( $custom_to . ' 23:59:59' ) : $now;
+            break;
+        default:      $start = $now - 7 * DAY_IN_SECONDS;
+    }
+
+    $sessions = plt_get_sessions_in_range( $start, $now );
+    $total    = count( $sessions );
+
+    // ─── Aggregate all the same metrics as the dashboard ───
+    $devices = [ 'desktop' => 0, 'mobile' => 0, 'tablet' => 0 ];
+    $referrer_types = [ 'pinterest' => 0, 'direct' => 0, 'search' => 0, 'social' => 0, 'other' => 0 ];
+    $patterns = [ 'reader' => 0, 'scanner' => 0, 'bouncer' => 0 ];
+    $page_views = [];
+    $referrers = [];
+    $countries = [];
+    $scroll_depths = [];
+    $quality_scores = [];
+    $active_times = [];
+    $time_on_page = [];
+    $daily_sessions = [];
+    $visitor_ids = [];
+    $human_sessions = 0;
+    $bot_sessions = 0;
+    $dedup_sessions = 0;
+    $total_pin_saves = 0;
+    $pin_sessions = 0;
+    $depth_buckets = array_fill( 0, 10, 0 );
+    $viewport_widths = [];
+
+    // Realtime (5 min + 30 min)
+    $rt_cutoff_5  = time() - 300;
+    $rt_cutoff_30 = time() - 1800;
+    $rt_5_vids  = [];
+    $rt_30_vids = [];
+    $rt_5_count  = 0;
+    $rt_30_count = 0;
+
+    foreach ( $sessions as $s ) {
+        $ts = $s['unix'] ?? strtotime( $s['ts'] ?? '' );
+        if ( ! $ts ) continue;
+
+        $is_human = isset( $s['is_human'] ) ? ! empty( $s['is_human'] ) : true;
+        $is_dedup = ! empty( $s['is_dedup'] );
+        if ( ! $is_human ) $bot_sessions++;
+        if ( $is_dedup ) $dedup_sessions++;
+        if ( $is_human ) $human_sessions++;
+
+        $date = date( 'Y-m-d', $ts );
+        $daily_sessions[ $date ] = ( $daily_sessions[ $date ] ?? 0 ) + 1;
+
+        $vid = $s['visitor_id'] ?? '';
+        if ( $vid ) $visitor_ids[ $vid ] = ( $visitor_ids[ $vid ] ?? 0 ) + 1;
+
+        $device = strtolower( $s['device'] ?? 'desktop' );
+        if ( isset( $devices[ $device ] ) ) $devices[ $device ]++;
+
+        $ref = $s['referrer'] ?? '';
+        $ref_display = $ref ?: '(direct)';
+        $referrers[ $ref_display ] = ( $referrers[ $ref_display ] ?? 0 ) + 1;
+        $ref_lower = strtolower( $ref );
+        if ( strpos( $ref_lower, 'pinterest' ) !== false ) $referrer_types['pinterest']++;
+        elseif ( empty( $ref ) ) $referrer_types['direct']++;
+        elseif ( preg_match( '/google|bing|yahoo|duckduckgo|ecosia|yandex/', $ref_lower ) ) $referrer_types['search']++;
+        elseif ( preg_match( '/facebook|twitter|instagram|tiktok|reddit|linkedin/', $ref_lower ) ) $referrer_types['social']++;
+        else $referrer_types['other']++;
+
+        $page_url = $s['url'] ?? '';
+        if ( $page_url ) $page_views[ $page_url ] = ( $page_views[ $page_url ] ?? 0 ) + 1;
+
+        $depth = floatval( $s['max_depth_pct'] ?? 0 );
+        $scroll_depths[] = $depth;
+        $bucket = min( 9, (int) floor( $depth / 10 ) );
+        $depth_buckets[ $bucket ]++;
+
+        $quality_scores[] = floatval( $s['quality_score'] ?? 0 );
+        $active_times[]   = floatval( ( $s['engagement']['active_time_ms'] ?? 0 ) ) / 1000;
+        $time_on_page[]   = floatval( ( $s['time_on_page_ms'] ?? 0 ) ) / 1000;
+
+        $pattern = strtolower( $s['scroll_pattern'] ?? 'scanner' );
+        if ( isset( $patterns[ $pattern ] ) ) $patterns[ $pattern ]++;
+
+        $country = $s['country'] ?? '';
+        if ( $country ) $countries[ $country ] = ( $countries[ $country ] ?? 0 ) + 1;
+
+        $pin_s = $s['pin_saves']['saves'] ?? 0;
+        if ( $pin_s > 0 ) { $total_pin_saves += intval( $pin_s ); $pin_sessions++; }
+
+        $vw = intval( $s['vw'] ?? 0 );
+        if ( $vw > 0 ) {
+            if ( $vw < 480 ) $vw_label = '<480';
+            elseif ( $vw < 768 ) $vw_label = '480-767';
+            elseif ( $vw < 1024 ) $vw_label = '768-1023';
+            elseif ( $vw < 1440 ) $vw_label = '1024-1439';
+            else $vw_label = '1440+';
+            $viewport_widths[ $vw_label ] = ( $viewport_widths[ $vw_label ] ?? 0 ) + 1;
+        }
+
+        // Realtime counts
+        if ( $ts >= $rt_cutoff_5 && $is_human && ! $is_dedup ) {
+            $rv = $s['visitor_id'] ?? '';
+            if ( ! $rv || ! isset( $rt_5_vids[ $rv ] ) ) {
+                $rt_5_count++;
+                if ( $rv ) $rt_5_vids[ $rv ] = true;
+            }
+        }
+        if ( $ts >= $rt_cutoff_30 && $is_human && ! $is_dedup ) {
+            $rv = $s['visitor_id'] ?? '';
+            if ( ! $rv || ! isset( $rt_30_vids[ $rv ] ) ) {
+                $rt_30_count++;
+                if ( $rv ) $rt_30_vids[ $rv ] = true;
+            }
+        }
+    }
+
+    $avg_fn = function( $a ) { return count( $a ) ? array_sum( $a ) / count( $a ) : 0; };
+
+    $unique_visitors = count( $visitor_ids );
+    $returning = 0;
+    foreach ( $visitor_ids as $cnt ) { if ( $cnt > 1 ) $returning++; }
+
+    arsort( $page_views );
+    arsort( $referrers );
+    arsort( $countries );
+
+    $payload = [
+        '_meta' => [
+            'export_type'  => 'visitor_analytics',
+            'site_url'     => site_url(),
+            'export_date'  => gmdate( 'Y-m-d H:i:s' ),
+            'period'       => $period,
+            'date_range'   => [ date( 'Y-m-d', $start ), date( 'Y-m-d', $now ) ],
+        ],
+        'overview' => [
+            'total_sessions'    => $total,
+            'human_sessions'    => $human_sessions,
+            'bot_sessions'      => $bot_sessions,
+            'dedup_sessions'    => $dedup_sessions,
+            'unique_visitors'   => $unique_visitors,
+            'returning_visitors' => $returning,
+            'sessions_per_visitor' => $unique_visitors > 0 ? round( $total / $unique_visitors, 2 ) : 0,
+            'active_visitors_5min'  => $rt_5_count,
+            'active_visitors_30min' => $rt_30_count,
+        ],
+        'engagement' => [
+            'avg_scroll_depth_pct' => $total > 0 ? round( $avg_fn( $scroll_depths ), 1 ) : 0,
+            'avg_quality_score'    => $total > 0 ? round( $avg_fn( $quality_scores ), 1 ) : 0,
+            'avg_active_time_s'    => $total > 0 ? round( $avg_fn( $active_times ), 1 ) : 0,
+            'avg_time_on_page_s'   => $total > 0 ? round( $avg_fn( $time_on_page ), 1 ) : 0,
+            'bounce_rate_pct'      => $total > 0 ? round( $patterns['bouncer'] / $total * 100, 1 ) : 0,
+        ],
+        'devices'           => $devices,
+        'scroll_patterns'   => $patterns,
+        'referrer_types'    => $referrer_types,
+        'top_referrers'     => array_slice( $referrers, 0, 30, true ),
+        'top_pages'         => array_slice( $page_views, 0, 30, true ),
+        'top_countries'     => array_slice( $countries, 0, 20, true ),
+        'scroll_depth_buckets' => $depth_buckets,
+        'viewport_widths'   => $viewport_widths,
+        'daily_sessions'    => $daily_sessions,
+        'pinterest' => [
+            'total_saves'    => $total_pin_saves,
+            'sessions_with_saves' => $pin_sessions,
+            'save_rate_pct'  => $total > 0 ? round( $pin_sessions / $total * 100, 1 ) : 0,
+        ],
+        'bot_filtering' => [
+            'total_raw_sessions' => $total,
+            'human_sessions'     => $human_sessions,
+            'bot_filtered'       => $bot_sessions,
+            'dedup_filtered'     => $dedup_sessions,
+            'human_rate_pct'     => $total > 0 ? round( $human_sessions / $total * 100, 1 ) : 0,
+        ],
+    ];
+
+    $filename = 'pl-analytics-export-' . gmdate( 'Y-m-d' ) . '.json';
+    header( 'Content-Type: application/json' );
+    header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+    header( 'Cache-Control: no-cache, no-store' );
+    echo wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+    exit;
+});
+
 function plt_admin_dashboard() {
     $days = intval($_GET['days'] ?? 7);
     if ($days < 1 || $days > 90) $days = 7;
@@ -1691,16 +1943,31 @@ function plt_full_analytics_page() {
     $depth_buckets = array_fill(0, 10, 0);
     $realtime_cutoff = time() - 300;
     $realtime_count = 0;
+    $realtime_total = 0;
+    $realtime_vids = [];
+    $realtime_30_cutoff = time() - 1800;
+    $realtime_30_count = 0;
+    $realtime_30_vids = [];
     $total_pin_saves = 0;
     $pin_sessions = 0;
     $exit_depths = [];
     $viewport_widths = [];
     $completions = [];
+    $human_sessions = 0;
+    $bot_sessions = 0;
+    $dedup_sessions = 0;
 
     // ─── PROCESS EACH SESSION ───
     foreach ($sessions as $s) {
         $ts = $s['unix'] ?? strtotime($s['ts'] ?? '');
         if (!$ts) continue;
+
+        // Track human/bot/dedup counts
+        $is_human = isset($s['is_human']) ? !empty($s['is_human']) : true; // backwards compat
+        $is_dedup = !empty($s['is_dedup']);
+        if (!$is_human) { $bot_sessions++; }
+        if ($is_dedup) { $dedup_sessions++; }
+        if ($is_human) { $human_sessions++; }
 
         $date = date('Y-m-d', $ts);
         $hour = (int)date('G', $ts);
@@ -1754,7 +2021,25 @@ function plt_full_analytics_page() {
         $pattern = strtolower($s['scroll_pattern'] ?? 'scanner');
         if (isset($patterns[$pattern])) $patterns[$pattern]++;
 
-        if ($ts >= $realtime_cutoff) $realtime_count++;
+        if ($ts >= $realtime_cutoff) {
+            $realtime_total++;
+            if ($is_human && !$is_dedup) {
+                $rt_vid = $s['visitor_id'] ?? '';
+                if (!$rt_vid || !isset($realtime_vids[$rt_vid])) {
+                    $realtime_count++;
+                    if ($rt_vid) $realtime_vids[$rt_vid] = true;
+                }
+            }
+        }
+
+        // 30-min active visitors (GA comparison)
+        if ($ts >= $realtime_30_cutoff && $is_human && !$is_dedup) {
+            $rt30_vid = $s['visitor_id'] ?? '';
+            if (!$rt30_vid || !isset($realtime_30_vids[$rt30_vid])) {
+                $realtime_30_count++;
+                if ($rt30_vid) $realtime_30_vids[$rt30_vid] = true;
+            }
+        }
 
         $pin_s = $s['pin_saves']['saves'] ?? 0;
         if ($pin_s > 0) { $total_pin_saves += intval($pin_s); $pin_sessions++; }
@@ -1892,18 +2177,31 @@ function plt_full_analytics_page() {
             </form>
         </div>
 
+        <!-- EXPORT BUTTON -->
+        <?php
+        $export_args = [ 'page' => 'pl-analytics-full', 'plt_export' => 'analytics', 'period' => $period ];
+        if ( $period === 'custom' ) {
+            $export_args['from'] = $custom_from;
+            $export_args['to']   = $custom_to;
+        }
+        $export_url = wp_nonce_url( add_query_arg( $export_args, admin_url( 'admin.php' ) ), 'plt_export_analytics' );
+        ?>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
+            <a href="<?php echo esc_url( $export_url ); ?>" class="button" style="background:#2271b1;border-color:#2271b1;color:#fff;padding:6px 16px;border-radius:8px;font-size:13px;font-weight:500;text-decoration:none">Export Analytics Data (JSON)</a>
+        </div>
+
         <!-- ROW 1: REAL-TIME + KEY METRICS -->
         <div class="pla-grid pla-grid-4">
             <div class="pla-card pla-realtime pla-stat" id="plaRealtimeCard">
                 <div><span class="pla-pulse"></span></div>
-                <div class="pla-stat-value" id="plaRealtimeCount"><?php echo $realtime_count; ?></div>
-                <div class="pla-stat-label">Active Now (5 min)</div>
-                <div class="pla-stat-sub" id="plaRealtimeSub" style="color:rgba(255,255,255,.6)">Last updated: <?php echo date('H:i:s'); ?></div>
+                <div class="pla-stat-value"><span id="plaRealtimeCount"><?php echo $realtime_count; ?></span> <span style="font-size:16px;opacity:.7">|</span> <span id="plaRealtime30" style="font-size:28px"><?php echo $realtime_30_count; ?></span></div>
+                <div class="pla-stat-label">5 min: <span id="plaRtLabel5"><?php echo $realtime_count; ?></span> &nbsp;|&nbsp; 30 min: <span id="plaRtLabel30"><?php echo $realtime_30_count; ?></span></div>
+                <div class="pla-stat-sub" id="plaRealtimeSub" style="color:rgba(255,255,255,.6)"><?php echo $realtime_total; ?> total sessions &middot; Updated: <?php echo date('H:i:s'); ?></div>
             </div>
             <div class="pla-card pla-stat">
-                <div class="pla-stat-value"><?php echo number_format($total); ?></div>
-                <div class="pla-stat-label">Total Sessions</div>
-                <div class="pla-stat-sub"><?php echo number_format($unique_visitors); ?> unique &middot; <?php echo $sessions_per_visitor; ?> sessions/visitor</div>
+                <div class="pla-stat-value"><?php echo number_format($human_sessions); ?></div>
+                <div class="pla-stat-label">Human Sessions</div>
+                <div class="pla-stat-sub"><?php echo number_format($unique_visitors); ?> unique visitors &middot; <?php echo number_format($total); ?> total (<?php echo $bot_sessions; ?> bots filtered)</div>
             </div>
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $avg_depth; ?>%</div>
@@ -1922,7 +2220,7 @@ function plt_full_analytics_page() {
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $returning_pct; ?>%</div>
                 <div class="pla-stat-label">Returning Visitors</div>
-                <div class="pla-stat-sub"><?php echo $returning_visitors; ?> / <?php echo $total; ?></div>
+                <div class="pla-stat-sub"><?php echo $returning_visitors; ?> returning / <?php echo $unique_visitors; ?> unique &middot; <?php echo $sessions_per_visitor; ?> sessions/visitor</div>
             </div>
             <div class="pla-card pla-stat">
                 <div class="pla-stat-value"><?php echo $avg_active; ?>s</div>
@@ -1944,7 +2242,7 @@ function plt_full_analytics_page() {
         <!-- REAL-TIME VISITORS TABLE -->
         <?php if ($realtime_count > 0): ?>
         <div class="pla-card" id="plaRealtimeTable" style="margin-bottom:24px">
-            <h3>Active Visitors (Last 5 Minutes)</h3>
+            <h3>Active Visitors (Last 5 Minutes) &mdash; Human Only</h3>
             <div style="overflow-x:auto">
                 <table class="pla-table" style="width:100%;border-collapse:collapse;font-size:13px">
                     <thead>
@@ -2322,50 +2620,83 @@ function plt_full_analytics_page() {
         <script>
         (function() {
             var countEl = document.getElementById('plaRealtimeCount');
+            var count30El = document.getElementById('plaRealtime30');
+            var label5El = document.getElementById('plaRtLabel5');
+            var label30El = document.getElementById('plaRtLabel30');
             var subEl = document.getElementById('plaRealtimeSub');
             var bodyEl = document.getElementById('plaRealtimeBody');
             var tableWrap = document.getElementById('plaRealtimeTable');
 
             if (!countEl) return;
 
+            var nonce = '<?php echo wp_create_nonce('wp_rest'); ?>';
+            var apiUrl = '<?php echo esc_url(rest_url('plt/v1/realtime')); ?>';
+            var pollCount = 0;
+
             countEl.style.transition = 'transform 0.2s ease';
 
             function refreshRealtime() {
-                fetch('<?php echo esc_url(rest_url('plt/v1/realtime')); ?>', {
-                    headers: { 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>' }
-                })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    countEl.textContent = data.count;
-                    countEl.style.transform = 'scale(1.1)';
-                    setTimeout(function() { countEl.style.transform = 'scale(1)'; }, 200);
+                pollCount++;
+                try {
+                    fetch(apiUrl, {
+                        credentials: 'same-origin',
+                        headers: { 'X-WP-Nonce': nonce }
+                    })
+                    .then(function(r) {
+                        // Refresh nonce from response header if available.
+                        var newNonce = r.headers.get('X-WP-Nonce');
+                        if (newNonce) nonce = newNonce;
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        try {
+                            countEl.textContent = data.count;
+                            countEl.style.transform = 'scale(1.1)';
+                            setTimeout(function() { countEl.style.transform = 'scale(1)'; }, 200);
 
-                    if (subEl) {
-                        subEl.textContent = 'Updated: ' + data.timestamp +
-                            (data.count_1min > 0 ? ' \u00b7 ' + data.count_1min + ' in last min' : '');
-                    }
+                            if (count30El) count30El.textContent = data.count_30min || 0;
+                            if (label5El) label5El.textContent = data.count;
+                            if (label30El) label30El.textContent = data.count_30min || 0;
 
-                    if (bodyEl && data.visitors) {
-                        var html = '';
-                        data.visitors.forEach(function(v) {
-                            html += '<tr style="border-bottom:1px solid #f3f4f6">' +
-                                '<td style="padding:8px 12px">' + v.country + '</td>' +
-                                '<td style="padding:8px 12px"><span class="pla-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:4px;font-size:11px">' + v.device + '</span></td>' +
-                                '<td style="padding:8px 12px">' + v.page + '</td>' +
-                                '<td style="padding:8px 12px">' + v.time + '</td>' +
-                                '</tr>';
-                        });
-                        bodyEl.innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">No active visitors</td></tr>';
-                    }
+                            if (subEl) {
+                                var parts = [];
+                                if (data.total_sessions_5min) parts.push(data.total_sessions_5min + ' total sessions');
+                                parts.push('Updated: ' + data.timestamp);
+                                if (data.count_1min > 0) parts.push(data.count_1min + ' in last min');
+                                subEl.textContent = parts.join(' \u00b7 ');
+                            }
 
-                    if (tableWrap) {
-                        tableWrap.style.display = data.count > 0 ? '' : 'none';
-                    }
-                })
-                .catch(function() {});
+                            if (bodyEl && data.visitors) {
+                                var html = '';
+                                data.visitors.forEach(function(v) {
+                                    html += '<tr style="border-bottom:1px solid #f3f4f6">' +
+                                        '<td style="padding:8px 12px">' + v.country + '</td>' +
+                                        '<td style="padding:8px 12px"><span class="pla-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:4px;font-size:11px">' + v.device + '</span></td>' +
+                                        '<td style="padding:8px 12px">' + v.page + '</td>' +
+                                        '<td style="padding:8px 12px">' + v.time + '</td>' +
+                                        '</tr>';
+                                });
+                                bodyEl.innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">No active visitors</td></tr>';
+                            }
+
+                            if (tableWrap) {
+                                tableWrap.style.display = data.count > 0 ? '' : 'none';
+                            }
+                        } catch(e) {
+                            console.warn('[PL-Analytics] Render error (poll #' + pollCount + '):', e.message);
+                        }
+                    })
+                    .catch(function(e) {
+                        console.warn('[PL-Analytics] Fetch error (poll #' + pollCount + '):', e.message || 'network');
+                    });
+                } catch(e) {
+                    console.warn('[PL-Analytics] Poll error:', e.message);
+                }
             }
 
-            setInterval(refreshRealtime, 30000);
+            // Poll every 15 seconds for responsive feel.
+            setInterval(refreshRealtime, 15000);
         })();
         </script>
     </div>
@@ -2383,10 +2714,43 @@ add_action('wp_footer', function() {
 <script>
 (function(){
 'use strict';
+
+// === BOT DETECTION (pre-init, before any tracking) ===
+if(navigator.webdriver)return;
+if(/bot|crawl|spider|slurp|googlebot|bingbot|baiduspider|yandexbot|duckduckbot|sogou|exabot|ia_archiver|facebot|facebookexternalhit|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|applebot|dataforseobot|bytespider|gptbot|claudebot|ccbot|amazonbot|anthropic|headlesschrome|phantomjs|slimerjs|lighthouse|pagespeed|pingdom|uptimerobot|statuscode|wget|curl|python-requests|go-http-client|java\/|libwww/i.test(navigator.userAgent))return;
+if(window.innerWidth===0&&window.innerHeight===0)return;
+
+// === VISIBILITY GATE (skip prerender/prefetch) ===
+function boot(){
+if(document.visibilityState==='prerender'){
+document.addEventListener('visibilitychange',function f(){
+if(document.visibilityState==='visible'){document.removeEventListener('visibilitychange',f);startInit();}
+});return;
+}
+startInit();
+}
+function startInit(){
+if('requestIdleCallback' in window)requestIdleCallback(init);
+else setTimeout(init,300);
+}
+
 function init(){
 var EP='<?php echo esc_js($endpoint); ?>',PID=<?php echo intval($post_id); ?>,T0=Date.now();
 var vw=window.innerWidth,vh=window.innerHeight;
 var dev=vw<768?'mobile':(vw<1024?'tablet':'desktop');
+
+// === INTERACTION GATE (human verification) ===
+var interacted=false;
+function onInteract(){interacted=true;}
+window.addEventListener('scroll',onInteract,{passive:true,once:true});
+window.addEventListener('click',onInteract,{passive:true,once:true});
+window.addEventListener('touchstart',onInteract,{passive:true,once:true});
+window.addEventListener('mousemove',onInteract,{passive:true,once:true});
+window.addEventListener('keydown',onInteract,{passive:true,once:true});
+
+// === SESSION DEDUPLICATION ===
+var isDup=false;
+try{if(sessionStorage.getItem('plt_page_'+PID)){isDup=true;}else{sessionStorage.setItem('plt_page_'+PID,'1');}}catch(e){}
 
 // Visitor ID (persistent across sessions)
 var ret=0,vid='';
@@ -2895,6 +3259,7 @@ function buildPayload(){
     return {t:timeOnPage,url:location.pathname,pid:PID,ref:document.referrer,
         dev:dev,vw:vw,vh:vh,ret:ret,vid:vid,ga4cid:ga4cid,
         tz:Intl.DateTimeFormat().resolvedOptions().timeZone||'',lang:navigator.language||'',
+        human:1,has_interacted:interacted?1:0,dedup:isDup?1:0,
         d:Math.round(maxDepth*10)/10,ccp:Math.round(ccp*10)/10,
         ss:Math.round(avgSpd),ms:Math.round(maxSpd),sp:pattern,
         ch:document.documentElement.scrollHeight,se:scrollEvts,dc:dirChanges,
@@ -2921,8 +3286,7 @@ document.addEventListener('visibilitychange',function(){if(document.visibilitySt
 window.addEventListener('pagehide',send);
 }
 
-if('requestIdleCallback' in window)requestIdleCallback(init);
-else setTimeout(init,300);
+boot();
 })();
 </script>
 <?php

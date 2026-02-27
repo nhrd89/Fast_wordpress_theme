@@ -3,7 +3,7 @@
 
 # ── CORS Headers ────────────────────────────────────────────────
 <IfModule mod_headers.c>
-    # Allow any origin to load images (cheerfultalks.com etc.)
+    # Allow any origin to load images (cheerlives.com etc.)
     Header set Access-Control-Allow-Origin "*"
     Header set Access-Control-Allow-Methods "GET, HEAD"
     Header set Timing-Allow-Origin "*"

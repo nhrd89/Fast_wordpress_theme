@@ -16,7 +16,6 @@ var itemTitles = C.itemTitles || [];
 var itemPins = C.itemPins || [];
 var CATEGORY = C.category || 'hairstyle';
 var POST_ID = C.postId || 0;
-var NEXT_POST = C.nextPost || { title: '', url: '', img: '' };
 var AI_TIP_TEXT = C.aiTip || '';
 var EMAIL_ENDPOINT = C.emailEndpoint || '';
 var FEATURES = C.features || {};
@@ -54,7 +53,6 @@ var $milestoneSub = document.getElementById('ebMilestoneSub');
 var $achievement = document.getElementById('ebAchievement');
 var $collectCounter = document.getElementById('ebCollectCounter');
 var $collectNum = document.getElementById('ebCollectNum');
-var $nextBar = document.getElementById('ebNextBar');
 var $exit = document.getElementById('ebExit');
 var $exitFavCount = document.getElementById('ebExitFavCount');
 var $aiTip = document.getElementById('ebAiTip');
@@ -135,11 +133,13 @@ function checkMilestones() {
 
 	// Achievement at 100%
 	if (pct >= 100 && $achievement) {
-		setTimeout(function() {
-			$achievement.classList.add('show');
-			ebTrack('achievement_earned', { type: 'style_expert' });
-			setTimeout(function() { $achievement.classList.remove('show'); }, 5000);
-		}, 2000);
+		// Disabled: achievement popup interrupts scrolling experience
+		// setTimeout(function() {
+		// 	$achievement.classList.add('show');
+		// 	ebTrack('achievement_earned', { type: 'style_expert' });
+		// 	setTimeout(function() { $achievement.classList.remove('show'); }, 5000);
+		// }, 2000);
+		ebTrack('achievement_earned', { type: 'style_expert' });
 	}
 }
 
@@ -148,8 +148,9 @@ function showMilestone(emoji, text, sub) {
 	$milestoneEmoji.textContent = emoji;
 	$milestoneText.textContent = text;
 	$milestoneSub.textContent = sub;
-	$milestone.classList.add('show');
-	setTimeout(function() { $milestone.classList.remove('show'); }, 3000);
+	// Disabled: milestone popup interrupts scrolling experience
+	// $milestone.classList.add('show');
+	// setTimeout(function() { $milestone.classList.remove('show'); }, 3000);
 }
 
 // === AI Tip Unlock ===
@@ -169,15 +170,6 @@ function checkAiTip() {
 	}
 }
 
-// === Next Article Bar ===
-function checkNextBar() {
-	if (!NEXT_POST || !NEXT_POST.url || !$nextBar) return;
-	var pct = Math.round((seenItems.size / TOTAL) * 100);
-	if (pct >= 80) {
-		$nextBar.classList.add('show');
-	}
-}
-
 // === Speed Warning ===
 function checkScrollSpeed() {
 	var now = Date.now();
@@ -186,9 +178,10 @@ function checkScrollSpeed() {
 	if (dt > 0 && dt < 200) {
 		var speed = dy / dt * 1000; // px/s
 		if (speed > 2000 && $speedWarn && seenItems.size > 2 && seenItems.size < TOTAL - 2) {
-			$speedWarn.classList.add('show');
+			// Disabled: speed warning popup interrupts scrolling experience
+			// $speedWarn.classList.add('show');
 			ebTrack('speed_warning', { speed: Math.round(speed) });
-			setTimeout(function() { $speedWarn.classList.remove('show'); }, 2500);
+			// setTimeout(function() { $speedWarn.classList.remove('show'); }, 2500);
 		}
 	}
 	lastScrollY = window.scrollY;
@@ -273,7 +266,6 @@ document.addEventListener('click', function(e) {
 	else if (action === 'jump') handleJump(target);
 	else if (action === 'email') handleEmail(target);
 	else if (action === 'exit-close') handleExitClose();
-	else if (action === 'next') handleNext(target);
 	else if (action === 'pin-all') handlePinAll();
 });
 
@@ -430,14 +422,6 @@ function handleExitClose() {
 	if ($exit) $exit.classList.remove('show');
 }
 
-function handleNext(btn) {
-	var url = btn.dataset.url;
-	if (url) {
-		ebTrack('next_article_clicked', { url: url });
-		window.location.href = url;
-	}
-}
-
 function handlePinAll() {
 	// Open Pinterest bulk save (individual pins)
 	favItems.forEach(function(idx) {
@@ -468,7 +452,6 @@ function initObserver() {
 					updateProgress();
 					updatePills(idx);
 					checkMilestones();
-					checkNextBar();
 					checkAiTip();
 					ebTrack('item_seen', { item: idx, total_seen: seenItems.size });
 				}
@@ -567,6 +550,77 @@ function initSkeletons() {
 	}
 }
 
+// === Engagement Bridge ===
+// Exposes engagement state for smart-ads.js to read.
+var dirChanges = 0;
+var lastBridgeDir = 0;
+var lastBridgeY = 0;
+var bridgeSpeed = 0;
+var bridgeLastTime = 0;
+
+function updateBridge() {
+	var y = window.scrollY || window.pageYOffset;
+	var docH = document.documentElement.scrollHeight - window.innerHeight;
+	var depth = docH > 0 ? (y / docH) * 100 : 0;
+
+	// Direction changes
+	var dir = y > lastBridgeY ? 1 : (y < lastBridgeY ? -1 : 0);
+	if (dir !== 0 && dir !== lastBridgeDir) {
+		if (lastBridgeDir !== 0) dirChanges++;
+		lastBridgeDir = dir;
+	}
+
+	// Speed (px/s)
+	var now = Date.now();
+	var dt = now - bridgeLastTime;
+	if (dt > 0 && dt < 500) {
+		bridgeSpeed = Math.abs(y - lastBridgeY) / (dt / 1000);
+	}
+	lastBridgeY = y;
+	bridgeLastTime = now;
+
+	// Pattern classification
+	var elapsed = (now - pageStart) / 1000;
+	var pattern = 'scanner';
+	if (elapsed < 10 && depth < 30) pattern = 'bouncer';
+	else if (dirChanges > 5 && elapsed > 30) pattern = 'reader';
+
+	window.__plEngagement = {
+		scrollDepth: Math.round(depth * 10) / 10,
+		timeOnPage: Math.round(elapsed * 10) / 10,
+		directionChanges: dirChanges,
+		scrollSpeed: Math.round(bridgeSpeed),
+		pattern: pattern,
+		itemsSeen: seenItems.size,
+		totalItems: TOTAL
+	};
+}
+var pageStart = Date.now();
+
+// === Image Tap Tracker ===
+function initImageTapTracker() {
+	window._imageTaps = [];
+	document.addEventListener('click', function(e) {
+		var img = e.target.closest('.single-content img, .infinite-post-content img');
+		if (!img) return;
+
+		// Find nearest heading for context.
+		var heading = '';
+		var el = img.closest('.eb-item, article, .infinite-post-wrapper');
+		if (el) {
+			var h = el.querySelector('h2, h3');
+			if (h) heading = h.textContent.trim().substring(0, 80);
+		}
+
+		window._imageTaps.push({
+			src: (img.currentSrc || img.src || '').substring(0, 200),
+			alt: (img.alt || '').substring(0, 80),
+			heading: heading,
+			ts: Math.round((Date.now() - pageStart) / 1000)
+		});
+	});
+}
+
 // === Init ===
 function init() {
 	// Populate header stats total (mobile)
@@ -580,10 +634,19 @@ function init() {
 	initObserver();
 	checkStreak();
 
-	window.addEventListener('scroll', onScroll, { passive: true });
+	window.addEventListener('scroll', function() {
+		onScroll();
+		updateBridge();
+	}, { passive: true });
+
+	// Initialize bridge immediately
+	updateBridge();
 
 	// Scroll gate for skeletons
 	initScrollGate();
+
+	// Track image taps/clicks
+	initImageTapTracker();
 }
 
 // Run on DOMContentLoaded or immediately if already loaded

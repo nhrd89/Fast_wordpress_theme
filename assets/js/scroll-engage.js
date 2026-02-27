@@ -76,14 +76,14 @@ function switchTo(name) {
 function injectDOM(){
   var css = [];
   if(C.dancer!==false){
-    css.push(".pl-v-wrap{position:fixed;bottom:70px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:44px;height:80px}");
+    css.push(".pl-v-wrap{position:fixed;bottom:calc(50% + 30px);right:14px;z-index:99;pointer-events:auto;cursor:pointer;width:44px;height:80px}");
     css.push(".pl-v-wrap video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .15s}");
     css.push(".pl-v-wrap video.active{opacity:1}");
-    css.push(".pl-e-sp{position:fixed;bottom:160px;right:10px;z-index:1001;background:#fff;border:2px solid #ff69b4;border-radius:16px 16px 4px 16px;padding:6px 10px;font-size:11px;color:#333;font-family:sans-serif;max-width:160px;box-shadow:0 3px 12px rgba(255,105,180,.2);opacity:0;transform:translateY(10px) scale(.9);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;line-height:1.3}");
+    css.push(".pl-e-sp{position:fixed;bottom:calc(50% + 120px);right:10px;z-index:100;background:#fff;border:2px solid #ff69b4;border-radius:16px 16px 4px 16px;padding:6px 10px;font-size:11px;color:#333;font-family:sans-serif;max-width:160px;box-shadow:0 3px 12px rgba(255,105,180,.2);opacity:0;transform:translateY(10px) scale(.9);transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;line-height:1.3}");
     css.push(".pl-e-sp.show{opacity:1;transform:translateY(0) scale(1)}");
-    css.push(".pl-e-sk{position:fixed;pointer-events:none;z-index:999;font-size:14px;animation:plSF 1.2s ease-out forwards}");
+    css.push(".pl-e-sk{position:fixed;pointer-events:none;z-index:99;font-size:14px;animation:plSF 1.2s ease-out forwards}");
     css.push("@keyframes plSF{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-60px) scale(.3) rotate(180deg)}}");
-    css.push(".pl-chat-wrap{position:fixed;bottom:100px;right:14px;width:260px;z-index:1002;display:none;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}");
+    css.push(".pl-chat-wrap{position:fixed;bottom:calc(50% + 120px);right:14px;width:260px;z-index:100;display:none;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}");
     css.push(".pl-chat-wrap.show{display:flex}");
     css.push(".pl-chat-scroll{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow-y:auto;overflow-x:hidden;width:100%;padding:4px 2px;scroll-behavior:smooth;scrollbar-width:none;-ms-overflow-style:none;pointer-events:auto}");
     css.push(".pl-chat-scroll::-webkit-scrollbar{display:none}");
@@ -111,10 +111,10 @@ function injectDOM(){
     css.push(".pl-chat-x{background:none;border:none;color:#f472b6;font-size:16px;cursor:pointer;padding:0 4px;line-height:1;opacity:.7;transition:opacity .2s;flex-shrink:0}");
     css.push(".pl-chat-x:hover{opacity:1}");
     css.push(".pl-chat-ended{align-self:center;font-size:11px;color:#9d174d;padding:4px 10px;background:rgba(255,245,248,.9);border-radius:10px;border:1px solid #f9a8d4}");
-    css.push("@media(max-width:480px){.pl-chat-wrap{right:8px;left:8px;width:auto;bottom:90px}}");
+    css.push("@media(max-width:480px){.pl-chat-wrap{right:8px;left:8px;width:auto;bottom:calc(50% + 120px)}}");
   }
   if(C.heart!==false){
-    css.push(".pl-e-heart{position:fixed;bottom:20px;right:14px;z-index:1000;pointer-events:auto;cursor:pointer;width:34px;height:34px}");
+    css.push(".pl-e-heart{position:fixed;bottom:50%;right:14px;z-index:99;pointer-events:auto;cursor:pointer;width:34px;height:34px;transform:translateY(50%)}");
     css.push(".pl-e-heart svg{width:34px;height:34px;animation:plHB .8s ease-in-out infinite}");
     css.push(".pl-e-pct{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:700;color:#e91e63;font-family:sans-serif;text-shadow:0 0 3px rgba(255,255,255,.9)}");
     css.push("@keyframes plHB{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}");
@@ -159,7 +159,7 @@ function injectDOM(){
 // ============================
 var state="idle",lastY=0,speed=0,scrollPct=0,scrollTimer=null;
 var lastSpeechTime=0,speechTimeout=null;
-var milestoneHit={},ticking=false,peekabooTimer=null;
+var milestoneHit={},ticking=false,peekabooTimer=null,heartFrameCount=0;
 var visitCount=1;
 try{visitCount=parseInt(localStorage.getItem("pl_v")||"0")+1;localStorage.setItem("pl_v",visitCount)}catch(e){}
 
@@ -302,9 +302,10 @@ function triggerMicroInteraction(){
 // Sparkles
 var sparkleE=["✨","💖","💗","⭐","🌟","💕","🎀","💫"];
 function addSparkle(){
-  if(C.dancer===false)return;
+  if(C.dancer===false||!wrap)return;
+  var rect=wrap.getBoundingClientRect();
   var el=document.createElement("div");el.className="pl-e-sk";el.textContent=sparkleE[rnd(0,sparkleE.length-1)];
-  el.style.right=rnd(10,60)+"px";el.style.bottom=rnd(70,160)+"px";el.style.fontSize=rnd(10,18)+"px";
+  el.style.left=rnd(Math.round(rect.left)-10, Math.round(rect.right)+10)+"px";el.style.top=rnd(Math.round(rect.top)-20, Math.round(rect.bottom))+"px";el.style.fontSize=rnd(10,18)+"px";
   document.body.appendChild(el);setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},1300);
 }
 
@@ -589,6 +590,7 @@ function getTC(){var h=new Date().getHours();return h<12?"Morning":h<17?"Afterno
 // Mood
 var MOOD=[[255,252,248],[255,240,245],[248,235,255],[235,248,255],[240,255,245],[255,245,230],[255,235,245],[240,235,255],[245,250,255],[255,245,248],[250,240,255]];
 function updateMood(pct){
+  return; // Disabled: writing document.body.style.backgroundColor every frame causes scroll lag
   if(C.bgMood===false)return;
   var idx=pct<=0.5?(pct/0.5)*7:7+((pct-0.5)/0.5)*3,i=Math.floor(idx),t=idx-i;t=t*t*(3-2*t);
   var c1=MOOD[Math.min(i,10)],c2=MOOD[Math.min(i+1,10)];
@@ -611,7 +613,7 @@ function onScroll(){
     if (document.activeElement && document.activeElement.classList.contains('pl-chat-input')) return;
     var sT=window.pageYOffset,dH=document.documentElement.scrollHeight-window.innerHeight;if(dH<=0)return;
     scrollPct=Math.min(Math.max(sT/dH,0),1);speed=Math.abs(sT-lastY);lastY=sT;
-    updateMood(scrollPct);updateHeart(scrollPct);
+    updateMood(scrollPct);heartFrameCount++;if(heartFrameCount%5===0)updateHeart(scrollPct);
 
     // Victory at 98%+
     if(scrollPct>=0.98&&!milestoneHit["100"]){milestoneHit["100"]=true;startVictory()}
