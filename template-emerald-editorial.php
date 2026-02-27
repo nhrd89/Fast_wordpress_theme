@@ -270,7 +270,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 </section>
 
 <!-- Page Ad Anchor: between hero and categories -->
+<?php if ( ! pl_is_ezoic_site() ) : ?>
 <div class="pl-page-ad-anchor" data-slot="homepage-1" data-format="leaderboard"></div>
+<?php endif; ?>
 
 <!-- ====== SECTION 3: CATEGORY CIRCLES ====== -->
 <?php if ( ! empty( $cat_circles ) ) : ?>
@@ -293,7 +295,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 <?php endif; ?>
 
 <!-- Page Ad Anchor: between categories and latest -->
+<?php if ( ! pl_is_ezoic_site() ) : ?>
 <div class="pl-page-ad-anchor" data-slot="homepage-2" data-format="rectangle"></div>
+<?php endif; ?>
 
 <!-- ====== SECTION 4: LATEST POSTS ====== -->
 <section class="ee-latest">
@@ -336,7 +340,9 @@ $nl_success = get_theme_mod( 'pl_newsletter_success', "You're in! Check your inb
 </section>
 
 <!-- Page Ad Anchor: between latest and newsletter -->
+<?php if ( ! pl_is_ezoic_site() ) : ?>
 <div class="pl-page-ad-anchor" data-slot="homepage-3" data-format="leaderboard"></div>
+<?php endif; ?>
 
 <!-- ====== SECTION 5: NEWSLETTER BANNER ====== -->
 <section class="ee-newsletter">

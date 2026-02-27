@@ -85,8 +85,10 @@ $has_more   = $posts_data['has_more'];
 	.pl-cat-empty .icon{font-size:48px;margin-bottom:12px}
 	.pl-cat-empty h2{font-size:20px;color:#666;margin:0 0 8px}
 
+	<?php if ( ! pl_is_ezoic_site() ) : ?>
 	/* Ad card — matches post card exactly */
 	.pl-cat-ad-card{break-inside:avoid;margin-bottom:18px;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.04);display:flex;align-items:center;justify-content:center;min-height:280px}
+	<?php endif; ?>
 
 	/* Responsive */
 	@media(max-width:900px){.pl-cat-grid{columns:2}.pl-cat-header{flex-direction:column;align-items:flex-start}}
@@ -136,7 +138,7 @@ $has_more   = $posts_data['has_more'];
 			<?php while ( $pa_post_idx < $pa_total ) :
 				$pa_item_idx++;
 
-				if ( $pa_enabled && in_array( $pa_item_idx, $pa_positions, true ) ) :
+				if ( $pa_enabled && ! pl_is_ezoic_site() && in_array( $pa_item_idx, $pa_positions, true ) ) :
 					$pa_ad_idx++;
 			?>
 			<div class="pl-cat-ad-card pl-page-ad-anchor" data-slot="cat-<?php echo $pa_ad_idx; ?>" data-format="rectangle"></div>
@@ -236,7 +238,7 @@ $has_more   = $posts_data['has_more'];
 	var patIdx=0;
 	var countdown=AD_PATTERN[0];
 	var adIdx=<?php echo (int) $pa_ad_idx; ?>;
-	var adsEnabled=<?php echo $pa_enabled ? 'true' : 'false'; ?>;
+	var adsEnabled=<?php echo ( $pa_enabled && ! pl_is_ezoic_site() ) ? 'true' : 'false'; ?>;
 
 	btn.addEventListener('click',function(){
 		var cat=btn.dataset.cat;
