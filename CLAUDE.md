@@ -8,14 +8,15 @@
 
 ## 1. Project Overview
 
-**Multi-site network** of fashion/lifestyle content sites targeting Pinterest traffic. Sites publish listicle-style posts (e.g., "25 Stunning Hairstyles") with curated CDN images, engagement gamification, and monetization via display ads.
+**Multi-site network** of content sites targeting Pinterest traffic. Sites publish listicle-style posts (e.g., "25 Stunning Hairstyles") with curated CDN images, engagement gamification, and monetization via display ads. tecarticles.com is the exception — it uses **Ezoic** for ad monetization (NOT our ad engine).
 
 ### Sites
-| Site | GA4 ID | Status |
-|------|--------|--------|
-| cheerlives.com | G-TD7Z2RMZ1C | Live |
-| inspireinlet.com | G-TLFCKLVE30 | Deploying |
-| pulsepathlife.com | G-1ZRM1FTWRB | Deploying |
+| Site | GA4 ID | Ad Network | Status |
+|------|--------|------------|--------|
+| cheerlives.com | G-TD7Z2RMZ1C | Ad.Plus (GPT) | Live |
+| inspireinlet.com | G-TLFCKLVE30 | Ad.Plus (GPT) | Deploying |
+| pulsepathlife.com | G-1ZRM1FTWRB | Ad.Plus (GPT) | Deploying |
+| tecarticles.com | TBD | **Ezoic** | Deploying |
 
 ### Tech Stack
 - **CMS:** WordPress (self-hosted)
@@ -64,6 +65,7 @@ Fast_wordpress_theme/
 │   │   ├── engagement.css  # Non-critical, loaded via preload onload trick (deferred)
 │   │   ├── homepage-emerald.css # Emerald Editorial homepage (inlined at wp_head p3)
 │   │   ├── homepage-coral.css # Coral Breeze homepage (inlined at wp_head p3)
+│   │   ├── homepage-tec-slate.css # Tec Slate homepage (inlined at wp_head p3)
 │   │   └── dist/           # Build output (gitignored — production falls back to source)
 │   ├── js/
 │   │   ├── core.js         # Minimal theme script (hamburger menu, etc.)
@@ -111,6 +113,8 @@ Fast_wordpress_theme/
 │
 ├── template-emerald-editorial.php # Emerald Editorial homepage (inspireinlet.com)
 ├── template-coral-breeze.php # Coral Breeze homepage (pulsepathlife.com)
+│
+├── template-tec-slate.php      # Tec Slate homepage (tecarticles.com)
 │
 ├── template-parts/
 │   └── content-card.php    # Reusable card component for grids
@@ -450,14 +454,15 @@ Gated behind `pl_ad_settings()['enabled']` check.
 
 ## 5. Deployment Pipeline
 
-### Multi-Site Deploy (3 parallel jobs in `deploy.yml`)
-One push triggers a single workflow with 3 parallel jobs (no `needs:` dependency):
+### Multi-Site Deploy (4 parallel jobs in `deploy.yml`)
+One push triggers a single workflow with 4 parallel jobs (no `needs:` dependency):
 
-| Job | Site | Secrets Suffix |
-|-----|------|----------------|
-| `deploy` | cheerlives.com | `_CHEERLIVES` |
-| `deploy-inspireinlet` | inspireinlet.com | `_INSPIREINLET` |
-| `deploy-pulsepathlife` | pulsepathlife.com | `_PULSEPATHLIFE` |
+| Job | Site | Ad Network | Secrets Suffix |
+|-----|------|------------|----------------|
+| `deploy` | cheerlives.com | Ad.Plus | `_CHEERLIVES` |
+| `deploy-inspireinlet` | inspireinlet.com | Ad.Plus | `_INSPIREINLET` |
+| `deploy-pulsepathlife` | pulsepathlife.com | Ad.Plus | `_PULSEPATHLIFE` |
+| `deploy-tecarticles` | tecarticles.com | **Ezoic** | `_TECARTICLES` |
 
 - **Triggers:** push to `main` or `claude/setup-pinlightning-theme-5lwUG`
 - **Build:** `npm install` → `npm run build` (lightningcss + terser)
@@ -535,6 +540,7 @@ All CSS is **inlined in `<head>`** — zero external stylesheet requests.
 | `engagement.css` | `wp_head` | 99 | `<link rel="preload" onload>` (deferred) |
 | `homepage-emerald.css` | `wp_head` | 3 | `file_get_contents` → inline `<style>` (emerald homepage only) |
 | `homepage-coral.css` | `wp_head` | 3 | `file_get_contents` → inline `<style>` (coral homepage only) |
+| `homepage-tec-slate.css` | `wp_head` | 3 | `file_get_contents` → inline `<style>` (tec-slate homepage only) |
 
 ### Critical CSS Rules
 - **Must stay under 3KB** — layout-only properties
@@ -659,6 +665,16 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Add tecarticles.com as 4th Site — Ezoic Ad Monetization (Feb 27, 2026)
+- **feat: add tecarticles.com with Ezoic-compatible PinLightning deployment** — tecarticles.com is a tech/general content site using Ezoic (NOT our ad engine) for ad monetization. ZERO ad-related JS/CSS loads on this domain.
+- **`pl_is_ezoic_site()` helper** — Central domain check in `functions.php`. Returns `true` for `tecarticles.com` / `www.tecarticles.com`. All ad code paths check this before executing.
+- **Ad engine guards** — Added `pl_is_ezoic_site()` early-return to: `pinlightning_postload_scripts()` (skips initial-ads.js + smart-ads.js), `pinlightning_ads_enqueue()` (skips plAds config), `pl_ad_admin_menu()` (hides Ad Engine admin menu), `pl_page_ads_enqueue()` (skips page-ads.js), `pl_page_ad_category_anchors()`, `pl_page_ad_static_content()`, `pl_inject_initial_ads()` (skips content filter), `pl_render_sidebar_ads()`. Header.php: ad CDN preconnects gated behind `!pl_is_ezoic_site()`.
+- **Tec Slate homepage** — `template-tec-slate.php` + `assets/css/homepage-tec-slate.css`. Slate Modern design: dark slate (#2d3748) + electric blue (#3b82f6) + white. System font stack (NO external fonts — maximum speed). Layout: sticky header, hero+trending sidebar, category pills, 3-column latest grid, load more, newsletter, shared footer with slate/blue overrides. Per-category diversity (top 20 cats, round-robin, max 2 per cat, `$shown_ids` chain). CSS prefix: `ts-`.
+- **Homepage routing** — `inc/homepage-templates.php`: `tecarticles.com` → `tec-slate`. Customizer choice added. `pl_tec_slate_critical_css()` inliner at wp_head p3. `template-tec-slate.php` mapped in `template_include`.
+- **Deploy pipeline** — `deploy-tecarticles` job added to `deploy.yml` (parallel, no `needs:`). Uses `_TECARTICLES` secret suffix. Separate host/port secrets (may be on different server). No PageSpeed test yet (add after site is live with content).
+- **Ezoic compatibility** — Template calls `wp_head()` and `wp_footer()` (Ezoic hooks into these). No CSP headers. No ad anchor divs on Ezoic pages. WordPress-native lazy loading preserved (compatible with Ezoic's lazy loader). Engagement system works normally.
+- **Required GitHub secrets:** `SFTP_HOST_TECARTICLES`, `SFTP_PORT_TECARTICLES`, `SFTP_USER_TECARTICLES`, `SFTP_PASS_TECARTICLES`, `SFTP_REMOTE_PATH_TECARTICLES`, `SITE_URL_TECARTICLES`, `CACHE_SECRET_TECARTICLES`, `WP_USER_TECARTICLES`, `WP_APP_PASSWORD_TECARTICLES`.
 
 ### Fix: Page Ads 0% Fill Rate — Rate Limiter Blocking filled/empty Events (Feb 27, 2026)
 - **Root cause:** `sendEvent('impression', record)` fired in `renderSlot()` at GPT display time, hitting the PHP rate limiter (1 event per 2 seconds per IP via transient). When `slotRenderEnded` fired shortly after (typically <2s), the `sendEvent('filled'/'empty', ...)` was silently dropped as rate-limited. Result: impressions recorded, viewable events recorded (arrive >2s later via IO tracker), but filled=0 and empty=0 on every row → 0% fill rate in CSV and stats dashboard.
@@ -812,6 +828,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Image tap tracker (click tracking on post images, stored in session data)
 - Page ad system for non-post pages (homepage, category, static) — fully isolated from post ads
 - PageSpeed scores maintained at 100/100/100/100
+- tecarticles.com: Ezoic-compatible deployment with zero ad engine code, Tec Slate homepage template
 
 ### Monitoring (check after 24-48 hours)
 - Viewability trend: 43.8% → 48.8% → 54% → target 63-70%
@@ -863,6 +880,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 13. **wp_localize_script converts values to strings** — JS `>=` works but `===` doesn't.
 14. **Google 30s refresh minimum** — Never refresh GPT slots faster than 30 seconds.
 15. **Sidebar GPT slot warnings** — display() gated behind IS_DESKTOP. Don't call display() without matching defineSlot().
+16. **Ezoic sites (tecarticles.com)** — NEVER load GPT, smart-ads, initial-ads, page-ads, or any ad engine code. Use `pl_is_ezoic_site()` guard. Ezoic handles all ad injection via their DNS/plugin integration.
 
 ---
 
@@ -908,3 +926,5 @@ MAX_DYNAMIC_SLOTS  = 20    // recycled when exceeded
 12. **ALWAYS preserve existing viewability optimizations** when adding features
 13. **ALWAYS track new metrics** in beacon/heartbeat payloads
 14. **CLAUDE.md lives in theme root** (same directory as style.css, header.php, functions.php)
+15. **ALWAYS guard ad code with `pl_is_ezoic_site()`** on any new ad-related hooks or output
+16. **NEVER load GPT/ad scripts on Ezoic domains** — Ezoic handles its own ad injection
