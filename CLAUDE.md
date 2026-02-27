@@ -666,6 +666,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Fix: Hide All Ad HTML on Ezoic Sites (Feb 27, 2026)
+- **Root cause:** JS ad scripts were blocked by `pl_is_ezoic_site()` guards, but hardcoded ad anchor `<div>` elements in PHP templates still rendered as empty containers on tecarticles.com. These included `.pl-page-ad-anchor` divs in homepage templates and `.pl-cat-ad-card` divs in the category grid.
+- **Fix (category.php):** Wrapped `.pl-cat-ad-card` CSS rule in `<?php if ( ! pl_is_ezoic_site() ) : ?>` guard. Added `! pl_is_ezoic_site()` to the loop condition that outputs ad card divs. Set `adsEnabled=false` in Load More JS when Ezoic site (prevents JS ad card injection on load-more).
+- **Fix (front-page.php):** Wrapped all 3 `pl-page-ad-anchor` divs (homepage-1, homepage-2, homepage-3) in `<?php if ( ! pl_is_ezoic_site() ) : ?>` guards.
+- **Fix (template-emerald-editorial.php):** Wrapped all 3 `pl-page-ad-anchor` divs in Ezoic guards.
+- **Fix (template-coral-breeze.php):** Wrapped all 3 `pl-page-ad-anchor` divs in Ezoic guards.
+- **Already guarded (no changes needed):** `template-tec-slate.php` (no ad anchors), `single.php` (`pl_render_sidebar_ads()` already checks `pl_is_ezoic_site()`), `footer.php` (no ad output), `inc/page-ad-engine.php` (category/static content filters already early-return for Ezoic).
+
 ### Add tecarticles.com as 4th Site — Ezoic Ad Monetization (Feb 27, 2026)
 - **feat: add tecarticles.com with Ezoic-compatible PinLightning deployment** — tecarticles.com is a tech/general content site using Ezoic (NOT our ad engine) for ad monetization. ZERO ad-related JS/CSS loads on this domain.
 - **`pl_is_ezoic_site()` helper** — Central domain check in `functions.php`. Returns `true` for `tecarticles.com` / `www.tecarticles.com`. All ad code paths check this before executing.
