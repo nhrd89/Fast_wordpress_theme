@@ -2,7 +2,7 @@
 
 > Complete reference for any Claude Code session to pick up immediately.
 > **Branch:** `claude/setup-pinlightning-theme-5lwUG`
-> **Last updated:** 2026-02-26
+> **Last updated:** 2026-02-27
 
 ---
 
@@ -659,6 +659,12 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Fix: Page Ads 0% Fill Rate — Rate Limiter Blocking filled/empty Events (Feb 27, 2026)
+- **Root cause:** `sendEvent('impression', record)` fired in `renderSlot()` at GPT display time, hitting the PHP rate limiter (1 event per 2 seconds per IP via transient). When `slotRenderEnded` fired shortly after (typically <2s), the `sendEvent('filled'/'empty', ...)` was silently dropped as rate-limited. Result: impressions recorded, viewable events recorded (arrive >2s later via IO tracker), but filled=0 and empty=0 on every row → 0% fill rate in CSV and stats dashboard.
+- **Fix (page-ads.js):** Removed premature `sendEvent('impression', ...)` from `renderSlot()`, `initAnchorAd()`, and `initInterstitialAd()`. The `slotRenderEnded` handler (which already sent 'filled'/'empty' correctly) is now the sole event sender per slot — no more rate-limit collision. Added `slot === e.slot` fallback matching in `slotRenderEnded` and `impressionViewable` handlers for overlay ads (out-of-page slots have auto-generated element IDs). Added `viewableEver` guard in `impressionViewable` handler to prevent double viewable sends (IO-based tracker already had this guard).
+- **Fix (page-ad-recorder.php):** Removed the aggressive per-IP rate limiter (2s transient) that was systematically blocking filled/empty events. Added auto-increment of 'impressions' counter when 'filled' or 'empty' events arrive — replaces the separate JS impression events. Bot detection remains.
+- **Pattern:** Matches smart-ads.js approach where impression tracking happens at `slotRenderEnded` time (not at slot creation time).
 
 ### Fix: Injection Lab 0% Fill Rate — Missing injection_type on Events (Feb 27, 2026)
 - **Root cause:** `__plAdTracker.track('impression', ...)` and `track('empty', ...)` in smart-ads.js were NOT passing `injectionType` in the extras. This caused `injection_type` column in `pl_ad_events` DB table to be empty (`''`) for `impression` and `empty` event rows. The injection lab's `type_comparison` SQL query filters `WHERE injection_type != ''`, which excluded ALL impression rows → overview showed 0% fill rate despite 1,201 actual fills.

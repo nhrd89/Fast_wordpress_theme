@@ -155,7 +155,8 @@
 			googletag.pubads().addEventListener('impressionViewable', function(e) {
 				var id = e.slot.getSlotElementId();
 				for ( var i = 0; i < _slots.length; i++ ) {
-					if ( _slots[i].divId === id ) {
+					if ( _slots[i].divId === id || _slots[i].slot === e.slot ) {
+						if ( _slots[i].viewableEver ) break; // already tracked by IO
 						_slots[i].viewable = true;
 						_slots[i].viewableEver = true;
 						sendEvent('viewable', _slots[i]);
@@ -168,14 +169,14 @@
 			googletag.pubads().addEventListener('slotRenderEnded', function(e) {
 				var id = e.slot.getSlotElementId();
 				for ( var i = 0; i < _slots.length; i++ ) {
-					if ( _slots[i].divId === id ) {
+					if ( _slots[i].divId === id || _slots[i].slot === e.slot ) {
 						_slots[i].filled = !e.isEmpty;
 						if ( e.size && e.size.length === 2 ) {
 							_slots[i].renderedSize = e.size[0] + 'x' + e.size[1];
 						}
 						if ( e.isEmpty ) { _emptyCount++; } else { _filledCount++; }
 						sendEvent( e.isEmpty ? 'empty' : 'filled', _slots[i] );
-						log('Event:', e.isEmpty ? 'empty' : 'filled', '| slot:', _slots[i].slotName, '| format:', _slots[i].adFormat);
+						log('Event:', e.isEmpty ? 'empty' : 'filled', '| slot:', _slots[i].slotName, '| format:', _slots[i].adFormat, '| size:', _slots[i].renderedSize);
 						logStats();
 						break;
 					}
@@ -285,8 +286,10 @@
 					googletag.display( divId );
 					googletag.pubads().refresh([ gptSlot ]);
 					record.slot = gptSlot;
-					sendEvent('impression', record);
-					log('Event: impression | slot:', slotName, '| format:', fmt, '| page:', PAGE_TYPE);
+					// Don't send 'impression' here — it races with slotRenderEnded
+					// and hits the PHP rate limiter, blocking the filled/empty event.
+					// PHP auto-counts impressions from filled+empty events instead.
+					log('GPT slot requested | slot:', slotName, '| format:', fmt, '| page:', PAGE_TYPE);
 				}
 			});
 		}
@@ -327,7 +330,8 @@
 			if ( slot ) {
 				slot.addService( googletag.pubads() );
 				_slots.push({ divId: divId, slotName: 'anchor', adFormat: 'anchor', slot: slot, isOverlay: true, filled: false, viewable: false, viewableEver: false, renderedSize: null, pageType: PAGE_TYPE, device: IS_DESKTOP ? 'desktop' : 'mobile', viewportWidth: window.innerWidth, injectedAt: Date.now() });
-				sendEvent('impression', _slots[_slots.length - 1]);
+				// Don't send 'impression' here — slotRenderEnded handles fill tracking,
+				// and PHP auto-counts impressions from filled+empty events.
 				log('Anchor slot defined');
 			}
 		});
@@ -376,7 +380,8 @@
 				if ( slot ) {
 					slot.addService( googletag.pubads() );
 					_slots.push({ divId: divId, slotName: 'interstitial', adFormat: 'interstitial', slot: slot, isOverlay: true, filled: false, viewable: false, viewableEver: false, renderedSize: null, pageType: PAGE_TYPE, device: IS_DESKTOP ? 'desktop' : 'mobile', viewportWidth: window.innerWidth, injectedAt: Date.now() });
-					sendEvent('impression', _slots[_slots.length - 1]);
+					// Don't send 'impression' here — slotRenderEnded handles fill tracking,
+					// and PHP auto-counts impressions from filled+empty events.
 					log('Interstitial slot defined');
 				}
 			});

@@ -53,14 +53,6 @@ function pl_page_ad_record_event( $request ) {
 		return new WP_REST_Response( array( 'ok' => true ), 200 );
 	}
 
-	// Rate limit: 1 write per 2 seconds per IP.
-	$ip_hash   = md5( ( isset( $_SERVER['REMOTE_ADDR'] ) ? $_SERVER['REMOTE_ADDR'] : '' ) . gmdate( 'YmdHi' ) );
-	$transient = 'pl_pga_rate_' . substr( $ip_hash, 0, 12 );
-	if ( get_transient( $transient ) ) {
-		return new WP_REST_Response( array( 'ok' => true, 'msg' => 'rate-limited' ), 200 );
-	}
-	set_transient( $transient, 1, 2 );
-
 	$event     = sanitize_text_field( $body['event'] );
 	$page_type = sanitize_text_field( $body['pageType'] ?? 'unknown' );
 	$slot_id   = sanitize_text_field( $body['slotId'] ?? '' );
@@ -101,6 +93,12 @@ function pl_page_ad_record_event( $request ) {
 	$counter_key = $event === 'impression' ? 'impressions' : $event;
 	if ( isset( $stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ][ $counter_key ] ) ) {
 		$stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ][ $counter_key ]++;
+	}
+
+	// Auto-count impressions from filled/empty events (JS no longer sends
+	// separate 'impression' events to avoid rate-limit collision).
+	if ( $event === 'filled' || $event === 'empty' ) {
+		$stats[ $date_key ][ $domain ][ $page_type ][ $ad_format ]['impressions']++;
 	}
 
 	// Keep only last 30 days.
