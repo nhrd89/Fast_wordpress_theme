@@ -1271,7 +1271,15 @@ function onDynamicSlotRenderEnded(event) {
 		log('Dynamic empty after retry:', divId, '— house ad backfill');
 		pushEvent('dynamic_ad_empty', { divId: divId, afterRetry: true, houseAd: _houseAdsShown > 0 });
 		if (window.__plAdTracker) {
-			window.__plAdTracker.track('empty', divId, { slotType: 'dynamic', afterRetry: true });
+			window.__plAdTracker.track('empty', divId, {
+				slotType: 'dynamic',
+				injectionType: rec.injectionType || 'unknown',
+				scrollSpeed: rec.injectionSpeed || 0,
+				scrollDirection: rec.scrollDirection || 'down',
+				adSpacing: rec.adSpacing || 0,
+				nearImage: rec.nearImage || false,
+				afterRetry: true
+			});
 		}
 		return;
 	}
@@ -1348,6 +1356,13 @@ function onDynamicSlotRenderEnded(event) {
 		window.__plAdTracker.track('impression', divId, {
 			slotType: 'dynamic',
 			creativeSize: size ? size[0] + 'x' + size[1] : '',
+			injectionType: rec.injectionType || 'unknown',
+			scrollSpeed: rec.injectionSpeed || 0,
+			scrollDirection: rec.scrollDirection || 'down',
+			adSpacing: rec.adSpacing || 0,
+			nearImage: rec.nearImage || false,
+			adsInViewport: rec.adsInViewport || 0,
+			adDensityPercent: rec.adDensityPercent || 0,
 			gptResponseMs: rec.gptResponseMs || 0,
 			relocated: rec.relocated ? 1 : 0
 		});

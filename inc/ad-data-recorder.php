@@ -458,7 +458,7 @@ function pinlightning_summarize_ad_data($sessions) {
  */
 function pl_ad_ensure_tables() {
     $installed_ver = get_option( 'pl_ad_tables_ver', '0' );
-    if ( '5' === $installed_ver ) {
+    if ( '6' === $installed_ver ) {
         return;
     }
 
@@ -569,7 +569,24 @@ function pl_ad_ensure_tables() {
         }
     }
 
-    update_option( 'pl_ad_tables_ver', '5' );
+    // v5→v6 migration: backfill injection_type on impression/viewable/empty events.
+    // These events were missing injection_type because the JS tracker didn't pass it.
+    // Resolve from the corresponding dynamic_inject event (same session_id + slot_id).
+    if ( in_array( $installed_ver, array( '1', '2', '3', '4', '5' ), true ) ) {
+        $te = $wpdb->prefix . 'pl_ad_events';
+        $wpdb->query(
+            "UPDATE {$te} e
+             INNER JOIN {$te} d ON e.session_id = d.session_id AND e.slot_id = d.slot_id
+             SET e.injection_type = d.injection_type
+             WHERE e.injection_type = ''
+               AND e.event_type IN ('impression', 'viewable', 'empty')
+               AND e.slot_type = 'dynamic'
+               AND d.event_type = 'dynamic_inject'
+               AND d.injection_type != ''"
+        );
+    }
+
+    update_option( 'pl_ad_tables_ver', '6' );
 }
 add_action( 'admin_init', 'pl_ad_ensure_tables' );
 
@@ -619,7 +636,7 @@ function pl_ad_handle_event_batch() {
                     ADD COLUMN relocated tinyint(1) unsigned NOT NULL DEFAULT 0 AFTER gpt_response_ms" );
                 error_log( '[PL-AdEvents] v5 migration: added gpt_response_ms + relocated columns' );
             }
-            update_option( 'pl_ad_tables_ver', '5' );
+            update_option( 'pl_ad_tables_ver', '6' );
         }
     }
 
