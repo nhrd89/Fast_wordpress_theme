@@ -431,13 +431,6 @@ jobs:
             --exclude='.gitignore' \
             ./ ${{ secrets.TECARTICLES_SSH_USER }}@${{ secrets.TECARTICLES_SSH_HOST }}:${{ secrets.TECARTICLES_REMOTE_PATH }}/
 
-      - name: Flush cache — tecarticles.com
-        continue-on-error: true
-        run: |
-          curl -s -X POST \
-            "${{ secrets.TECARTICLES_SITE_URL }}/wp-json/pinlightning/v1/flush-cache" \
-            -H "X-Cache-Secret: ${{ secrets.TECARTICLES_CACHE_SECRET }}"
-
       - name: Get active plugins — tecarticles.com
         continue-on-error: true
         run: |
