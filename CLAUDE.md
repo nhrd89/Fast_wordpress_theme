@@ -660,6 +660,13 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Fix: Injection Lab 0% Fill Rate — Missing injection_type on Events (Feb 27, 2026)
+- **Root cause:** `__plAdTracker.track('impression', ...)` and `track('empty', ...)` in smart-ads.js were NOT passing `injectionType` in the extras. This caused `injection_type` column in `pl_ad_events` DB table to be empty (`''`) for `impression` and `empty` event rows. The injection lab's `type_comparison` SQL query filters `WHERE injection_type != ''`, which excluded ALL impression rows → overview showed 0% fill rate despite 1,201 actual fills.
+- **Why by_response_time showed fills correctly:** That query filters by `gpt_response_ms > 0` (not `injection_type`), so impression events with GPT response times were correctly included.
+- **Fix (smart-ads.js):** Added `injectionType`, `scrollSpeed`, `scrollDirection`, `adSpacing`, `nearImage`, `adsInViewport`, `adDensityPercent` to the `impression` track call in `onDynamicSlotRenderEnded`. Added `injectionType`, `scrollSpeed`, `scrollDirection`, `adSpacing`, `nearImage` to the `empty` track call. All fields sourced from the ad record (`rec.injectionType`, etc.).
+- **Fix (ad-data-recorder.php):** v5→v6 migration backfills `injection_type` on existing `impression`, `viewable`, and `empty` events from their corresponding `dynamic_inject` event (matched by `session_id + slot_id`). One-time UPDATE query runs on admin_init.
+- **DB version:** bumped from `'5'` to `'6'`.
+
 ### Category Ads as Grid Cards (Feb 26, 2026)
 - **feat: category ads as grid cards at varying natural positions** — Ads occupy ONE cell like a post card (not full-width column-spanning). `.pl-cat-ad-card` matches `.pl-cat-card` exactly: `break-inside:avoid`, `border-radius:16px`, `box-shadow`, `background:#fff`, `margin-bottom:18px`. No "Advertisement" label.
 - **Predefined positions** — `$pa_positions = [1, 6, 11, 16, 22, 27, 32, 38, 43, 48]` with varied spacing (5,5,5,6,5,5,6,5,5) for natural feel. PHP while loop interleaves posts and ads: `$pa_item_idx++`, if index in `$pa_positions` → output ad card, else → output post card and increment `$pa_post_idx`.
@@ -802,11 +809,12 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Monitoring (check after 24-48 hours)
 - Viewability trend: 43.8% → 48.8% → 54% → target 63-70%
-- Fill rate: was 51.2% — expect improvement from refresh() + 10s patient timeout
+- Fill rate: was reported as 0% due to tracking bug (FIXED) — actual fills ~50% per by_response_time data. After fix, injection lab overview should show accurate fill rate
 - GPT response time distribution (injection lab brackets)
 - Ad relocation count and viewability lift
 - Last-chance refresh count
 - House ad impressions and clicks
+- Verify v6 migration ran: check injection lab after first admin page load — existing impression events should now have injection_type populated
 
 ### Known Issues
 - Pause injection share dropped to 3.3% (was 9%) after round 1 — may need PAUSE_VELOCITY tuning
