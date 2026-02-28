@@ -277,20 +277,20 @@ function initSlots() {
 
 		// In-content slot 1 (after para 2): medium formats only, no 300x600 (too tall between paragraphs)
 		var contentSizeMap1 = googletag.sizeMapping()
-			.addSize([1025, 0], [[336, 280], [300, 250], [250, 250]])
-			.addSize([768, 0],  [[336, 280], [300, 250], [250, 250]])
-			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
-			.addSize([320, 0],  [[300, 250], [250, 250]])
-			.addSize([0, 0],    [[250, 250], [300, 100]])
+			.addSize([1025, 0], [[336, 280], [300, 250]])
+			.addSize([768, 0],  [[336, 280], [300, 250]])
+			.addSize([468, 0],  [[300, 250], [336, 280]])
+			.addSize([320, 0],  [[300, 250]])
+			.addSize([0, 0],    [[300, 250], [300, 100]])
 			.build();
 
 		// In-content slot 2 (after para 4): includes 300x600 — user engaged, taller ad acceptable
 		var contentSizeMap2 = googletag.sizeMapping()
 			.addSize([1025, 0], [[336, 280], [300, 250], [300, 600]])
 			.addSize([768, 0],  [[336, 280], [300, 250], [300, 600]])
-			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
-			.addSize([320, 0],  [[300, 250], [250, 250]])
-			.addSize([0, 0],    [[250, 250], [300, 100]])
+			.addSize([468, 0],  [[300, 250], [336, 280]])
+			.addSize([320, 0],  [[300, 250]])
+			.addSize([0, 0],    [[300, 250], [300, 100]])
 			.build();
 
 		/* --- GPT Global Config --- */
@@ -389,7 +389,7 @@ function initSlots() {
 		if (fmtOn('initial1') && document.getElementById('initial-ad-1')) {
 			var slot1 = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-336x280',
-				[[336, 280], [300, 250], [250, 250], [300, 100]],
+				[[336, 280], [300, 250], [300, 100]],
 				'initial-ad-1'
 			);
 			if (slot1) {
@@ -409,7 +409,7 @@ function initSlots() {
 		if (fmtOn('initial2') && document.getElementById('initial-ad-2')) {
 			var slot2 = googletag.defineSlot(
 				SLOT_PATH + 'Ad.Plus-336x280',
-				[[336, 280], [300, 250], [300, 600], [250, 250], [300, 100]],
+				[[336, 280], [300, 250], [300, 600], [300, 100]],
 				'initial-ad-2'
 			);
 			if (slot2) {
@@ -427,20 +427,20 @@ function initSlots() {
 
 		/* --- Sidebar Slots (desktop only) --- */
 		/* Sidebar widened to 348px with 24px padding = 300px content area.
-		   300x250, 300x600, 250x250, 200x200, 160x600 all fit. */
+		   300x250, 300x600, 200x200, 160x600 all fit. */
 
 		if (IS_DESKTOP) {
 
 			// Primary sidebar: tall + medium formats — maximum auction competition
 			var sidebarSizeMap1 = googletag.sizeMapping()
-				.addSize([1025, 0], [[300, 600], [300, 250], [250, 250], [200, 200], [160, 600]])
+				.addSize([1025, 0], [[300, 600], [300, 250], [200, 200], [160, 600]])
 				.addSize([0, 0],    [])  // Hide on mobile/tablet
 				.build();
 
 			if (fmtOn('sidebar1') && document.getElementById('300x600-1')) {
 				var sb1 = googletag.defineSlot(
 					SLOT_PATH + 'Ad.Plus-300x600',
-					[[300, 600], [300, 250], [250, 250], [200, 200], [160, 600]],
+					[[300, 600], [300, 250], [200, 200], [160, 600]],
 					'300x600-1'
 				);
 				if (sb1) {
@@ -458,14 +458,14 @@ function initSlots() {
 
 			// Secondary sidebar: medium formats (no 300x600 — two tall ads would overwhelm)
 			var sidebarSizeMap2 = googletag.sizeMapping()
-				.addSize([1025, 0], [[300, 250], [250, 250], [200, 200]])
+				.addSize([1025, 0], [[300, 250], [200, 200]])
 				.addSize([0, 0],    [])  // Hide on mobile/tablet
 				.build();
 
 			if (fmtOn('sidebar2') && document.getElementById('300x250-sidebar')) {
 				var sb2 = googletag.defineSlot(
-					SLOT_PATH + 'Ad.Plus-250x250',
-					[[300, 250], [250, 250], [200, 200]],
+					SLOT_PATH + 'Ad.Plus-300x250',
+					[[300, 250], [200, 200]],
 					'300x250-sidebar'
 				);
 				if (sb2) {
@@ -512,7 +512,7 @@ function initSlots() {
 		_unitMap['initial-ad-1']    = 'Ad.Plus-336x280';
 		_unitMap['initial-ad-2']    = 'Ad.Plus-336x280';
 		_unitMap['300x600-1']       = 'Ad.Plus-300x600';
-		_unitMap['300x250-sidebar'] = 'Ad.Plus-250x250';
+		_unitMap['300x250-sidebar'] = 'Ad.Plus-300x250';
 		_unitMap['pause-ad-1']      = 'Ad.Plus-Pause-300x250';
 
 		/* --- Event Listeners --- */

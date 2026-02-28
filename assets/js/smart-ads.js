@@ -487,13 +487,13 @@ function getDynamicAdSizes() {
 			.build();
 	} else {
 		// Desktop: full multi-size for higher RPM
-		sizes = [[336, 280], [300, 250], [300, 600], [250, 250]];
+		sizes = [[336, 280], [300, 250], [300, 600]];
 		sizeMapping = googletag.sizeMapping()
 			.addSize([1025, 0], [[336, 280], [300, 250], [300, 600]])
 			.addSize([768, 0],  [[336, 280], [300, 250], [300, 600]])
-			.addSize([468, 0],  [[300, 250], [336, 280], [250, 250]])
-			.addSize([320, 0],  [[300, 250], [250, 250]])
-			.addSize([0, 0],    [[250, 250]])
+			.addSize([468, 0],  [[300, 250], [336, 280]])
+			.addSize([320, 0],  [[300, 250]])
+			.addSize([0, 0],    [[300, 250]])
 			.build();
 	}
 
@@ -1362,7 +1362,12 @@ function onDynamicImpressionViewable(event) {
 					injectionType:   rec.injectionType,
 					scrollDirection: rec.scrollDirection,
 					scrollSpeed:     rec.injectionSpeed,
-					timeToViewable:  ttv
+					timeToViewable:  ttv,
+					adSpacing:       rec.adSpacing || 0,
+					nearImage:       rec.nearImage || false,
+					adsInViewport:   rec.adsInViewport || 0,
+					adDensityPercent: rec.adDensityPercent || 0,
+					gptResponseMs:   rec.gptResponseMs || 0
 				});
 			}
 			break;
