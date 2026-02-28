@@ -2,7 +2,7 @@
 
 > Complete reference for any Claude Code session to pick up immediately.
 > **Branch:** `claude/setup-pinlightning-theme-5lwUG`
-> **Last updated:** 2026-02-27
+> **Last updated:** 2026-02-28
 
 ---
 
@@ -226,15 +226,15 @@ Two separate ad systems, completely isolated:
 **Static In-Content Slots** (injected by `ad-system.php` content filter at priority 30):
 | Slot ID | Position | Sizes |
 |---------|----------|-------|
-| `initial-ad-1` | After paragraph 1 | 336x280, 300x250, 250x250, 300x100 |
-| `initial-ad-2` | After paragraph 3 | 336x280, 300x250, 300x600, 250x250, 300x100 |
+| `initial-ad-1` | After paragraph 1 | 336x280, 300x250, 300x100 |
+| `initial-ad-2` | After paragraph 3 | 336x280, 300x250, 300x600, 300x100 |
 | `pause-ad-1` | After paragraph 6 | 300x250 (GPT contentPause) |
 
 **Sidebar Slots** (desktop only, ≥1025px):
 | Slot ID | Sizes | Notes |
 |---------|-------|-------|
-| `300x600-1` | 300x600, 300x250, 250x250, 200x200, 160x600 | Primary sidebar, tall formats |
-| `300x250-sidebar` | 300x250, 250x250, 200x200 | Secondary sidebar, medium formats |
+| `300x600-1` | 300x600, 300x250, 200x200, 160x600 | Primary sidebar, tall formats |
+| `300x250-sidebar` | 300x250, 200x200 | Secondary sidebar, medium formats |
 
 **Overlay Slots** (all devices):
 | Slot | Format | Refresh |
@@ -313,7 +313,7 @@ Two separate ad systems, completely isolated:
 |----------|-------|-----------|
 | Mobile (<768px) | [[300, 250]] only | Single auction, ~200ms faster fill |
 | Tablet (768-1024) | [[300, 250], [336, 280]] | Modest multi-size |
-| Desktop (≥1025) | [[336, 280], [300, 250], [300, 600], [250, 250]] | Full multi-size for higher RPM |
+| Desktop (≥1025) | [[336, 280], [300, 250], [300, 600]] | Full multi-size for higher RPM |
 
 **Sticky Inline (`applyStickyBehavior()`):**
 - For fast-scrolling users (injection speed >100px/s, scrolling down)
@@ -646,6 +646,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - **Read Next bar** (`.eb-next-bar`) — replaced by next-post auto-loader. Don't re-add.
 - **Scroll-up ad injection** — 8% viewability vs 28% scroll-down. Disabled in engineLoop(). Don't re-enable.
 - **Ad relocation** — 0% viewability on 82 relocated ads. Disabled in onDynamicSlotRenderEnded. Don't re-enable.
+- **250x250 ad format** — $0.03 total revenue with poor viewability. Removed from all GPT size arrays. Don't re-add.
 
 ### Active Optimizations
 - All CSS inlined in `<head>` (zero external CSS requests)
@@ -667,6 +668,11 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Fix: Viewable Tracking Fields + Remove 250x250 Format (Feb 28, 2026)
+- **Fix viewable tracking breakdown fields** — Injection lab by_spacing, by_density, and by_response_time breakdowns showed 0 viewable despite 210 viewable in overview. Root cause: `track('viewable', ...)` call in `onDynamicImpressionViewable` (smart-ads.js) was missing `adSpacing`, `nearImage`, `adsInViewport`, `adDensityPercent`, `gptResponseMs` fields. SQL queries filter on these columns (e.g. `WHERE ad_spacing > 0`), so viewable events with 0 values were excluded from breakdowns. Fix: added all 5 fields from the ad record, matching the `track('impression', ...)` call pattern.
+- **Remove 250x250 ad format** — 250x250 earned $0.03 total with 12-60% viewability. Removed from ALL GPT size arrays in both initial-ads.js and smart-ads.js: contentSizeMap1/2 (all breakpoints), slot1/slot2 defineSlot, sidebarSizeMap1/2, sb1/sb2 defineSlot, getDynamicAdSizes desktop sizes/sizeMapping. Secondary sidebar slot name updated from `Ad.Plus-250x250` to `Ad.Plus-300x250`. Small viewport fallback changed from `[[250, 250]]` to `[[300, 250]]`.
+- **Interstitial investigation** — Verified the scroll-direction guard (`if (_scrollDirection === 'up') return;`) in `engineLoop()` does NOT block interstitials. `checkViewportRefresh()` runs before the guard. Layer 1 interstitial (initial-ads.js `defineOutOfPageSlot`) and exit-intent interstitial (smart-ads.js event listeners) are completely outside `engineLoop()`.
 
 ### Perf: Disable Relocation + Scroll-Up Injection, Cap TTV (Feb 27, 2026)
 - **Disable ad relocation** — 82 relocated ads had 0% viewability. Removed immediate relocation check and 2s delayed recheck from `onDynamicSlotRenderEnded`. `relocateFilledAd()` function remains but is never called. Ads stay where originally injected.
