@@ -370,6 +370,48 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 		}
 	}
 
+	// 13. Affiliate performance.
+	$affiliate_overview = $wpdb->get_row( $wpdb->prepare(
+		"SELECT
+			COUNT(CASE WHEN event_type='affiliate_impression' THEN 1 END) as impressions,
+			COUNT(CASE WHEN event_type='affiliate_viewable' THEN 1 END) as viewable,
+			COUNT(CASE WHEN event_type='affiliate_click' THEN 1 END) as clicks,
+			COUNT(CASE WHEN event_type='affiliate_dismiss' THEN 1 END) as dismissals
+		FROM {$te}
+		WHERE event_type LIKE 'affiliate_%%'
+		AND created_at >= %s",
+		$cutoff
+	), ARRAY_A );
+
+	$affiliate_by_variant = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			creative_size as variant,
+			COUNT(CASE WHEN event_type='affiliate_impression' THEN 1 END) as impressions,
+			COUNT(CASE WHEN event_type='affiliate_viewable' THEN 1 END) as viewable,
+			COUNT(CASE WHEN event_type='affiliate_click' THEN 1 END) as clicks
+		FROM {$te}
+		WHERE event_type LIKE 'affiliate_%%'
+		AND creative_size != ''
+		AND created_at >= %s
+		GROUP BY creative_size
+		ORDER BY clicks DESC",
+		$cutoff
+	), ARRAY_A );
+
+	$affiliate_by_reason = $wpdb->get_results( $wpdb->prepare(
+		"SELECT
+			injection_type as reason,
+			COUNT(CASE WHEN event_type='affiliate_impression' THEN 1 END) as impressions,
+			COUNT(CASE WHEN event_type='affiliate_click' THEN 1 END) as clicks
+		FROM {$te}
+		WHERE event_type LIKE 'affiliate_%%'
+		AND injection_type != ''
+		AND created_at >= %s
+		GROUP BY injection_type
+		ORDER BY impressions DESC",
+		$cutoff
+	), ARRAY_A );
+
 	return array(
 		'totals'               => $totals,
 		'typeComparison'       => $type_comparison,
@@ -383,6 +425,9 @@ function pl_injection_lab_fetch_data( $range, $feed_limit = 60 ) {
 		'visitorTypes'         => $visitor_types,
 		'liveFeed'             => $live_feed,
 		'recommendations'      => $recommendations,
+		'affiliateOverview'    => $affiliate_overview,
+		'affiliateByVariant'   => $affiliate_by_variant,
+		'affiliateByReason'    => $affiliate_by_reason,
 		'range'                => $range,
 	);
 }
@@ -710,6 +755,22 @@ function pl_injection_lab_render() {
 			<h3>Recommendations</h3>
 			<div id="labRecs" style="font-size:13px;color:#666;">Loading...</div>
 		</div>
+
+		<!-- Affiliate Performance -->
+		<div class="lab-section" style="border-left:4px solid #FF6B35;">
+			<h3 style="color:#FF6B35;">Affiliate Performance (Skillshare Backfill)</h3>
+			<div id="labAffCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px;"></div>
+			<h4 style="font-size:13px;margin:16px 0 8px;">By Variant</h4>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Variant</th><th class="num">Impressions</th><th class="num">Viewable</th><th class="num">View%</th><th class="num">Clicks</th><th class="num">CTR</th><th>Status</th></tr></thead>
+				<tbody id="labAffVariantTable"><tr><td colspan="7" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+			<h4 style="font-size:13px;margin:16px 0 8px;">By Reason</h4>
+			<table class="widefat striped" style="font-size:13px;">
+				<thead><tr><th>Reason</th><th class="num">Impressions</th><th class="num">Clicks</th><th class="num">CTR</th></tr></thead>
+				<tbody id="labAffReasonTable"><tr><td colspan="4" style="text-align:center;color:#888;">Loading...</td></tr></tbody>
+			</table>
+		</div>
 	</div>
 
 	<style>
@@ -788,6 +849,9 @@ function pl_injection_lab_render() {
 					renderVisitorTable(d.visitorTypes);
 					renderFeed(d.liveFeed);
 					renderRecs(d.recommendations);
+					renderAffiliateCards(d.affiliateOverview);
+					renderAffVariantTable(d.affiliateByVariant);
+					renderAffReasonTable(d.affiliateByReason);
 					document.getElementById('labStatus').textContent = 'Updated ' + new Date().toLocaleTimeString();
 				})
 				.catch(function() {
@@ -952,6 +1016,66 @@ function pl_injection_lab_render() {
 			});
 			html += '</ul>';
 			document.getElementById('labRecs').innerHTML = html;
+		}
+
+		function renderAffiliateCards(ov) {
+			if (!ov) { document.getElementById('labAffCards').innerHTML = '<div style="color:#888">No affiliate data yet</div>'; return; }
+			var imp = parseInt(ov.impressions) || 0;
+			var vw = parseInt(ov.viewable) || 0;
+			var cl = parseInt(ov.clicks) || 0;
+			var dis = parseInt(ov.dismissals) || 0;
+			var ctr = imp > 0 ? (cl / imp * 100).toFixed(1) + '%' : '-';
+			var viewRate = imp > 0 ? pct(vw, imp) + '%' : '-';
+			var html = '';
+			html += card('Impressions', imp, 'Affiliate ads shown');
+			html += card('Viewable', vw + ' (' + viewRate + ')', '50% visible for 1s');
+			html += card('Clicks', cl, 'CTR: ' + ctr);
+			html += card('Banner Dismissals', dis, imp > 0 ? pct(dis, imp) + '% dismiss rate' : '-');
+			document.getElementById('labAffCards').innerHTML = html;
+		}
+
+		function renderAffVariantTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labAffVariantTable').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">No variant data yet</td></tr>'; return; }
+			var maxCtr = 0, minCtr = Infinity;
+			rows.forEach(function(r) {
+				var imp = parseInt(r.impressions) || 0;
+				var cl = parseInt(r.clicks) || 0;
+				if (imp > 0) {
+					var c = cl / imp;
+					if (c > maxCtr) maxCtr = c;
+					if (c < minCtr) minCtr = c;
+				}
+			});
+			var html = '';
+			rows.forEach(function(r) {
+				var imp = parseInt(r.impressions) || 0;
+				var vw = parseInt(r.viewable) || 0;
+				var cl = parseInt(r.clicks) || 0;
+				var ctr = imp > 0 ? (cl / imp * 100).toFixed(2) + '%' : '-';
+				var ctrVal = imp > 0 ? cl / imp : 0;
+				var status = '-';
+				if (imp >= 10) {
+					if (ctrVal >= maxCtr && maxCtr > 0) status = '<span style="color:#00a32a">&#11088; Best</span>';
+					else if (ctrVal <= minCtr) status = '<span style="color:#d63638">&#9888; Lowest</span>';
+					else status = '<span style="color:#dba617">&#9679; Middle</span>';
+				} else {
+					status = '<span style="color:#888">Exploring</span>';
+				}
+				html += '<tr><td><code>' + (r.variant || '-') + '</code></td><td class="num">' + fmt(imp) + '</td><td class="num">' + fmt(vw) + '</td><td class="num">' + pct(vw, imp) + '%</td><td class="num">' + fmt(cl) + '</td><td class="num">' + ctr + '</td><td>' + status + '</td></tr>';
+			});
+			document.getElementById('labAffVariantTable').innerHTML = html;
+		}
+
+		function renderAffReasonTable(rows) {
+			if (!rows || !rows.length) { document.getElementById('labAffReasonTable').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;">No reason data yet</td></tr>'; return; }
+			var html = '';
+			rows.forEach(function(r) {
+				var imp = parseInt(r.impressions) || 0;
+				var cl = parseInt(r.clicks) || 0;
+				var ctr = imp > 0 ? (cl / imp * 100).toFixed(2) + '%' : '-';
+				html += '<tr><td>' + (r.reason || '-') + '</td><td class="num">' + fmt(imp) + '</td><td class="num">' + fmt(cl) + '</td><td class="num">' + ctr + '</td></tr>';
+			});
+			document.getElementById('labAffReasonTable').innerHTML = html;
 		}
 
 		function startTimer() {

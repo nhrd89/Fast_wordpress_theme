@@ -88,6 +88,11 @@ var _exitFired          = false;
 var _exitTrigger        = '';   // 'visibility' | 'mouseleave' | 'beforeunload'
 var _exitRecord         = null; // full tracking record (same shape as zone entries)
 
+// Affiliate backfill
+var _affiliateAdsShown   = 0;
+var _lastAffiliateTime   = 0;
+var _affiliateImpressions = [];
+
 // Velocity tracker
 var _velocitySamples = [];  // last 10 velocity readings
 var _lastSampleY     = 0;
@@ -1111,6 +1116,135 @@ function checkViewportRefresh() {
 }
 
 /* ================================================================
+ * 6b. AFFILIATE BACKFILL INJECTION
+ *
+ * Shows affiliate ads ONLY where Ad.Plus returns empty.
+ * Never competes with Ad.Plus — Ad.Plus always gets first shot.
+ * Custom native-looking creatives with multi-armed bandit rotation.
+ * ================================================================ */
+
+function injectAffiliateAd(target, reason) {
+	if (typeof plAds === 'undefined' || !plAds.affiliate || !plAds.affiliate.enabled) return false;
+	if (!plAds.affiliate.backfill) return false;
+	if (_affiliateAdsShown >= plAds.affiliate.maxPerSession) return false;
+	if (Date.now() - _lastAffiliateTime < plAds.affiliate.cooldownMs) return false;
+	if (!window.__plAffPickVariant || !window.__plAffiliateCreative) return false;
+
+	// Pick type: 60% dark, 40% light
+	var type = Math.random() < 0.6 ? 'dark' : 'light';
+	var variantId = window.__plAffPickVariant(type);
+
+	// Create container
+	var container = document.createElement('div');
+	container.className = 'pl-affiliate-slot';
+	container.style.cssText = 'text-align:center;margin:16px auto;overflow:hidden;clear:both';
+	container.innerHTML = window.__plAffiliateCreative(variantId);
+
+	// Insert after target element
+	if (target.parentNode) {
+		target.parentNode.insertBefore(container, target.nextSibling);
+	} else {
+		target.appendChild(container);
+	}
+
+	// Track impression
+	window.__plAffTrackImpression(variantId);
+
+	var divId = 'aff-slot-' + (_affiliateAdsShown + 1);
+	var scrollY = window.pageYOffset || 0;
+	var position = Math.round(container.getBoundingClientRect().top + scrollY);
+
+	var affRecord = {
+		divId: divId,
+		variantId: variantId,
+		reason: reason,
+		timestamp: Date.now(),
+		position: position,
+		viewable: false,
+		clicked: false
+	};
+
+	// Click tracking
+	var affLink = container.querySelector('.pl-affiliate-link');
+	if (affLink) {
+		affLink.addEventListener('click', function() {
+			window.__plAffTrackClick(variantId);
+			affRecord.clicked = true;
+			if (window.__plAdTracker) {
+				window.__plAdTracker.track('affiliate_click', divId, {
+					injectionType: reason,
+					creativeSize: 'aff-' + variantId
+				});
+			}
+			// sendBeacon for reliability before navigation
+			if (window.__plAdTracker && window.__plAdTracker.flush) {
+				window.__plAdTracker.flush();
+			}
+		});
+	}
+
+	// Viewability tracking via IntersectionObserver
+	if (typeof IntersectionObserver !== 'undefined') {
+		var viewStart = 0;
+		var affIO = new IntersectionObserver(function(entries) {
+			if (entries[0].isIntersecting) {
+				if (!viewStart) viewStart = Date.now();
+			} else {
+				viewStart = 0;
+			}
+			if (viewStart && (Date.now() - viewStart >= 1000) && !affRecord.viewable) {
+				affRecord.viewable = true;
+				affIO.disconnect();
+				if (window.__plAdTracker) {
+					window.__plAdTracker.track('affiliate_viewable', divId, {
+						injectionType: reason,
+						creativeSize: 'aff-' + variantId,
+						timeToViewable: Date.now() - affRecord.timestamp
+					});
+				}
+			}
+		}, { threshold: 0.5 });
+		affIO.observe(container);
+
+		// Also check periodically for the 1s dwell
+		var affViewCheck = setInterval(function() {
+			if (affRecord.viewable) { clearInterval(affViewCheck); return; }
+			if (viewStart && (Date.now() - viewStart >= 1000)) {
+				affRecord.viewable = true;
+				affIO.disconnect();
+				clearInterval(affViewCheck);
+				if (window.__plAdTracker) {
+					window.__plAdTracker.track('affiliate_viewable', divId, {
+						injectionType: reason,
+						creativeSize: 'aff-' + variantId,
+						timeToViewable: Date.now() - affRecord.timestamp
+					});
+				}
+			}
+		}, 500);
+	}
+
+	// Update state
+	_affiliateAdsShown++;
+	_lastAffiliateTime = Date.now();
+	_affiliateImpressions.push(affRecord);
+
+	// Track impression event
+	if (window.__plAdTracker) {
+		window.__plAdTracker.track('affiliate_impression', divId, {
+			injectionType: reason,
+			creativeSize: 'aff-' + variantId,
+			predictedDistance: position
+		});
+	}
+
+	log('Affiliate injected:', divId, 'variant:', variantId, 'reason:', reason, 'total:', _affiliateAdsShown);
+	pushEvent('affiliate_ad_shown', { divId: divId, variant: variantId, reason: reason });
+
+	return true;
+}
+
+/* ================================================================
  * 7. PREDICTIVE INJECTION ENGINE (100ms loop)
  *
  * Strategies evaluated every tick:
@@ -1139,8 +1273,14 @@ function engineLoop() {
 	if (_scrollDirection === 'up') return;
 
 	// Consecutive empty abort — GPT demand exhausted, stop wasting slots.
-	// If last 3 dynamic slots in a row returned empty, no more injections this session.
-	if (_consecutiveEmpties >= 3) return;
+	// If last 3 dynamic slots in a row returned empty, try affiliate backfill instead.
+	if (_consecutiveEmpties >= 3) {
+		var affTarget = findPauseTarget() || findScrollTarget();
+		if (affTarget) {
+			injectAffiliateAd(affTarget, 'empty_abort');
+		}
+		return;
+	}
 
 	// Pending slots guard — don't inject more if 2+ slots waiting for GPT response.
 	// Prevents burst injection where 4-9 slots are created before any GPT response arrives.
@@ -1288,10 +1428,16 @@ function onDynamicSlotRenderEnded(event) {
 			return;
 		}
 
-		// Retry also empty — backfill with house ad (email capture promo)
+		// Retry also empty — try affiliate backfill first, then house ad
 		_consecutiveEmpties++;
-		showHouseAd(rec);
-		log('Dynamic empty after retry:', divId, '— house ad backfill, consecutiveEmpties:', _consecutiveEmpties);
+		var affContainer = rec.el;
+		if (affContainer && injectAffiliateAd(affContainer, 'backfill')) {
+			// Affiliate filled this slot
+			log('Dynamic empty after retry:', divId, '— affiliate backfill, consecutiveEmpties:', _consecutiveEmpties);
+		} else {
+			showHouseAd(rec);
+			log('Dynamic empty after retry:', divId, '— house ad backfill, consecutiveEmpties:', _consecutiveEmpties);
+		}
 		pushEvent('dynamic_ad_empty', { divId: divId, afterRetry: true, houseAd: _houseAdsShown > 0 });
 		if (window.__plAdTracker) {
 			window.__plAdTracker.track('empty', divId, {
@@ -1678,6 +1824,10 @@ function sendBeacon() {
 		exitInterstitialTrigger: _exitTrigger || '',
 		// Image taps
 		imageTaps:           window._imageTaps || [],
+		// Affiliate backfill
+		affiliateShown:      _affiliateAdsShown,
+		affiliateClicks:     _affiliateImpressions.filter(function(a) { return a.clicked; }).length,
+		affiliateZones:      _affiliateImpressions,
 		// Dynamic slot detail
 		zones:           zones
 	};
@@ -1774,6 +1924,9 @@ function sendHeartbeat() {
 		exitInterstitialTrigger: _exitTrigger || '',
 		// Image taps
 		imageTapCount:       (window._imageTaps || []).length,
+		// Affiliate backfill
+		affiliateShown:      _affiliateAdsShown,
+		affiliateClicks:     _affiliateImpressions.filter(function(a) { return a.clicked; }).length,
 	};
 
 	// Build zones array for per-ad detail
@@ -2201,6 +2354,11 @@ function rescanAnchors() {
 
 	// Reset pending slots: old pending responses are irrelevant for new content
 	_pendingSlots = 0;
+
+	// Reset affiliate state: new content gets its own quota
+	_affiliateAdsShown = 0;
+	_lastAffiliateTime = 0;
+	_affiliateImpressions = [];
 
 	// Clear stale viewport visibility timestamps from old content slots
 	_slotViewStart = {};

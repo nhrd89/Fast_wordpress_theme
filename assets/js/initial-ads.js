@@ -572,6 +572,9 @@ function initSlots() {
 		}
 		_readyCallbacks = [];
 
+		// Affiliate top banner — after GPT slots defined, shown on first scroll
+		initAffiliateTopBanner();
+
 		// Start event flush: every 10s + on page hide
 		setInterval(flushEvents, 10000);
 		document.addEventListener('visibilitychange', function() {
@@ -816,6 +819,238 @@ function onImpressionViewable(event) {
 		});
 		trackAdEvent('refresh', divId);
 	}, delay);
+}
+
+/* ================================================================
+ * AFFILIATE CREATIVE SYSTEM
+ *
+ * 9 copy variants (A1-A3 dark, B1-B3 light, C1-C3 banner) with
+ * multi-armed bandit rotation. Creatives defined here so both
+ * initial-ads.js (top banner) and smart-ads.js (backfill) share
+ * the same variant pool and tracking.
+ * ================================================================ */
+
+/** Build affiliate URL with variant tracking for cross-site analytics. */
+function getAffUrl(variantId) {
+	if (typeof plAds === 'undefined' || !plAds.affiliate) return '#';
+	var url = plAds.affiliate.url;
+	if (!plAds.affiliate.isDirect) {
+		url += (url.indexOf('?') > -1 ? '&' : '?') + 'v=' + variantId;
+	}
+	return url;
+}
+
+/** Return full HTML string for a given creative variant. */
+window.__plAffiliateCreative = function(variantId) {
+	var url = getAffUrl(variantId);
+
+	// Shared styles
+	var darkBase = 'background:linear-gradient(135deg,#0f0f23 0%,#1a1a3e 100%);border-radius:14px;padding:22px;text-align:center;max-width:336px;margin:0 auto;cursor:pointer;font-family:-apple-system,system-ui,sans-serif;border:1px solid rgba(255,107,53,0.2);transition:transform 0.2s,box-shadow 0.2s;';
+	var lightBase = 'background:#f0fff4;border:2px solid #00D4AA;border-radius:12px;padding:18px;text-align:center;max-width:300px;margin:0 auto;cursor:pointer;font-family:-apple-system,system-ui,sans-serif;transition:transform 0.2s,border-color 0.2s;';
+	var bannerBase = 'background:linear-gradient(90deg,#0f0f23,#1a1a3e);padding:10px 16px;display:flex;align-items:center;justify-content:center;gap:14px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif;';
+	var badgeGlow = 'animation:plGlow 1.5s infinite;';
+	var ctaPulse = 'animation:plPulse 2s infinite;';
+	var ctaPulseTeal = 'animation:plPulseTeal 2s infinite;';
+	var footer = '<div style="color:#555;font-size:10px;margin-top:10px">Sponsored</div>';
+
+	var variants = {
+		'A1': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;display:block;' + darkBase + '">' +
+			'<div class="pl-aff-badge" style="color:#FF6B35;margin-bottom:10px;' + badgeGlow + '">\uD83D\uDD25 FREE FOR 7 DAYS</div>' +
+			'<div style="color:#fff;font-size:19px;font-weight:800;line-height:1.3;margin-bottom:8px">Turn Your Pinterest Hobby Into <span style="color:#00D4AA">$3K/Month</span></div>' +
+			'<div style="color:#a8a8c0;font-size:13px;margin-bottom:14px">170,000+ students already earning from pins</div>' +
+			'<div class="pl-aff-cta" style="background:#FF6B35;color:#fff;border-radius:10px;padding:11px 28px;font-size:15px;' + ctaPulse + '">Start Earning Free \u2192</div>' +
+			footer + '</a>',
+
+		'A2': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;display:block;' + darkBase + '">' +
+			'<div class="pl-aff-badge" style="color:#00D4AA;margin-bottom:10px;' + badgeGlow + '">\u26A1 TRENDING NOW</div>' +
+			'<div style="color:#fff;font-size:19px;font-weight:800;line-height:1.3;margin-bottom:8px">Why <span style="color:#FF6B35">170K People</span> Quit Their 9-5 Using Pinterest</div>' +
+			'<div style="color:#a8a8c0;font-size:13px;margin-bottom:14px">The #1 rated Pinterest income course</div>' +
+			'<div class="pl-aff-cta" style="background:#00D4AA;color:#0f0f23;border-radius:10px;padding:11px 28px;font-size:15px;' + ctaPulseTeal + '">See How They Did It \u2192</div>' +
+			footer + '</a>',
+
+		'A3': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;display:block;' + darkBase + '">' +
+			'<div class="pl-aff-badge" style="color:#FF6B35;margin-bottom:10px;' + badgeGlow + '">\uD83D\uDCCC YOU\'RE ALREADY HALFWAY THERE</div>' +
+			'<div style="color:#fff;font-size:19px;font-weight:800;line-height:1.3;margin-bottom:8px">You Scroll Pinterest Daily \u2014 Why Not <span style="color:#00D4AA">Get Paid</span>?</div>' +
+			'<div style="color:#a8a8c0;font-size:13px;margin-bottom:14px">Free class \u00B7 No experience needed</div>' +
+			'<div class="pl-aff-cta" style="background:linear-gradient(90deg,#FF6B35,#ff8f65);color:#fff;border-radius:10px;padding:11px 28px;font-size:15px;' + ctaPulse + '">Show Me How \u2192</div>' +
+			footer + '</a>',
+
+		'B1': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;display:block;' + lightBase + '">' +
+			'<div style="color:#0f0f23;font-size:16px;font-weight:700;margin-bottom:8px">\uD83D\uDCCC You Love Pinterest. It Can <span style="color:#FF6B35">Love You Back</span>.</div>' +
+			'<div style="color:#555;font-size:13px;margin-bottom:12px">Free class \u2192 <b style="color:#00D4AA">$3K/month</b> from pins</div>' +
+			'<div style="color:#FF6B35;font-weight:700;font-size:15px">Start Free \u2192</div>' +
+			'<div style="color:#999;font-size:10px;margin-top:10px">Sponsored</div></a>',
+
+		'B2': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;display:block;' + lightBase + '">' +
+			'<div style="color:#0f0f23;font-size:16px;font-weight:700;margin-bottom:8px">\uD83D\uDCCC What If Every Pin You Saved <span style="color:#00D4AA">Made You Money</span>?</div>' +
+			'<div style="color:#555;font-size:13px;margin-bottom:12px">170K students \u00B7 Free to start</div>' +
+			'<div style="color:#00D4AA;font-weight:700;font-size:15px">Learn How \u2192</div>' +
+			'<div style="color:#999;font-size:10px;margin-top:10px">Sponsored</div></a>',
+
+		'B3': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;display:block;' + lightBase + '">' +
+			'<div style="color:#0f0f23;font-size:16px;font-weight:700;margin-bottom:8px">\uD83D\uDCCC Your Pinterest Addiction Could <span style="color:#FF6B35">Pay Your Rent</span></div>' +
+			'<div style="color:#555;font-size:13px;margin-bottom:12px">Free 7-day class \u00B7 No credit card</div>' +
+			'<div class="pl-aff-cta" style="background:#FF6B35;color:#fff;border-radius:8px;padding:8px 20px;font-size:14px;' + ctaPulse + '">Try It Free \u2192</div>' +
+			'<div style="color:#999;font-size:10px;margin-top:10px">Sponsored</div></a>',
+
+		'C1': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;' + bannerBase + '">' +
+			'<span style="color:#fff;font-size:13px">\uD83D\uDD25 You browse Pinterest daily \u2014 learn to earn <span style="color:#00D4AA;font-weight:700">$3K/month</span> from it</span>' +
+			'<span class="pl-aff-cta" style="background:#FF6B35;color:#fff;border-radius:6px;padding:5px 14px;font-size:12px;white-space:nowrap;' + ctaPulse + '">Start Free \u2192</span></a>',
+
+		'C2': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;' + bannerBase + '">' +
+			'<span style="color:#fff;font-size:13px">\u26A1 170,000 people turned Pinterest into income. <span style="color:#FF6B35;font-weight:700">You\'re next</span>.</span>' +
+			'<span class="pl-aff-cta" style="background:#00D4AA;color:#0f0f23;border-radius:6px;padding:5px 14px;font-size:12px;white-space:nowrap;' + ctaPulseTeal + '">Free Class \u2192</span></a>',
+
+		'C3': '<a href="' + url + '" class="pl-affiliate-link" rel="sponsored" target="_blank" style="text-decoration:none;' + bannerBase + '">' +
+			'<span style="color:#fff;font-size:13px">\uD83D\uDCCC Stop scrolling. <span style="color:#00D4AA;font-weight:700">Start earning</span>. Free Pinterest income class.</span>' +
+			'<span class="pl-aff-cta" style="background:linear-gradient(90deg,#FF6B35,#ff8f65);color:#fff;border-radius:6px;padding:5px 14px;font-size:12px;white-space:nowrap;' + ctaPulse + '">Try Free \u2192</span></a>'
+	};
+
+	return variants[variantId] || variants['A1'];
+};
+
+/* ================================================================
+ * SMART ROTATION — Multi-Armed Bandit
+ *
+ * Weighted random selection that learns from clicks.
+ * Variants with higher CTR get served more often after 10+ impressions.
+ * All localStorage access wrapped in try/catch for privacy mode.
+ * ================================================================ */
+
+function _affGetStats() {
+	try {
+		var raw = localStorage.getItem('pl_aff_stats');
+		if (raw) return JSON.parse(raw);
+	} catch (e) {}
+	return {
+		A1:{impressions:0,clicks:0}, A2:{impressions:0,clicks:0}, A3:{impressions:0,clicks:0},
+		B1:{impressions:0,clicks:0}, B2:{impressions:0,clicks:0}, B3:{impressions:0,clicks:0},
+		C1:{impressions:0,clicks:0}, C2:{impressions:0,clicks:0}, C3:{impressions:0,clicks:0}
+	};
+}
+
+function _affSaveStats(stats) {
+	try { localStorage.setItem('pl_aff_stats', JSON.stringify(stats)); } catch (e) {}
+}
+
+/**
+ * Pick a variant using weighted random (Thompson-sampling-lite).
+ * type: 'dark' | 'light' | 'banner'
+ */
+window.__plAffPickVariant = function(type) {
+	var candidates = { dark: ['A1','A2','A3'], light: ['B1','B2','B3'], banner: ['C1','C2','C3'] };
+	var pool = candidates[type] || candidates.dark;
+	var stats = _affGetStats();
+	var scores = [];
+	var totalScore = 0;
+
+	for (var i = 0; i < pool.length; i++) {
+		var v = pool[i];
+		var s = stats[v] || { impressions: 0, clicks: 0 };
+		var score;
+		if (s.impressions < 10) {
+			score = 1.0; // Explore: not enough data
+		} else {
+			score = (s.clicks / s.impressions) + 0.1; // Exploit + exploration bonus
+		}
+		scores.push(score);
+		totalScore += score;
+	}
+
+	// Weighted random selection
+	var r = Math.random() * totalScore;
+	var cumulative = 0;
+	for (var j = 0; j < pool.length; j++) {
+		cumulative += scores[j];
+		if (r <= cumulative) return pool[j];
+	}
+	return pool[pool.length - 1];
+};
+
+window.__plAffTrackImpression = function(variantId) {
+	var stats = _affGetStats();
+	if (!stats[variantId]) stats[variantId] = { impressions: 0, clicks: 0 };
+	stats[variantId].impressions++;
+	_affSaveStats(stats);
+};
+
+window.__plAffTrackClick = function(variantId) {
+	var stats = _affGetStats();
+	if (!stats[variantId]) stats[variantId] = { impressions: 0, clicks: 0 };
+	stats[variantId].clicks++;
+	_affSaveStats(stats);
+};
+
+/* ================================================================
+ * AFFILIATE TOP BANNER — shown on first scroll
+ *
+ * Zero layout shift on load (hidden off-screen). Bouncers never see it.
+ * Dismiss persisted in sessionStorage. Shows once per session.
+ * ================================================================ */
+
+function initAffiliateTopBanner() {
+	if (typeof plAds === 'undefined' || !plAds.affiliate) return;
+	if (!plAds.affiliate.enabled || !plAds.affiliate.topBanner) return;
+
+	try {
+		if (sessionStorage.getItem('pl_aff_top_dismissed')) return;
+	} catch (e) {}
+
+	var bannerVariant = window.__plAffPickVariant('banner');
+
+	var topBar = document.createElement('div');
+	topBar.id = 'pl-affiliate-top';
+	topBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;z-index:99999;transform:translateY(-100%);transition:transform 0.3s ease;';
+	topBar.innerHTML = window.__plAffiliateCreative(bannerVariant) +
+		'<button id="pl-aff-top-close" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px;z-index:1;">\u2715</button>';
+	document.body.appendChild(topBar);
+
+	var topBarShowTime = 0;
+
+	function showTopBanner() {
+		topBar.style.transform = 'translateY(0)';
+		document.body.style.marginTop = topBar.offsetHeight + 'px';
+		document.body.style.transition = 'margin-top 0.3s ease';
+		topBarShowTime = Date.now();
+		window.__plAffTrackImpression(bannerVariant);
+		trackAdEvent('affiliate_impression', 'top-affiliate', {
+			injectionType: 'top_banner',
+			creativeSize: 'aff-' + bannerVariant
+		});
+	}
+
+	window.addEventListener('scroll', function onFirstScroll() {
+		showTopBanner();
+		window.removeEventListener('scroll', onFirstScroll);
+	}, { once: true, passive: true });
+
+	// Close button
+	document.getElementById('pl-aff-top-close').addEventListener('click', function(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		topBar.style.transform = 'translateY(-100%)';
+		document.body.style.marginTop = '0';
+		try { sessionStorage.setItem('pl_aff_top_dismissed', '1'); } catch (ex) {}
+		trackAdEvent('affiliate_dismiss', 'top-affiliate', {
+			injectionType: 'top_banner',
+			creativeSize: 'aff-' + bannerVariant,
+			timeToViewable: topBarShowTime ? Math.round((Date.now() - topBarShowTime) / 1000) : 0
+		});
+	});
+
+	// Click tracking on the affiliate link
+	var affLink = topBar.querySelector('.pl-affiliate-link');
+	if (affLink) {
+		affLink.addEventListener('click', function() {
+			window.__plAffTrackClick(bannerVariant);
+			trackAdEvent('affiliate_click', 'top-affiliate', {
+				injectionType: 'top_banner',
+				creativeSize: 'aff-' + bannerVariant
+			});
+			// sendBeacon for reliability before navigation
+			if (typeof flushEvents === 'function') flushEvents();
+		});
+	}
 }
 
 /* ================================================================

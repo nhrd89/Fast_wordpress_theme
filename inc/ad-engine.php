@@ -79,6 +79,16 @@ function pl_ad_defaults() {
 		'slot_160x600'          => 'Ad.Plus-160x600',
 		'slot_pause'            => 'Ad.Plus-Pause-300x250',
 
+		// Affiliate Backfill.
+		'affiliate_enabled'       => true,
+		'affiliate_name'          => 'skillshare',
+		'affiliate_url'           => 'https://fxo.co/1522574/social',
+		'affiliate_max_session'   => 3,
+		'affiliate_cooldown_ms'   => 30000,
+		'affiliate_top_banner'    => true,
+		'affiliate_backfill'      => true,
+		'affiliate_track_clicks'  => true,
+
 		// Backfill Network (Newor Media / Waldo).
 		'backfill_script_url'       => '//cdn.thisiswaldo.com/static/js/24273.js',
 		'backfill_display_tags'     => "waldo-tag-29686\nwaldo-tag-29688\nwaldo-tag-29690\nwaldo-tag-24348\nwaldo-tag-24350\nwaldo-tag-24352",
@@ -242,6 +252,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'fmt_pause', 'fmt_video',
 		'exit_interstitial',
 		'passback_enabled',
+		'affiliate_enabled', 'affiliate_top_banner', 'affiliate_backfill', 'affiliate_track_clicks',
 	);
 	foreach ( $bools as $key ) {
 		$clean[ $key ] = ! empty( $input[ $key ] );
@@ -254,6 +265,8 @@ function pl_ad_sanitize_settings( $input ) {
 		'min_paragraphs_before' => array( 0, 20 ),
 		'min_gap_paragraphs'    => array( 1, 20 ),
 		'pause_min_ads'         => array( 0, 10 ),
+		'affiliate_max_session' => array( 1, 10 ),
+		'affiliate_cooldown_ms' => array( 5000, 120000 ),
 	);
 	foreach ( $ints as $key => $range ) {
 		$val = isset( $input[ $key ] ) ? (int) $input[ $key ] : $defaults[ $key ];
@@ -266,6 +279,7 @@ function pl_ad_sanitize_settings( $input ) {
 		'slot_interstitial', 'slot_anchor', 'slot_300x250',
 		'slot_970x250', 'slot_728x90', 'slot_320x100', 'slot_160x600', 'slot_pause',
 		'backfill_script_url', 'backfill_anchor_tag', 'backfill_interstitial_tag',
+		'affiliate_name', 'affiliate_url',
 	);
 	foreach ( $texts as $key ) {
 		$clean[ $key ] = isset( $input[ $key ] ) ? sanitize_text_field( $input[ $key ] ) : $defaults[ $key ];
@@ -497,6 +511,50 @@ function pl_ad_render_global_tab( $s ) {
 		<tr>
 			<th>InPage Video</th>
 			<td><label><input type="checkbox" name="pl_ad_settings[fmt_video]" value="1" <?php checked( $s['fmt_video'] ); ?>> playerPro inpage video (intro section)</label></td>
+		</tr>
+
+		<tr><th colspan="2"><h2>Affiliate Backfill</h2></th></tr>
+		<tr>
+			<th>Affiliate Enabled</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[affiliate_enabled]" value="1" <?php checked( $s['affiliate_enabled'] ); ?>> Show affiliate ads when Ad.Plus returns empty</label>
+				<p class="description">Affiliate ads only show after GPT returns empty — never competes with Ad.Plus.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Affiliate URL</th>
+			<td>
+				<input type="text" name="pl_ad_settings[affiliate_url]" value="<?php echo esc_attr( $s['affiliate_url'] ); ?>" class="regular-text" style="width:400px">
+				<p class="description">Base affiliate URL. Cross-site routing is automatic (non-cheerlives traffic routes through cheerlives.com/go/).</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Max Per Session</th>
+			<td>
+				<input type="number" name="pl_ad_settings[affiliate_max_session]" value="<?php echo esc_attr( $s['affiliate_max_session'] ); ?>" min="1" max="10" class="small-text">
+				<p class="description">Maximum affiliate ads per page session (1-10).</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Cooldown (ms)</th>
+			<td>
+				<input type="number" name="pl_ad_settings[affiliate_cooldown_ms]" value="<?php echo esc_attr( $s['affiliate_cooldown_ms'] ); ?>" min="5000" max="120000" step="1000" class="small-text">
+				<p class="description">Minimum time between affiliate ads in milliseconds.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Top Banner</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[affiliate_top_banner]" value="1" <?php checked( $s['affiliate_top_banner'] ); ?>> Show affiliate banner on first scroll</label>
+				<p class="description">Fixed top bar with dismiss button. Shown once per session.</p>
+			</td>
+		</tr>
+		<tr>
+			<th>Backfill on Empty</th>
+			<td>
+				<label><input type="checkbox" name="pl_ad_settings[affiliate_backfill]" value="1" <?php checked( $s['affiliate_backfill'] ); ?>> Replace empty GPT slots with affiliate creative</label>
+				<p class="description">When GPT returns empty after retry, show affiliate ad instead of house ad.</p>
+			</td>
 		</tr>
 
 		<tr><th colspan="2"><h2>Passback (Backfill)</h2></th></tr>
@@ -1003,6 +1061,9 @@ function pinlightning_ads_enqueue() {
 			'pause'        => $s['slot_pause'],
 		),
 
+		// Affiliate backfill config.
+		'affiliate'    => pl_ad_get_affiliate_config( $s ),
+
 		// Optimizer settings (from pl-ad-optimizer control center).
 		'formats'      => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_format_settings' ) : array(),
 		'refresh'      => function_exists( 'pl_opt_get' ) ? pl_opt_get( 'pl_ad_refresh_settings' ) : array(),
@@ -1027,4 +1088,67 @@ function pinlightning_ads_enqueue() {
 	}, 97 );
 }
 add_action( 'wp_enqueue_scripts', 'pinlightning_ads_enqueue', 20 );
+
+/**
+ * Build affiliate config for frontend output.
+ *
+ * Dynamically routes affiliate URL through cheerlives.com/go/ for cross-site
+ * tracking so FlexOffers always sees cheerlives.com as the traffic source.
+ *
+ * @param  array $s Ad settings.
+ * @return array    Affiliate config for plAds JS global.
+ */
+function pl_ad_get_affiliate_config( $s ) {
+	$aff_url      = $s['affiliate_url'];
+	$current_host = parse_url( home_url(), PHP_URL_HOST );
+
+	// If NOT cheerlives.com, route through cheerlives redirect.
+	$is_direct = ( $current_host === 'cheerlives.com' || $current_host === 'www.cheerlives.com' );
+	if ( ! $is_direct ) {
+		$site_slug = str_replace( '.com', '', str_replace( 'www.', '', $current_host ) );
+		$aff_url   = 'https://cheerlives.com/go/skillshare?src=' . urlencode( $site_slug );
+	}
+
+	return array(
+		'enabled'       => (bool) $s['affiliate_enabled'],
+		'name'          => $s['affiliate_name'],
+		'url'           => $aff_url,
+		'maxPerSession' => (int) $s['affiliate_max_session'],
+		'cooldownMs'    => (int) $s['affiliate_cooldown_ms'],
+		'topBanner'     => (bool) $s['affiliate_top_banner'],
+		'backfill'      => (bool) $s['affiliate_backfill'],
+		'isDirect'      => $is_direct,
+	);
+}
+
+/**
+ * Output affiliate CSS animations in <head>.
+ * Only loads on single posts where ads are enabled.
+ */
+function pl_ad_affiliate_css() {
+	if ( pl_is_ezoic_site() ) {
+		return;
+	}
+	if ( ! is_single() ) {
+		return;
+	}
+	$s = pl_ad_settings();
+	if ( ! $s['enabled'] || ! $s['affiliate_enabled'] ) {
+		return;
+	}
+	?>
+<style>
+@keyframes plPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,107,53,0.5)}50%{box-shadow:0 0 12px 4px rgba(255,107,53,0.25)}}
+@keyframes plPulseTeal{0%,100%{box-shadow:0 0 0 0 rgba(0,212,170,0.5)}50%{box-shadow:0 0 12px 4px rgba(0,212,170,0.25)}}
+@keyframes plGlow{0%,100%{opacity:1}50%{opacity:0.7}}
+@keyframes plSlideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.pl-affiliate-link:hover{opacity:0.92}
+.pl-affiliate-slot{margin:16px 0;text-align:center;animation:plSlideUp 0.4s ease}
+#pl-affiliate-top{box-shadow:0 2px 10px rgba(0,0,0,0.3)}
+.pl-aff-cta{display:inline-block;font-weight:700;border:none;cursor:pointer}
+.pl-aff-badge{font-size:12px;font-weight:700;letter-spacing:2px}
+</style>
+	<?php
+}
+add_action( 'wp_head', 'pl_ad_affiliate_css', 98 );
 

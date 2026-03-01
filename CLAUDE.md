@@ -29,6 +29,7 @@
 
 ### Revenue Model
 - **Primary:** Ad.Plus display ads (GPT programmatic)
+- **Secondary:** Skillshare affiliate backfill (FlexOffers, fxo.co/1522574/social)
 - **Planned:** Email funnel → paid PDF product ("Pinterest Niche Site Blueprint")
 
 ### Site Goals
@@ -115,6 +116,11 @@ Fast_wordpress_theme/
 ├── template-coral-breeze.php # Coral Breeze homepage (pulsepathlife.com)
 │
 ├── template-tec-slate.php      # Tec Slate homepage (tecarticles.com)
+│
+├── wp-content/
+│   └── mu-plugins/
+│       └── pl-affiliate-router.php # Affiliate redirect router (cheerlives.com only),
+│                                   # /go/skillshare → fxo.co, analytics DB, admin dashboard
 │
 ├── template-parts/
 │   └── content-card.php    # Reusable card component for grids
@@ -672,6 +678,19 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Feat: Skillshare Affiliate Backfill System (Mar 1, 2026)
+- **feat: add Skillshare affiliate backfill with 9 variants, smart rotation, scroll-triggered banner, cross-site router with analytics, and full tracking dashboard**
+- **Affiliate redirect router** — `wp-content/mu-plugins/pl-affiliate-router.php` (cheerlives.com only). Handles `/go/skillshare` redirects to `fxo.co/1522574/social`. Cross-site routing: inspireinlet/pulsepathlife traffic routes through `cheerlives.com/go/skillshare?src=<site>&v=<variant>` so FlexOffers sees all traffic from approved cheerlives.com domain. 302 redirect with `Referrer-Policy: no-referrer`. Full analytics: DB table (`wp_pl_affiliate_redirects`), admin dashboard under Ad Engine > Affiliate Router (overview cards, by source/variant/device/hourly/daily breakdowns), REST API, 90-day retention.
+- **9 creative variants** — Defined in `initial-ads.js` via `window.__plAffiliateCreative(variantId)`. 3 dark cards (A1 income hook, A2 FOMO hook, A3 identity hook), 3 light cards (B1 emotional, B2 curiosity, B3 humor), 3 banner variants (C1-C3). All with inline styles, CSS animations (plPulse, plGlow, plSlideUp), "Sponsored" label, `rel="sponsored"`.
+- **Multi-armed bandit rotation** — `window.__plAffPickVariant(type)` uses weighted random selection. Under 10 impressions: equal weight (explore). After 10+: CTR + 0.1 exploration bonus (exploit). Stats stored in `localStorage:pl_aff_stats`. All localStorage access wrapped in try/catch.
+- **Affiliate injection system** — `injectAffiliateAd(target, reason)` in `smart-ads.js`. Guards: enabled, backfill flag, maxPerSession, cooldownMs. Type selection: 60% dark, 40% light. IntersectionObserver viewability (50% threshold + 1s dwell). Click tracking via sendBeacon. State: `_affiliateAdsShown`, `_lastAffiliateTime`, `_affiliateImpressions[]`.
+- **Empty slot hooks** — (1) `engineLoop()`: after `_consecutiveEmpties >= 3`, tries affiliate at pause/scroll target before returning. (2) `onDynamicSlotRenderEnded()`: after retry also empty, tries affiliate before falling back to house ad. (3) `rescanAnchors()`: resets affiliate state for new content.
+- **Top banner** — `initAffiliateTopBanner()` in `initial-ads.js`. Fixed top bar shown on FIRST SCROLL (not timer, zero LCP impact). Dismiss persisted in `sessionStorage:pl_aff_top_dismissed`. Bouncers never see it.
+- **Admin settings** — `ad-engine.php` Global Controls > Affiliate Backfill section: enable/disable, URL, max per session (1-10), cooldown ms, top banner toggle, backfill on empty toggle. Frontend config via `plAds.affiliate` object with dynamic URL routing.
+- **CSS animations** — Output via `pl_ad_affiliate_css()` at `wp_head` p98: plPulse, plPulseTeal, plGlow, plSlideUp keyframes + .pl-affiliate-slot/.pl-aff-cta/.pl-aff-badge utility classes.
+- **Tracking pipeline** — Events through `__plAdTracker.track()`: `affiliate_impression`, `affiliate_viewable`, `affiliate_click`, `affiliate_dismiss`. Reuses existing DB columns: affiliateName → `unit_name`, variant → `creative_size` (aff-A1, aff-A2...), reason → `injection_type`. Beacon: `affiliateShown`, `affiliateClicks`, `affiliateZones[]`. Heartbeat: `affiliateShown`, `affiliateClicks`.
+- **Injection lab** — "Affiliate Performance" section with overview cards (impressions, viewable, clicks, CTR, dismiss rate), by-variant table (CTR ranking with status badges), by-reason table. Data from `pl_injection_lab_fetch_data()` affiliate queries.
+
 ### Fix: Pending-Slots Guard to Prevent Burst Injection (Mar 1, 2026)
 - **Root cause:** `_consecutiveEmpties` guard didn't prevent burst injection because multiple slots were created in rapid succession (4-9 in one second) before GPT responded to any of them. By the time GPT returned empty for the first slot, several more were already pending.
 - **Fix (smart-ads.js):** Added `_pendingSlots` counter. Incremented in `injectDynamicAd()` after container creation, decremented at the top of `onDynamicSlotRenderEnded()` when GPT responds. `engineLoop()` guard: `if (_pendingSlots >= 2) return;` — engine waits for GPT to respond before injecting more. Max 2 pending at once. Reset in `rescanAnchors()` for new auto-loaded content. Tracked in beacon/heartbeat as `pendingSlots`.
@@ -869,6 +888,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Page ad system for non-post pages (homepage, category, static) — fully isolated from post ads
 - PageSpeed scores maintained at 100/100/100/100
 - tecarticles.com: Ezoic-compatible deployment with zero ad engine code, Tec Slate homepage template
+- Skillshare affiliate backfill (9 variants, smart rotation, top banner, cross-site router, full tracking)
 
 ### Monitoring (check after 24-48 hours)
 - Viewability trend: 43.8% → 48.8% → 54% → target 63-70%
@@ -877,6 +897,9 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Predictive TTV improvement from 6022ms with reduced window
 - Mobile initial-ad-1 viewability after 2s delay
 - Sidebar collapse frequency (sidebar_collapsed_invisible events)
+- Affiliate backfill CTR by variant (injection lab affiliate section)
+- Affiliate router redirect counts (WP Admin > Ad Engine > Affiliate Router)
+- Cross-site affiliate routing (inspireinlet/pulsepathlife → cheerlives.com/go/skillshare)
 - GPT response time distribution (injection lab brackets)
 - Last-chance refresh count
 - House ad impressions and clicks
@@ -948,6 +971,10 @@ MAX_PIXEL_SPACING  = 1000  // ceiling
 REFRESH_INTERVAL   = 30000 // 30s (Google policy)
 MAX_REFRESH_DYN    = 2     // max refreshes per dynamic slot
 MAX_DYNAMIC_SLOTS  = 20    // recycled when exceeded
+
+// Affiliate backfill (from plAds.affiliate config)
+// affiliate.maxPerSession = 3  (default, admin configurable 1-10)
+// affiliate.cooldownMs    = 30000  (default, admin configurable)
 ```
 
 ---
@@ -970,3 +997,5 @@ MAX_DYNAMIC_SLOTS  = 20    // recycled when exceeded
 14. **CLAUDE.md lives in theme root** (same directory as style.css, header.php, functions.php)
 15. **ALWAYS guard ad code with `pl_is_ezoic_site()`** on any new ad-related hooks or output
 16. **NEVER load GPT/ad scripts on Ezoic domains** — Ezoic handles its own ad injection
+17. **NEVER show affiliate ads before Ad.Plus gets first shot** — affiliate is backfill only
+18. **ALWAYS route non-cheerlives affiliate traffic through cheerlives.com/go/** — FlexOffers approval is domain-specific
