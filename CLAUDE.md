@@ -678,10 +678,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Fix: Homepage Toggle Uses template_include Instead of 302 Redirect (Mar 1, 2026)
+- **Root cause:** `pl_affiliate_homepage_redirect()` on `template_redirect` issued a 302 redirect to the affiliate page URL. This polluted browser history, caused a visible URL change, and added an extra round-trip.
+- **Fix:** Replaced with `pl_affiliate_homepage_template()` on `template_include` (priority 100). Uses `locate_template('page-affiliate-homepage.php')` to serve the affiliate template directly on cheerlives.com homepage — same URL, no redirect, no browser history entry. Priority 100 ensures it runs after the domain-based homepage routing (priority 99).
+
 ### Feat: Mia Affiliate Landing Page + Homepage Toggle + Analytics (Mar 1, 2026)
 - **page-affiliate-homepage.php** — Standalone WordPress page template for Mia editorial affiliate landing page. Promotes Pinterest marketing course via `https://fxo.co/1522574/social`. Complete inline CSS (no theme dependency). 10 tracked CTA positions (nav, hero, mid-banner, why-1/2/3, curriculum, testimonials, final-cta, final-preview, sticky-bottom). Dynamic blog section pulls real WP posts. FAQ accordion. Social proof bar. Admin floating notice bar for logged-in users. All images served from `cheerlives.com/homepageimages/`.
 - **Click tracking REST endpoint** — `POST /pl/v1/affiliate-click` in `functions.php`. Stores clicks as JSON files in `uploads/pl-affiliate-clicks/{date}/`. Page views tracked separately in daily `pageviews.txt` counter file. IP addresses hashed (privacy). Uses `sendBeacon` with `fetch` fallback.
-- **Homepage toggle** — `pl_affiliate_homepage_redirect()` on `template_redirect`. When enabled via admin toggle, cheerlives.com homepage 302-redirects to the Mia affiliate page. Toggle stored in `pl_affiliate_homepage_active` option.
+- **Homepage toggle** — `pl_affiliate_homepage_template()` on `template_include` (priority 100). When enabled via admin toggle, cheerlives.com homepage serves `page-affiliate-homepage.php` directly — no redirect, no URL change. Toggle stored in `pl_affiliate_homepage_active` option.
 - **Auto page creation** — `pl_create_affiliate_page_once()` on `init`. Creates the WP page with template `page-affiliate-homepage.php` at slug `/pinterest-course/`. Runs once, stores page ID in `pl_affiliate_homepage_page_id` option.
 - **Admin tabs** — Added tab navigation to `affiliate-router.php` admin page: Dashboard (existing), Homepage Toggle (ON/OFF with 302 redirect control), Affiliate Page Stats (1/7/14/30 day click analytics with bar chart, CTR calculation, clicks by CTA position).
 - **Stats corrected:** 40K+ monthly visitors (not 200K). Pinterest impression numbers unchanged (65M, 25M, 2.4M, 280K).

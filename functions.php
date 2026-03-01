@@ -1186,19 +1186,20 @@ add_action('pl_affiliate_page_view', function() {
 // ============================================================
 
 /**
- * If toggle is ON, redirect the homepage to the Mia affiliate page
+ * When toggle is ON, serve the Mia affiliate template on the homepage
+ * without any URL change or redirect.
  */
-function pl_affiliate_homepage_redirect() {
-	if (!is_front_page() || is_admin()) return;
-	if (!get_option('pl_affiliate_homepage_active', 0)) return;
+function pl_affiliate_homepage_template($template) {
+	if (!is_front_page()) return $template;
+	if (!get_option('pl_affiliate_homepage_active', 0)) return $template;
 
-	$page_id = (int) get_option('pl_affiliate_homepage_page_id', 0);
-	if ($page_id && get_post_status($page_id) === 'publish') {
-		wp_redirect(get_permalink($page_id), 302);
-		exit;
+	$affiliate_template = locate_template('page-affiliate-homepage.php');
+	if ($affiliate_template) {
+		return $affiliate_template;
 	}
+	return $template;
 }
-add_action('template_redirect', 'pl_affiliate_homepage_redirect');
+add_filter('template_include', 'pl_affiliate_homepage_template', 100);
 
 /**
  * One-time setup: create the Mia affiliate page in WP if it doesn't exist
