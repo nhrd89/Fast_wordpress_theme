@@ -528,7 +528,12 @@ function initSlots() {
 		googletag.enableServices();
 
 		// Display all display slots (overlays are auto-displayed by GPT)
-		var displayIds = ['initial-ad-1', 'initial-ad-2', 'pause-ad-1'];
+		// Mobile (<768px): delay initial-ad-1 by 2s — gives user time to engage
+		// before the above-fold ad loads (GPT takes ~1s, user scrolls past by then)
+		var isMobile = window.innerWidth < 768;
+		var displayIds = isMobile
+			? ['initial-ad-2', 'pause-ad-1']
+			: ['initial-ad-1', 'initial-ad-2', 'pause-ad-1'];
 		if (IS_DESKTOP) {
 			displayIds.push('300x600-1', '300x250-sidebar');
 		}
@@ -536,6 +541,21 @@ function initSlots() {
 			if (document.getElementById(displayIds[i])) {
 				googletag.display(displayIds[i]);
 			}
+		}
+
+		// Delayed display for initial-ad-1 on mobile — 2s lets user start engaging
+		if (isMobile && document.getElementById('initial-ad-1')) {
+			setTimeout(function() {
+				googletag.cmd.push(function() {
+					googletag.display('initial-ad-1');
+					// SRA already fetched the creative; explicit refresh ensures it renders
+					var ad1Info = _slotMap['initial-ad-1'];
+					if (ad1Info && ad1Info.slot) {
+						googletag.pubads().refresh([ad1Info.slot]);
+					}
+				});
+				log('Mobile initial-ad-1 delayed display (2s)');
+			}, 2000);
 		}
 
 		// Mark ready
@@ -651,6 +671,33 @@ function onSlotRenderEnded(event) {
 	}
 	if (_slotMap[divId]) {
 		_slotMap[divId].renderedSize = size;
+	}
+
+	// FIX 6: Sidebar viewability check — if sidebar ad is not visible within 5s
+	// of rendering, collapse it to save the impression for a refresh later
+	var info = _slotMap[divId];
+	if (info && info.type === 'sidebar') {
+		(function(sidebarDivId, sidebarInfo) {
+			setTimeout(function() {
+				var sEl = document.getElementById(sidebarDivId);
+				if (!sEl) return;
+				var sRect = sEl.getBoundingClientRect();
+				var vpH   = window.innerHeight;
+				var visH  = Math.max(0, Math.min(sRect.bottom, vpH) - Math.max(sRect.top, 0));
+				if (visH < 10) {
+					// Sidebar ad not visible after 5s — collapse
+					var sCont = sEl.parentElement;
+					if (sCont && sCont.classList.contains('pl-sidebar-ad')) {
+						sCont.style.minHeight = '0';
+						sCont.style.height    = '0';
+						sCont.style.overflow  = 'hidden';
+					}
+					log('Sidebar collapsed (not visible after 5s):', sidebarDivId);
+					pushEvent('sidebar_collapsed_invisible', { divId: sidebarDivId });
+					trackAdEvent('sidebar_collapse', sidebarDivId, { reason: 'not_visible_5s' });
+				}
+			}, 5000);
+		})(divId, info);
 	}
 
 	log('Filled:', divId, size);

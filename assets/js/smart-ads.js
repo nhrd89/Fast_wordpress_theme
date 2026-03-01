@@ -42,11 +42,11 @@ var ENGINE_LOOP_MS     = 100;    // predictive engine loop
 var RECYCLE_DISTANCE   = 1000;   // px above viewport to recycle
 
 // Speed-based spacing: spacing = speed × timeBetween, clamped [MIN, MAX]
-var MIN_PIXEL_SPACING    = Math.max(400, L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 400);
+var MIN_PIXEL_SPACING    = Math.max(500, L2.minPixelSpacing ? parseInt(L2.minPixelSpacing, 10) : 500);
 var MAX_PIXEL_SPACING    = L2.maxPixelSpacing ? parseInt(L2.maxPixelSpacing, 10) : 1000;
 var READER_TIME          = 2.5;   // seconds between ads for readers
 var SCANNER_TIME         = 3.0;   // seconds between ads for scanners
-var FAST_SCANNER_TIME    = 3.5;   // seconds between ads for fast-scanners
+var FAST_SCANNER_TIME    = 5.0;   // seconds between ads for fast-scanners (raised from 3.5 — 21% viewability too low)
 
 // Viewport ad density limits
 var DESKTOP_MAX_IN_VIEW     = L2.desktopMaxInView ? parseInt(L2.desktopMaxInView, 10) : 2;
@@ -61,7 +61,7 @@ var PAUSE_THRESHOLD_MS   = L2.pauseThreshold ? parseInt(L2.pauseThreshold, 10) :
 var VP_REFRESH_DELAY = L2.viewportRefreshDelay ? parseInt(L2.viewportRefreshDelay, 10) : 3000;
 
 // Predictive window (seconds to look ahead)
-var PREDICTIVE_WINDOW = L2.predictiveWindow ? parseFloat(L2.predictiveWindow) : 1.0;
+var PREDICTIVE_WINDOW = L2.predictiveWindow ? parseFloat(L2.predictiveWindow) : 0.8;
 
 // Max speed for predictive injection (above this, ads flash by too fast to be viewable)
 var PREDICTIVE_SPEED_CAP = L2.predictiveSpeedCap ? parseInt(L2.predictiveSpeedCap, 10) : 300;
@@ -78,8 +78,9 @@ var _dynamicSlots   = [];   // {divId, slot, el, anchorEl, injectedAt, viewable,
 var _slotCounter    = 0;
 var _totalSkips     = 0;    // fast-scroller ad skips (for analytics)
 var _totalRetries   = 0;    // empty slot retry attempts (for analytics)
-var _houseAdsShown  = 0;    // house ad backfills shown (max 2 per page)
-var _activeStickyAd = null; // currently sticky ad div (only one at a time)
+var _houseAdsShown      = 0;    // house ad backfills shown (max 2 per page)
+var _consecutiveEmpties = 0;    // consecutive empty GPT responses — stop at 3 (demand exhausted)
+var _activeStickyAd     = null; // currently sticky ad div (only one at a time)
 
 // Exit-intent interstitial
 var _exitFired          = false;
@@ -162,7 +163,9 @@ function getSpacing() {
 	if (_visitorType === 'reader') timeBetween = READER_TIME;
 	else if (_visitorType === 'fast-scanner') timeBetween = FAST_SCANNER_TIME;
 	var spacing = Math.round(_speed * timeBetween);
-	return Math.max(MIN_PIXEL_SPACING, Math.min(MAX_PIXEL_SPACING, spacing));
+	// Fast-scanners get 600px floor — their 21% viewability at 400-600px is too low
+	var floor = (_visitorType === 'fast-scanner') ? Math.max(600, MIN_PIXEL_SPACING) : MIN_PIXEL_SPACING;
+	return Math.max(floor, Math.min(MAX_PIXEL_SPACING, spacing));
 }
 
 /** Get directional spacing — 30% wider on scroll-up (users scan back too fast for viewability). */
@@ -1131,6 +1134,10 @@ function engineLoop() {
 	// Ads injected while scrolling up are almost never seen.
 	if (_scrollDirection === 'up') return;
 
+	// Consecutive empty abort — GPT demand exhausted, stop wasting slots.
+	// If last 3 dynamic slots in a row returned empty, no more injections this session.
+	if (_consecutiveEmpties >= 3) return;
+
 	// Active slot count check
 	var activeCount = 0;
 	for (var i = 0; i < _dynamicSlots.length; i++) {
@@ -1271,8 +1278,9 @@ function onDynamicSlotRenderEnded(event) {
 		}
 
 		// Retry also empty — backfill with house ad (email capture promo)
+		_consecutiveEmpties++;
 		showHouseAd(rec);
-		log('Dynamic empty after retry:', divId, '— house ad backfill');
+		log('Dynamic empty after retry:', divId, '— house ad backfill, consecutiveEmpties:', _consecutiveEmpties);
 		pushEvent('dynamic_ad_empty', { divId: divId, afterRetry: true, houseAd: _houseAdsShown > 0 });
 		if (window.__plAdTracker) {
 			window.__plAdTracker.track('empty', divId, {
@@ -1296,6 +1304,7 @@ function onDynamicSlotRenderEnded(event) {
 		rec.renderedSize = size;
 	}
 	rec.filled = true;
+	_consecutiveEmpties = 0; // reset — demand not exhausted
 
 	console.log('[SmartAds] GPT response:', rec.divId,
 		'FILLED' + (size ? ' ' + size[0] + 'x' + size[1] : ''),
@@ -1651,6 +1660,7 @@ function sendBeacon() {
 		videoInjected:       !!window.__plVideoInjected,
 		totalSkips:          _totalSkips,
 		totalRetries:        _totalRetries,
+		consecutiveEmpties:  _consecutiveEmpties,
 		// Exit-intent interstitial
 		exitInterstitialFired:   _exitFired,
 		exitInterstitialTrigger: _exitTrigger || '',
@@ -1745,6 +1755,7 @@ function sendHeartbeat() {
 		videoInjected:       !!window.__plVideoInjected,
 		totalSkips:          _totalSkips,
 		totalRetries:        _totalRetries,
+		consecutiveEmpties:  _consecutiveEmpties,
 		// Exit-intent interstitial
 		exitInterstitialFired:   _exitFired,
 		exitInterstitialTrigger: _exitTrigger || '',
@@ -2171,6 +2182,9 @@ function rescanAnchors() {
 
 	// Reset house ad counter: new content gets its own quota (max 2)
 	_houseAdsShown = 0;
+
+	// Reset consecutive empties: new content = new demand opportunity
+	_consecutiveEmpties = 0;
 
 	// Clear stale viewport visibility timestamps from old content slots
 	_slotViewStart = {};

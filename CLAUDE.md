@@ -2,7 +2,7 @@
 
 > Complete reference for any Claude Code session to pick up immediately.
 > **Branch:** `claude/setup-pinlightning-theme-5lwUG`
-> **Last updated:** 2026-02-28
+> **Last updated:** 2026-03-01
 
 ---
 
@@ -270,7 +270,7 @@ Two separate ad systems, completely isolated:
 |------|-------|-----------------|
 | Reader | <100 px/s | 2.5s |
 | Scanner | 100-400 px/s | 3.0s |
-| Fast-scanner | >400 px/s | 3.5s |
+| Fast-scanner | >400 px/s | 5.0s |
 
 **Injection Strategies (priority order):**
 1. **Pause** (speed <100px/s for 120ms) — inject at viewport center. Highest viewability.
@@ -283,10 +283,11 @@ Two separate ad systems, completely isolated:
 - Catches the moment just before a full stop for earlier injection
 
 **Spacing Rules:**
-- `MIN_PIXEL_SPACING = 400px` (enforced at PHP config, JS init with `Math.max(400, ...)`, and runtime guard)
-- Formula: `speed × timeBetween`, clamped [400, 1000] px
+- `MIN_PIXEL_SPACING = 500px` (enforced at PHP config, JS init with `Math.max(500, ...)`, and runtime guard)
+- Fast-scanners get 600px floor (their 21% viewability at 400-600px was too low)
+- Formula: `speed × timeBetween`, clamped [500, 1000] px
 - Scroll-up modifier: `spacing × 1.3` (users scan back too fast for viewability)
-- Absolute guard: if actual placement <400px from nearest ad, abort injection
+- Absolute guard: if actual placement <500px from nearest ad, abort injection
 
 **Viewport Density Limits:**
 - Mobile: max 1 ad visible
@@ -394,8 +395,9 @@ Two separate ad systems, completely isolated:
 var _dynamicSlots   = [];    // all dynamic ad records
 var _slotCounter    = 0;     // divId numbering
 var _totalSkips     = 0;     // fast-scroll abandoned ads
-var _totalRetries   = 0;     // empty slot retries
-var _houseAdsShown  = 0;     // house ad backfills (max 2)
+var _totalRetries       = 0;     // empty slot retries
+var _consecutiveEmpties = 0;     // consecutive empties — stop at 3 (demand exhausted)
+var _houseAdsShown      = 0;     // house ad backfills (max 2)
 var _activeStickyAd = null;  // current sticky ad container
 var _tabVisible     = true;  // gates engine when tab hidden
 var _engineInterval = null;  // stored interval ID
@@ -513,7 +515,7 @@ docs:  — documentation only
 |--------|----------|--------|-------------|
 | Viewability % | 54% | 70-80% | Session reporter + injection lab |
 | Fill rate | ~47-53% | 60%+ | Beacon payload `fillRate` |
-| Spacing distribution | 0 below 400px | Keep at 0 | Injection lab histogram |
+| Spacing distribution | 0 below 500px | Keep at 0 | Injection lab histogram |
 | Viewport refreshes | >0 | Higher is better | Session stats |
 | Skips (fast-scroll) | Low | Minimize waste | Beacon `totalSkips` |
 | Retries | Per session | Track fill recovery | Beacon `totalRetries` |
@@ -668,6 +670,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Perf: Improve Fill Rate + Viewability — 6 Fixes (Mar 1, 2026)
+- **FIX 1: Consecutive empty abort (fill rate)** — Added `_consecutiveEmpties` counter in `onDynamicSlotRenderEnded`. Increments on empty (after retry), resets to 0 on fill. `engineLoop()` guard: `if (_consecutiveEmpties >= 3) return;` — stops injecting when GPT demand is exhausted. Prevents the "22 injected, 1 filled, 21 wasted" pattern. Counter reset in `rescanAnchors()` for new auto-loaded content. Tracked in beacon/heartbeat as `consecutiveEmpties`.
+- **FIX 2: Reduce fast-scanner injection rate (viewability)** — Fast-scanners had 5.3 ads/session but only 21% viewability. `FAST_SCANNER_TIME` raised from 3.5s to 5.0s (time between injections). Added 600px spacing floor for fast-scanners in `getSpacing()` (vs 500px for others). At >400px/s with 5.0s gap, natural spacing is 2000px (clamped to MAX 1000px).
+- **FIX 3: Widen minimum spacing from 400px to 500px (viewability)** — Data showed 400-600px spacing bracket had only 22% viewability vs 30% at 600-800px. `MIN_PIXEL_SPACING` raised from 400 to 500 in smart-ads.js init, PHP default (`ad-optimizer.php`), PHP sanitization clamp, admin UI min attribute, and normal/aggressive presets. Spacing clamp formula now [500, 1000].
+- **FIX 4: Reduce predictive window by 20% (viewability)** — Predictive strategy avg TTV was 6022ms — ads placed too far ahead of where user stops. `PREDICTIVE_WINDOW` default reduced from 1.0 to 0.8. PHP default in `ad-optimizer.php` also updated. Ads now land ~20% closer to predicted stop point.
+- **FIX 5: Delay initial-ad-1 on mobile (viewability)** — Layer 1 initial-ad-1 (after paragraph 1) scrolled past before GPT fills (~1s). On mobile (<768px), `googletag.display('initial-ad-1')` delayed by 2s via setTimeout. Other slots (initial-ad-2, pause-ad-1) display immediately. After delay, explicit `refresh()` ensures SRA-fetched creative renders. Desktop/tablet unchanged.
+- **FIX 6: Sidebar viewability check (viewability)** — Sidebar ads (300x600-1, 300x250-sidebar) may render below visible sidebar area. In `onSlotRenderEnded`, 5s setTimeout checks if sidebar ad is in viewport (<10px visible). If not visible, collapses container (height:0, overflow:hidden). Tracked as `sidebar_collapsed_invisible` event.
 
 ### Fix: Viewable Tracking Fields + Remove 250x250 Format (Feb 28, 2026)
 - **Fix viewable tracking breakdown fields** — Injection lab by_spacing, by_density, and by_response_time breakdowns showed 0 viewable despite 210 viewable in overview. Root cause: `track('viewable', ...)` call in `onDynamicImpressionViewable` (smart-ads.js) was missing `adSpacing`, `nearImage`, `adsInViewport`, `adDensityPercent`, `gptResponseMs` fields. SQL queries filter on these columns (e.g. `WHERE ad_spacing > 0`), so viewable events with 0 values were excluded from breakdowns. Fix: added all 5 fields from the ad record, matching the `track('impression', ...)` call pattern.
@@ -842,7 +852,11 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 - Ad relocation DISABLED (0% viewability on 82 relocated ads — code remains but never called)
 - GPT response time tracking (beacon/heartbeat/DB/injection lab/live sessions)
 - Viewport-aware size selection
-- 400px minimum spacing enforced everywhere
+- 500px minimum spacing enforced everywhere (raised from 400px, fast-scanners get 600px floor)
+- Consecutive empty abort (3 empties in a row → stop injecting, demand exhausted)
+- Mobile initial-ad-1 delayed 2s (prevents scrolling past before GPT fills)
+- Sidebar viewability check (collapse invisible sidebar ads after 5s)
+- Predictive window reduced 20% (0.8 vs 1.0 — ads land closer to user stop point)
 - Stable snapshot system for ad engine files (save/revert from admin)
 - Next-post auto-load (IO trigger at 70% read, max 3 posts, smart-ads rescan)
 - Exit-intent interstitial (fires GPT interstitial on tab switch/mouse-leave/beforeunload)
@@ -853,12 +867,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ### Monitoring (check after 24-48 hours)
 - Viewability trend: 43.8% → 48.8% → 54% → target 63-70%
-- Fill rate: was reported as 0% due to tracking bug (FIXED) — actual fills ~50% per by_response_time data. After fix, injection lab overview should show accurate fill rate
+- Fill rate improvement from consecutive empty abort (should reduce wasted slots significantly)
+- Fast-scanner viewability improvement from 21% with wider spacing + longer gap
+- Predictive TTV improvement from 6022ms with reduced window
+- Mobile initial-ad-1 viewability after 2s delay
+- Sidebar collapse frequency (sidebar_collapsed_invisible events)
 - GPT response time distribution (injection lab brackets)
-- Viewability lift from disabling relocation + scroll-up injection
 - Last-chance refresh count
 - House ad impressions and clicks
-- Verify v6 migration ran: check injection lab after first admin page load — existing impression events should now have injection_type populated
 
 ### Known Issues
 - Pause injection share dropped to 3.3% (was 9%) after round 1 — may need PAUSE_VELOCITY tuning
@@ -922,7 +938,7 @@ SLOT_PATH         = '/21849154601,22953639975/'
 IS_DESKTOP        = window.innerWidth >= 1025
 PAUSE_VELOCITY    = 100    // px/s
 PAUSE_THRESHOLD_MS = 120   // ms (configurable via optimizer)
-MIN_PIXEL_SPACING  = 400   // absolute floor
+MIN_PIXEL_SPACING  = 500   // absolute floor (raised from 400, 400-600px had 22% viewability)
 MAX_PIXEL_SPACING  = 1000  // ceiling
 REFRESH_INTERVAL   = 30000 // 30s (Google policy)
 MAX_REFRESH_DYN    = 2     // max refreshes per dynamic slot
@@ -937,7 +953,7 @@ MAX_DYNAMIC_SLOTS  = 20    // recycled when exceeded
 2. **ALWAYS read smart-ads.js and initial-ads.js fully** before making ad changes
 3. **ALWAYS commit** with descriptive conventional messages (feat:, fix:, perf:, docs:)
 4. **ALWAYS check PageSpeed** after CSS/HTML changes in header or critical path
-5. **NEVER go below 400px** minimum ad spacing
+5. **NEVER go below 500px** minimum ad spacing
 6. **NEVER refresh ads faster than 30 seconds** (Google GPT policy)
 7. **NEVER use `get_the_excerpt()` in filters** — use `$post->post_excerpt`
 8. **NEVER use 103 Early Hints** on LiteSpeed/QUIC
