@@ -678,6 +678,11 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Fix: Affiliate Router 404 — Hook Changed to init (Mar 1, 2026)
+- **Root cause:** `template_redirect` fires AFTER WordPress resolves the query. Since `/go/skillshare` doesn't match any post/page, WordPress sets `is_404=true` and interferes with the redirect, returning a 404 page instead.
+- **Fix (pl-affiliate-router.php):** Changed hook from `template_redirect` to `init` (priority 1). `init` fires before any WordPress query parsing, so the router intercepts `/go/` URLs before WordPress can 404 them. Function renamed from `pl_affiliate_router` to `pl_affiliate_router_early`. The function already calls `exit;` after the redirect headers, so no WordPress processing happens after it.
+- **Path parsing verified:** `parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)` correctly strips query strings before slug extraction. All URL variants work: `/go/skillshare`, `/go/skillshare?src=inspireinlet&v=A1`, `/go/skillshare?src=pulsepathlife&v=B2`.
+
 ### Feat: Skillshare Affiliate Backfill System (Mar 1, 2026)
 - **feat: add Skillshare affiliate backfill with 9 variants, smart rotation, scroll-triggered banner, cross-site router with analytics, and full tracking dashboard**
 - **Affiliate redirect router** — `wp-content/mu-plugins/pl-affiliate-router.php` (cheerlives.com only). Handles `/go/skillshare` redirects to `fxo.co/1522574/social`. Cross-site routing: inspireinlet/pulsepathlife traffic routes through `cheerlives.com/go/skillshare?src=<site>&v=<variant>` so FlexOffers sees all traffic from approved cheerlives.com domain. 302 redirect with `Referrer-Policy: no-referrer`. Full analytics: DB table (`wp_pl_affiliate_redirects`), admin dashboard under Ad Engine > Affiliate Router (overview cards, by source/variant/device/hourly/daily breakdowns), REST API, 90-day retention.

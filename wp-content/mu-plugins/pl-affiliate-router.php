@@ -60,9 +60,9 @@ function pl_aff_router_maybe_create_table() {
  * REDIRECT HANDLER
  * ================================================================ */
 
-add_action( 'template_redirect', 'pl_affiliate_router', 1 );
+add_action( 'init', 'pl_affiliate_router_early', 1 );
 
-function pl_affiliate_router() {
+function pl_affiliate_router_early() {
 	$path = trim( parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ), '/' );
 	if ( strpos( $path, 'go/' ) !== 0 ) {
 		return;
