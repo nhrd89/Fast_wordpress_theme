@@ -118,6 +118,7 @@ Fast_wordpress_theme/
 ├── template-coral-breeze.php # Coral Breeze homepage (pulsepathlife.com)
 │
 ├── template-tec-slate.php      # Tec Slate homepage (tecarticles.com)
+├── page-affiliate-homepage.php # Mia affiliate landing page (cheerlives.com)
 │
 ├── template-parts/
 │   └── content-card.php    # Reusable card component for grids
@@ -639,6 +640,7 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 | GET | `/pl/v1/category-posts` | `functions.php` | Category page load more |
 | POST | `/pl/v1/page-ad-event` | `page-ad-recorder.php` | Page ad impression/viewable/click tracking |
 | GET | `/pl/v1/page-ad-stats` | `page-ad-recorder.php` | Page ad aggregate stats (admin-only) |
+| POST | `/pl/v1/affiliate-click` | `functions.php` | Mia affiliate page click/pageview tracking |
 
 ---
 
@@ -675,6 +677,14 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Feat: Mia Affiliate Landing Page + Homepage Toggle + Analytics (Mar 1, 2026)
+- **page-affiliate-homepage.php** — Standalone WordPress page template for Mia editorial affiliate landing page. Promotes Pinterest marketing course via `https://fxo.co/1522574/social`. Complete inline CSS (no theme dependency). 10 tracked CTA positions (nav, hero, mid-banner, why-1/2/3, curriculum, testimonials, final-cta, final-preview, sticky-bottom). Dynamic blog section pulls real WP posts. FAQ accordion. Social proof bar. Admin floating notice bar for logged-in users. All images served from `cheerlives.com/homepageimages/`.
+- **Click tracking REST endpoint** — `POST /pl/v1/affiliate-click` in `functions.php`. Stores clicks as JSON files in `uploads/pl-affiliate-clicks/{date}/`. Page views tracked separately in daily `pageviews.txt` counter file. IP addresses hashed (privacy). Uses `sendBeacon` with `fetch` fallback.
+- **Homepage toggle** — `pl_affiliate_homepage_redirect()` on `template_redirect`. When enabled via admin toggle, cheerlives.com homepage 302-redirects to the Mia affiliate page. Toggle stored in `pl_affiliate_homepage_active` option.
+- **Auto page creation** — `pl_create_affiliate_page_once()` on `init`. Creates the WP page with template `page-affiliate-homepage.php` at slug `/pinterest-course/`. Runs once, stores page ID in `pl_affiliate_homepage_page_id` option.
+- **Admin tabs** — Added tab navigation to `affiliate-router.php` admin page: Dashboard (existing), Homepage Toggle (ON/OFF with 302 redirect control), Affiliate Page Stats (1/7/14/30 day click analytics with bar chart, CTR calculation, clicks by CTA position).
+- **Stats corrected:** 40K+ monthly visitors (not 200K). Pinterest impression numbers unchanged (65M, 25M, 2.4M, 280K).
 
 ### Fix: Affiliate Admin Link + Comprehensive Tracking Dashboard (Mar 1, 2026)
 - **Root cause (admin 404):** `add_submenu_page('pl-ad-engine', ...)` in `affiliate-router.php` was registered at `admin_menu` priority 10, same as the parent menu in `ad-engine.php`. Since `affiliate-router.php` is loaded first in `functions.php`, its callback registered first and fired first — before the parent `pl-ad-engine` menu existed. WordPress couldn't resolve the parent slug, generating a URL like `wp-admin/pl-affiliate-router` (404) instead of `admin.php?page=pl-affiliate-router`.
