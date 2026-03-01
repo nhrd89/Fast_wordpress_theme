@@ -80,6 +80,7 @@ var _totalSkips     = 0;    // fast-scroller ad skips (for analytics)
 var _totalRetries   = 0;    // empty slot retry attempts (for analytics)
 var _houseAdsShown      = 0;    // house ad backfills shown (max 2 per page)
 var _consecutiveEmpties = 0;    // consecutive empty GPT responses — stop at 3 (demand exhausted)
+var _pendingSlots       = 0;    // slots waiting for GPT response — cap at 2 to prevent burst injection
 var _activeStickyAd     = null; // currently sticky ad div (only one at a time)
 
 // Exit-intent interstitial
@@ -894,6 +895,9 @@ function injectDynamicAd(afterElement, injectionType) {
 
 	_dynamicSlots.push(record);
 
+	// Track pending slots — decremented in onDynamicSlotRenderEnded when GPT responds
+	_pendingSlots++;
+
 	// Render strategy depends on scroll speed at injection time:
 	// - Fast scrollers (>200px/s): 500ms timeout then proximity check — skip if user scrolled away
 	// - Normal/slow scrollers: IO with 200px rootMargin — renders when approaching viewport
@@ -1138,6 +1142,10 @@ function engineLoop() {
 	// If last 3 dynamic slots in a row returned empty, no more injections this session.
 	if (_consecutiveEmpties >= 3) return;
 
+	// Pending slots guard — don't inject more if 2+ slots waiting for GPT response.
+	// Prevents burst injection where 4-9 slots are created before any GPT response arrives.
+	if (_pendingSlots >= 2) return;
+
 	// Active slot count check
 	var activeCount = 0;
 	for (var i = 0; i < _dynamicSlots.length; i++) {
@@ -1207,6 +1215,9 @@ function engineLoop() {
 
 function onDynamicSlotRenderEnded(event) {
 	var divId = event.slot.getSlotElementId();
+
+	// Decrement pending counter — GPT has responded to this slot
+	_pendingSlots = Math.max(0, _pendingSlots - 1);
 
 	// Only handle our dynamic slots
 	var rec = null;
@@ -1661,6 +1672,7 @@ function sendBeacon() {
 		totalSkips:          _totalSkips,
 		totalRetries:        _totalRetries,
 		consecutiveEmpties:  _consecutiveEmpties,
+		pendingSlots:        _pendingSlots,
 		// Exit-intent interstitial
 		exitInterstitialFired:   _exitFired,
 		exitInterstitialTrigger: _exitTrigger || '',
@@ -1756,6 +1768,7 @@ function sendHeartbeat() {
 		totalSkips:          _totalSkips,
 		totalRetries:        _totalRetries,
 		consecutiveEmpties:  _consecutiveEmpties,
+		pendingSlots:        _pendingSlots,
 		// Exit-intent interstitial
 		exitInterstitialFired:   _exitFired,
 		exitInterstitialTrigger: _exitTrigger || '',
@@ -2185,6 +2198,9 @@ function rescanAnchors() {
 
 	// Reset consecutive empties: new content = new demand opportunity
 	_consecutiveEmpties = 0;
+
+	// Reset pending slots: old pending responses are irrelevant for new content
+	_pendingSlots = 0;
 
 	// Clear stale viewport visibility timestamps from old content slots
 	_slotViewStart = {};

@@ -397,6 +397,7 @@ var _slotCounter    = 0;     // divId numbering
 var _totalSkips     = 0;     // fast-scroll abandoned ads
 var _totalRetries       = 0;     // empty slot retries
 var _consecutiveEmpties = 0;     // consecutive empties — stop at 3 (demand exhausted)
+var _pendingSlots       = 0;     // slots waiting for GPT response — cap at 2 (burst guard)
 var _houseAdsShown      = 0;     // house ad backfills (max 2)
 var _activeStickyAd = null;  // current sticky ad container
 var _tabVisible     = true;  // gates engine when tab hidden
@@ -670,6 +671,10 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 ---
 
 ## 13. Recent Changes Log
+
+### Fix: Pending-Slots Guard to Prevent Burst Injection (Mar 1, 2026)
+- **Root cause:** `_consecutiveEmpties` guard didn't prevent burst injection because multiple slots were created in rapid succession (4-9 in one second) before GPT responded to any of them. By the time GPT returned empty for the first slot, several more were already pending.
+- **Fix (smart-ads.js):** Added `_pendingSlots` counter. Incremented in `injectDynamicAd()` after container creation, decremented at the top of `onDynamicSlotRenderEnded()` when GPT responds. `engineLoop()` guard: `if (_pendingSlots >= 2) return;` — engine waits for GPT to respond before injecting more. Max 2 pending at once. Reset in `rescanAnchors()` for new auto-loaded content. Tracked in beacon/heartbeat as `pendingSlots`.
 
 ### Perf: Improve Fill Rate + Viewability — 6 Fixes (Mar 1, 2026)
 - **FIX 1: Consecutive empty abort (fill rate)** — Added `_consecutiveEmpties` counter in `onDynamicSlotRenderEnded`. Increments on empty (after retry), resets to 0 on fill. `engineLoop()` guard: `if (_consecutiveEmpties >= 3) return;` — stops injecting when GPT demand is exhausted. Prevents the "22 injected, 1 filled, 21 wasted" pattern. Counter reset in `rescanAnchors()` for new auto-loaded content. Tracked in beacon/heartbeat as `consecutiveEmpties`.
