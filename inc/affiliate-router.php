@@ -652,7 +652,8 @@ function pl_aff_router_admin_page() {
 		.aff-range-btn:hover { background:#f0f0f1; color:#1d2327; }
 		.aff-range-btn.active { background:#2271b1; color:#fff; border-color:#2271b1; }
 		.aff-btn-export { background:#00a32a !important; border-color:#00a32a !important; color:#fff !important; }
-		.aff-btn-clear { background:#d63638 !important; border-color:#d63638 !important; color:#fff !important; }
+		.aff-btn-clear-router { background:#dba617 !important; border-color:#dba617 !important; color:#fff !important; }
+		.aff-btn-clear-all { background:#d63638 !important; border-color:#d63638 !important; color:#fff !important; }
 		.aff-table { border-collapse:collapse; width:100%; font-size:13px; }
 		.aff-table th { background:#f6f7f7; text-align:left; padding:8px 10px; border-bottom:1px solid #c3c4c7; font-size:12px; font-weight:600; white-space:nowrap; }
 		.aff-table td { padding:6px 10px; border-bottom:1px solid #e0e0e0; vertical-align:top; }
@@ -730,7 +731,8 @@ function pl_aff_router_admin_page() {
 			<?php endforeach; ?>
 			<span style="flex:1"></span>
 			<button type="button" id="plAffExport" class="button aff-btn-export">Export JSON</button>
-			<button type="button" id="plAffClearBtn" class="button aff-btn-clear">Clear Router Data</button>
+			<button type="button" id="plAffClearRouterBtn" class="button aff-btn-clear-router">Clear Router Data</button>
+			<button type="button" id="plAffClearAllBtn" class="button aff-btn-clear-all">Clear ALL Affiliate Data</button>
 		</div>
 
 		<!-- SECTION 1: Router Traffic by Source -->
@@ -1224,14 +1226,26 @@ function pl_aff_router_admin_page() {
 
 	</div><!-- #pl-aff-dash -->
 
-	<!-- Clear Data Modal -->
-	<div class="aff-modal-overlay" id="plAffClearModal">
+	<!-- Clear Router Data Modal -->
+	<div class="aff-modal-overlay" id="plAffClearRouterModal">
 		<div class="aff-modal">
-			<h3>&#9888;&#65039; Clear Router Data?</h3>
-			<p>This will delete all affiliate redirect logs from pl_affiliate_redirects. Ad event tracking data will NOT be affected. This cannot be undone.</p>
+			<h3>Clear Router Data?</h3>
+			<p>Delete all router redirect logs? Ad event tracking will NOT be affected.</p>
 			<div class="aff-modal-actions">
-				<button type="button" class="button" id="plAffClearCancel">Cancel</button>
-				<button type="button" class="button aff-btn-clear" id="plAffClearConfirm">Delete All Router Data</button>
+				<button type="button" class="button" id="plAffClearRouterCancel">Cancel</button>
+				<button type="button" class="button aff-btn-clear-router" id="plAffClearRouterConfirm">Delete Router Data</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Clear ALL Affiliate Data Modal -->
+	<div class="aff-modal-overlay" id="plAffClearAllModal">
+		<div class="aff-modal">
+			<h3>&#9888;&#65039; Clear ALL Affiliate Data?</h3>
+			<p>Delete ALL affiliate data including impressions, clicks, viewable events, and router logs? This cannot be undone.</p>
+			<div class="aff-modal-actions">
+				<button type="button" class="button" id="plAffClearAllCancel">Cancel</button>
+				<button type="button" class="button aff-btn-clear-all" id="plAffClearAllConfirm">Delete ALL Affiliate Data</button>
 			</div>
 		</div>
 	</div>
@@ -1268,19 +1282,19 @@ function pl_aff_router_admin_page() {
 			});
 		}
 
-		/* Clear Data Modal */
-		var clearBtn    = document.getElementById('plAffClearBtn');
-		var clearModal  = document.getElementById('plAffClearModal');
-		var clearCancel = document.getElementById('plAffClearCancel');
-		var clearConfirm = document.getElementById('plAffClearConfirm');
+		/* Clear Router Data Modal */
+		var crBtn     = document.getElementById('plAffClearRouterBtn');
+		var crModal   = document.getElementById('plAffClearRouterModal');
+		var crCancel  = document.getElementById('plAffClearRouterCancel');
+		var crConfirm = document.getElementById('plAffClearRouterConfirm');
 
-		if (clearBtn && clearModal) {
-			clearBtn.addEventListener('click', function(){ clearModal.classList.add('visible'); });
-			clearCancel.addEventListener('click', function(){ clearModal.classList.remove('visible'); });
-			clearModal.addEventListener('click', function(e){ if (e.target === clearModal) clearModal.classList.remove('visible'); });
-			clearConfirm.addEventListener('click', function(){
-				clearConfirm.disabled = true;
-				clearConfirm.textContent = 'Deleting...';
+		if (crBtn && crModal) {
+			crBtn.addEventListener('click', function(){ crModal.classList.add('visible'); });
+			crCancel.addEventListener('click', function(){ crModal.classList.remove('visible'); });
+			crModal.addEventListener('click', function(e){ if (e.target === crModal) crModal.classList.remove('visible'); });
+			crConfirm.addEventListener('click', function(){
+				crConfirm.disabled = true;
+				crConfirm.textContent = 'Deleting...';
 				fetch(restBase + 'clear-router-data', {
 					method: 'POST',
 					headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' }
@@ -1288,18 +1302,54 @@ function pl_aff_router_admin_page() {
 				.then(function(r){ return r.json(); })
 				.then(function(data){
 					if (data.success) {
-						clearModal.classList.remove('visible');
+						crModal.classList.remove('visible');
 						window.location.reload();
 					} else {
 						alert('Error: ' + (data.message || 'Unknown error'));
-						clearConfirm.disabled = false;
-						clearConfirm.textContent = 'Delete All Router Data';
+						crConfirm.disabled = false;
+						crConfirm.textContent = 'Delete Router Data';
 					}
 				})
 				.catch(function(e){
 					alert('Error: ' + e.message);
-					clearConfirm.disabled = false;
-					clearConfirm.textContent = 'Delete All Router Data';
+					crConfirm.disabled = false;
+					crConfirm.textContent = 'Delete Router Data';
+				});
+			});
+		}
+
+		/* Clear ALL Affiliate Data Modal */
+		var caBtn     = document.getElementById('plAffClearAllBtn');
+		var caModal   = document.getElementById('plAffClearAllModal');
+		var caCancel  = document.getElementById('plAffClearAllCancel');
+		var caConfirm = document.getElementById('plAffClearAllConfirm');
+
+		if (caBtn && caModal) {
+			caBtn.addEventListener('click', function(){ caModal.classList.add('visible'); });
+			caCancel.addEventListener('click', function(){ caModal.classList.remove('visible'); });
+			caModal.addEventListener('click', function(e){ if (e.target === caModal) caModal.classList.remove('visible'); });
+			caConfirm.addEventListener('click', function(){
+				caConfirm.disabled = true;
+				caConfirm.textContent = 'Deleting...';
+				fetch(restBase + 'clear-all-data', {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' }
+				})
+				.then(function(r){ return r.json(); })
+				.then(function(data){
+					if (data.success) {
+						caModal.classList.remove('visible');
+						window.location.reload();
+					} else {
+						alert('Error: ' + (data.message || 'Unknown error'));
+						caConfirm.disabled = false;
+						caConfirm.textContent = 'Delete ALL Affiliate Data';
+					}
+				})
+				.catch(function(e){
+					alert('Error: ' + e.message);
+					caConfirm.disabled = false;
+					caConfirm.textContent = 'Delete ALL Affiliate Data';
 				});
 			});
 		}
@@ -1385,10 +1435,19 @@ function pl_aff_register_rest_routes() {
 		},
 	) );
 
-	// POST — clear router data.
+	// POST — clear router data only.
 	register_rest_route( 'pl-aff/v1', '/clear-router-data', array(
 		'methods'             => 'POST',
 		'callback'            => 'pl_aff_router_api_clear',
+		'permission_callback' => function () {
+			return current_user_can( 'manage_options' );
+		},
+	) );
+
+	// POST — clear ALL affiliate data (router + ad events).
+	register_rest_route( 'pl-aff/v1', '/clear-all-data', array(
+		'methods'             => 'POST',
+		'callback'            => 'pl_aff_router_api_clear_all',
 		'permission_callback' => function () {
 			return current_user_can( 'manage_options' );
 		},
@@ -1432,6 +1491,34 @@ function pl_aff_router_api_clear() {
 	return rest_ensure_response( array(
 		'success' => true,
 		'message' => 'Router data cleared.',
+	) );
+}
+
+/* ----------------------------------------------------------------
+ * POST /pl-aff/v1/clear-all-data
+ * Truncates pl_affiliate_redirects AND deletes affiliate events
+ * from pl_ad_events.
+ * ---------------------------------------------------------------- */
+function pl_aff_router_api_clear_all() {
+	global $wpdb;
+	$rdr = $wpdb->prefix . 'pl_affiliate_redirects';
+	$evt = $wpdb->prefix . 'pl_ad_events';
+
+	if ( pl_aff_table_exists( $rdr ) ) {
+		$wpdb->query( "TRUNCATE TABLE $rdr" );
+	}
+
+	$deleted_events = 0;
+	if ( pl_aff_table_exists( $evt ) ) {
+		$deleted_events = (int) $wpdb->query(
+			"DELETE FROM $evt WHERE event_type LIKE 'affiliate_%'"
+		);
+	}
+
+	return rest_ensure_response( array(
+		'success'        => true,
+		'deleted_events' => $deleted_events,
+		'message'        => 'All affiliate data cleared. ' . $deleted_events . ' ad events deleted.',
 	) );
 }
 
