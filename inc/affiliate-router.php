@@ -14,12 +14,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-// Only run on cheerlives.com.
-$pl_aff_host = parse_url( home_url(), PHP_URL_HOST );
-if ( $pl_aff_host !== 'cheerlives.com' && $pl_aff_host !== 'www.cheerlives.com' ) {
-	return;
-}
-
 /* ================================================================
  * DATABASE TABLE
  * ================================================================ */
@@ -63,6 +57,12 @@ function pl_aff_router_maybe_create_table() {
 add_action( 'init', 'pl_affiliate_router_early', 1 );
 
 function pl_affiliate_router_early() {
+	// Only handle /go/ redirects on cheerlives.com.
+	$host = parse_url( home_url(), PHP_URL_HOST );
+	if ( $host !== 'cheerlives.com' && $host !== 'www.cheerlives.com' ) {
+		return;
+	}
+
 	$path = trim( parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ), '/' );
 	if ( strpos( $path, 'go/' ) !== 0 ) {
 		return;

@@ -15,6 +15,9 @@ define( 'PINLIGHTNING_VERSION', '1.0.0' );
 define( 'PINLIGHTNING_DIR', get_template_directory() );
 define( 'PINLIGHTNING_URI', get_template_directory_uri() );
 
+// Affiliate router must load very early — init hook at priority 1.
+require_once PINLIGHTNING_DIR . '/inc/affiliate-router.php';
+
 /**
  * Check if the current site uses Ezoic for ad monetization.
  *

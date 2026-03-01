@@ -110,17 +110,14 @@ Fast_wordpress_theme/
 │   ├── homepage-templates.php # Multi-site homepage routing, emerald CSS inliner,
 │   │                          # category circles cache, Customizer template setting
 │   ├── page-ad-engine.php  # Page ad settings, admin tab, enqueue, config, archive/page hooks
-│   └── page-ad-recorder.php # Page ad REST endpoints (impression/viewable/click tracking)
+│   ├── page-ad-recorder.php # Page ad REST endpoints (impression/viewable/click tracking)
+│   └── affiliate-router.php # Affiliate redirect router (cheerlives.com only),
+│                             # /go/skillshare → fxo.co, analytics DB, admin dashboard
 │
 ├── template-emerald-editorial.php # Emerald Editorial homepage (inspireinlet.com)
 ├── template-coral-breeze.php # Coral Breeze homepage (pulsepathlife.com)
 │
 ├── template-tec-slate.php      # Tec Slate homepage (tecarticles.com)
-│
-├── wp-content/
-│   └── mu-plugins/
-│       └── pl-affiliate-router.php # Affiliate redirect router (cheerlives.com only),
-│                                   # /go/skillshare → fxo.co, analytics DB, admin dashboard
 │
 ├── template-parts/
 │   └── content-card.php    # Reusable card component for grids
@@ -135,6 +132,7 @@ Fast_wordpress_theme/
 
 ### Theme Requires (functions.php loads)
 ```php
+inc/affiliate-router.php   # FIRST — init hook at priority 1 for /go/ redirects
 inc/template-tags.php
 inc/customizer.php
 inc/performance.php
@@ -678,9 +676,11 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
-### Fix: Affiliate Router 404 — Hook Changed to init (Mar 1, 2026)
-- **Root cause:** `template_redirect` fires AFTER WordPress resolves the query. Since `/go/skillshare` doesn't match any post/page, WordPress sets `is_404=true` and interferes with the redirect, returning a 404 page instead.
-- **Fix (pl-affiliate-router.php):** Changed hook from `template_redirect` to `init` (priority 1). `init` fires before any WordPress query parsing, so the router intercepts `/go/` URLs before WordPress can 404 them. Function renamed from `pl_affiliate_router` to `pl_affiliate_router_early`. The function already calls `exit;` after the redirect headers, so no WordPress processing happens after it.
+### Fix: Affiliate Router 404 + Move into Theme (Mar 1, 2026)
+- **Root cause (404):** `template_redirect` fires AFTER WordPress resolves the query. Since `/go/skillshare` doesn't match any post/page, WordPress sets `is_404=true` and interferes with the redirect, returning a 404 page instead.
+- **Fix (hook):** Changed hook from `template_redirect` to `init` (priority 1). `init` fires before any WordPress query parsing, so the router intercepts `/go/` URLs before WordPress can 404 them. Function renamed from `pl_affiliate_router` to `pl_affiliate_router_early`. The function already calls `exit;` after the redirect headers, so no WordPress processing happens after it.
+- **Root cause (not deployed):** The mu-plugin lived at `wp-content/mu-plugins/pl-affiliate-router.php`, outside the theme directory. GitHub Actions CI/CD only deploys the theme directory via rsync, so the file never reached the server.
+- **Fix (location):** Moved from `wp-content/mu-plugins/pl-affiliate-router.php` to `inc/affiliate-router.php`. Added `require_once` as the FIRST include in `functions.php` (before all other includes) so the `init` hook at priority 1 fires early. Removed the top-level cheerlives.com domain guard (theme already knows which site it's on), but kept the guard inside `pl_affiliate_router_early()` itself. Deleted the mu-plugin file.
 - **Path parsing verified:** `parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)` correctly strips query strings before slug extraction. All URL variants work: `/go/skillshare`, `/go/skillshare?src=inspireinlet&v=A1`, `/go/skillshare?src=pulsepathlife&v=B2`.
 
 ### Feat: Skillshare Affiliate Backfill System (Mar 1, 2026)
