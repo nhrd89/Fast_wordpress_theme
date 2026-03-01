@@ -676,6 +676,18 @@ Engagement UI on listicle posts only (posts with `<h2>` containing `#N` patterns
 
 ## 13. Recent Changes Log
 
+### Fix: Affiliate Admin Link + Comprehensive Tracking Dashboard (Mar 1, 2026)
+- **Root cause (admin 404):** `add_submenu_page('pl-ad-engine', ...)` in `affiliate-router.php` was registered at `admin_menu` priority 10, same as the parent menu in `ad-engine.php`. Since `affiliate-router.php` is loaded first in `functions.php`, its callback registered first and fired first — before the parent `pl-ad-engine` menu existed. WordPress couldn't resolve the parent slug, generating a URL like `wp-admin/pl-affiliate-router` (404) instead of `admin.php?page=pl-affiliate-router`.
+- **Fix (priority):** Changed `add_action('admin_menu', 'pl_aff_router_admin_menu')` to priority 20. Parent menu at priority 10 now always exists when submenu is registered.
+- **Comprehensive dashboard rebuild:** Replaced basic stats page with full-featured affiliate analytics dashboard matching injection lab styling patterns.
+- **11 dashboard sections:** (1) Overview cards (redirects, unique visitors, clicks, CTR), (2) Router traffic by source, (3) Router traffic by variant, (4) Affiliate impressions & clicks from `pl_ad_events`, (5) By placement reason (backfill/empty_abort/top_banner), (6) By device (combined router + ad events), (7) Daily trend (merged router + event data), (8) Top banner stats with dismiss rate, (9) Top performing posts (top 20 by clicks, linked), (10) Hourly heatmap (CSS bars, green gradient), (11) Live feed (auto-refresh 30s via AJAX).
+- **Winner Analysis section:** Three winner cards (Best Dark/Light/Banner) with CTR comparison and lift calculation. Master ranked table with all 9 variants showing type, psychology hook, CTR, and status badges (WINNER/Rising/Good/Low/Collecting). Bandit status indicator (Exploring vs Optimizing). Only shown at 50+ total impressions.
+- **3 REST API endpoints:** `GET pl-aff/v1/router-stats?range=` (full dashboard data for export), `POST pl-aff/v1/clear-router-data` (truncate router table), `GET pl-aff/v1/live-feed?limit=` (last N redirects for auto-refresh).
+- **Export JSON:** Downloads complete dataset as `pl-affiliate-analytics-{range}-{date}.json` via browser download (fetch → Blob → click).
+- **Clear Router Data:** Modal confirmation dialog, AJAX truncate, page reload on success. Only clears `pl_affiliate_redirects` — ad event data preserved.
+- **Data source separation:** Dashboard queries TWO tables: `pl_affiliate_redirects` (router redirect logs) and `pl_ad_events` (affiliate_impression/viewable/click/dismiss events). Both tables checked for existence before querying.
+- **Styling:** Matches injection lab patterns — `.aff-card` overview cards, `.aff-section` containers, `.aff-table` with striped hover rows, `.aff-badge-*` status badges, `.aff-winner-card` with green border for winners, `.aff-heatmap-*` CSS bar chart, `.aff-modal-overlay` for confirmation dialog.
+
 ### Fix: Affiliate Router 404 + Move into Theme (Mar 1, 2026)
 - **Root cause (404):** `template_redirect` fires AFTER WordPress resolves the query. Since `/go/skillshare` doesn't match any post/page, WordPress sets `is_404=true` and interferes with the redirect, returning a 404 page instead.
 - **Fix (hook):** Changed hook from `template_redirect` to `init` (priority 1). `init` fires before any WordPress query parsing, so the router intercepts `/go/` URLs before WordPress can 404 them. Function renamed from `pl_affiliate_router` to `pl_affiliate_router_early`. The function already calls `exit;` after the redirect headers, so no WordPress processing happens after it.
