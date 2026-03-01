@@ -624,6 +624,24 @@ function pl_aff_router_admin_page() {
 		return;
 	}
 
+	$current_tab = isset( $_GET['tab'] ) ? sanitize_text_field( $_GET['tab'] ) : 'dashboard';
+	if ( ! in_array( $current_tab, array( 'dashboard', 'homepage', 'aff-page' ), true ) ) {
+		$current_tab = 'dashboard';
+	}
+
+	// --- Homepage Toggle tab ---
+	if ( $current_tab === 'homepage' ) {
+		pl_aff_render_homepage_tab();
+		return;
+	}
+
+	// --- Affiliate Page Stats tab ---
+	if ( $current_tab === 'aff-page' ) {
+		pl_aff_render_page_stats_tab();
+		return;
+	}
+
+	// --- Dashboard tab (default) ---
 	$range = isset( $_GET['range'] ) ? sanitize_text_field( $_GET['range'] ) : '7d';
 	$data  = pl_aff_gather_data( $range );
 	$ov    = $data['overview'];
@@ -698,9 +716,15 @@ function pl_aff_router_admin_page() {
 	</style>
 
 	<div class="wrap" id="pl-aff-dash">
-		<h1 style="display:flex;align-items:center;gap:10px;">Affiliate Router Analytics
+		<h1 style="display:flex;align-items:center;gap:10px;">Affiliate Router
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button" style="font-size:12px;">Back to Ad Engine</a>
 		</h1>
+
+		<nav class="nav-tab-wrapper" style="margin-bottom:16px;">
+			<a href="?page=pl-affiliate-router&tab=dashboard" class="nav-tab <?php echo ( $current_tab === 'dashboard' ) ? 'nav-tab-active' : ''; ?>">&#x1F4CA; Dashboard</a>
+			<a href="?page=pl-affiliate-router&tab=homepage" class="nav-tab <?php echo ( $current_tab === 'homepage' ) ? 'nav-tab-active' : ''; ?>">&#x1F3E0; Homepage Toggle</a>
+			<a href="?page=pl-affiliate-router&tab=aff-page" class="nav-tab <?php echo ( $current_tab === 'aff-page' ) ? 'nav-tab-active' : ''; ?>">&#x1F4CC; Affiliate Page Stats</a>
+		</nav>
 
 		<!-- OVERVIEW CARDS -->
 		<div class="aff-cards">
@@ -1404,6 +1428,222 @@ function pl_aff_router_admin_page() {
 		startAutoRefresh();
 	})();
 	</script>
+	<?php
+}
+
+/* ================================================================
+ * HOMEPAGE TOGGLE TAB
+ * ================================================================ */
+
+function pl_aff_render_homepage_tab() {
+	// Handle form submission
+	if ( isset( $_POST['pl_toggle_nonce'] ) && wp_verify_nonce( $_POST['pl_toggle_nonce'], 'pl_toggle_homepage' ) ) {
+		$active = isset( $_POST['homepage_active'] ) ? 1 : 0;
+		update_option( 'pl_affiliate_homepage_active', $active );
+		echo '<div class="notice notice-success"><p><strong>' . ( $active ? 'Affiliate homepage is now ACTIVE. cheerlives.com now redirects to the Mia affiliate page.' : 'Affiliate homepage is DISABLED. cheerlives.com shows the normal blog homepage.' ) . '</strong></p></div>';
+	}
+
+	$is_active = get_option( 'pl_affiliate_homepage_active', 0 );
+	$page_id   = get_option( 'pl_affiliate_homepage_page_id', 0 );
+	$page_url  = $page_id ? get_permalink( $page_id ) : '#';
+	$edit_url  = $page_id ? get_edit_post_link( $page_id ) : '#';
+	?>
+	<div class="wrap">
+		<h1 style="display:flex;align-items:center;gap:10px;">Affiliate Router
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button" style="font-size:12px;">Back to Ad Engine</a>
+		</h1>
+
+		<nav class="nav-tab-wrapper" style="margin-bottom:16px;">
+			<a href="?page=pl-affiliate-router&tab=dashboard" class="nav-tab">&#x1F4CA; Dashboard</a>
+			<a href="?page=pl-affiliate-router&tab=homepage" class="nav-tab nav-tab-active">&#x1F3E0; Homepage Toggle</a>
+			<a href="?page=pl-affiliate-router&tab=aff-page" class="nav-tab">&#x1F4CC; Affiliate Page Stats</a>
+		</nav>
+
+		<div style="max-width:700px;margin-top:24px;">
+			<div style="background:<?php echo $is_active ? '#e8f5e9' : '#fff8e1'; ?>;border:2px solid <?php echo $is_active ? '#4caf50' : '#ff9800'; ?>;border-radius:12px;padding:24px;margin-bottom:28px;">
+				<h2 style="margin:0 0 8px;font-size:20px;">
+					<?php echo $is_active ? '&#x1F7E2; Affiliate Homepage: ACTIVE' : '&#x1F7E1; Affiliate Homepage: INACTIVE'; ?>
+				</h2>
+				<p style="margin:0;color:#555;">
+					<?php if ( $is_active ) : ?>
+						<strong>cheerlives.com</strong> is currently redirecting visitors to the Mia affiliate landing page.
+					<?php else : ?>
+						<strong>cheerlives.com</strong> is showing the normal blog homepage. Enable the toggle to redirect to Mia's page.
+					<?php endif; ?>
+				</p>
+			</div>
+
+			<form method="post" action="">
+				<?php wp_nonce_field( 'pl_toggle_homepage', 'pl_toggle_nonce' ); ?>
+				<table class="form-table">
+					<tr>
+						<th style="width:200px;">Homepage Mode</th>
+						<td>
+							<label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+								<input type="checkbox" name="homepage_active" value="1" <?php checked( 1, $is_active ); ?> style="width:20px;height:20px;">
+								<span style="font-weight:600;">Redirect homepage to Mia Affiliate Page</span>
+							</label>
+							<p class="description" style="margin-top:6px;">When checked, anyone visiting cheerlives.com will be redirected (302) to the Pinterest course affiliate landing page.</p>
+						</td>
+					</tr>
+					<?php if ( $page_id ) : ?>
+					<tr>
+						<th>Affiliate Page</th>
+						<td>
+							<a href="<?php echo esc_url( $page_url ); ?>" target="_blank" style="color:#FF6B35;font-weight:600;">View Affiliate Page &rarr;</a>
+							&nbsp;&nbsp;
+							<a href="<?php echo esc_url( $edit_url ); ?>" target="_blank" style="color:#666;">Edit in WP &rarr;</a>
+						</td>
+					</tr>
+					<?php endif; ?>
+				</table>
+				<p class="submit"><input type="submit" class="button button-primary" value="Save Homepage Setting"></p>
+			</form>
+
+			<div style="background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:18px;margin-top:20px;">
+				<h3 style="margin:0 0 10px;font-size:15px;">Quick Switch Tips</h3>
+				<ul style="margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.8;">
+					<li>The redirect is a <strong>302 (temporary)</strong> &mdash; no SEO impact, Google keeps indexing your blog homepage</li>
+					<li>Logged-in admins see a floating notice bar on the affiliate page with a link back here</li>
+					<li>Toggle OFF anytime to instantly restore the normal homepage</li>
+					<li>The affiliate page URL is always accessible at <code><?php echo esc_html( $page_url ); ?></code> regardless of this toggle</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+	<?php
+}
+
+/* ================================================================
+ * AFFILIATE PAGE STATS TAB
+ * ================================================================ */
+
+function pl_aff_render_page_stats_tab() {
+	// Load click data for last N days
+	$upload    = wp_upload_dir();
+	$base_dir  = $upload['basedir'] . '/pl-affiliate-clicks/';
+	$days      = isset( $_GET['days'] ) ? min( 30, max( 1, intval( $_GET['days'] ) ) ) : 7;
+
+	$all_clicks    = array();
+	$total_pv      = 0;
+	$clicks_by_pos = array();
+
+	for ( $i = 0; $i < $days; $i++ ) {
+		$date    = gmdate( 'Y-m-d', strtotime( "-{$i} days" ) );
+		$day_dir = $base_dir . $date . '/';
+
+		// Count page views
+		$pv_file = $day_dir . 'pageviews.txt';
+		if ( file_exists( $pv_file ) ) {
+			$total_pv += (int) file_get_contents( $pv_file );
+		}
+
+		// Load click files
+		if ( ! is_dir( $day_dir ) ) continue;
+		$files = glob( $day_dir . '*.json' ) ?: array();
+		foreach ( $files as $f ) {
+			$data = json_decode( file_get_contents( $f ), true );
+			if ( ! $data ) continue;
+			$all_clicks[] = $data;
+			$pos = $data['pos'] ?? 'unknown';
+			$clicks_by_pos[ $pos ] = ( $clicks_by_pos[ $pos ] ?? 0 ) + 1;
+		}
+	}
+
+	$total_clicks = count( $all_clicks );
+	$ctr          = $total_pv > 0 ? round( ( $total_clicks / $total_pv ) * 100, 1 ) : 0;
+	arsort( $clicks_by_pos );
+	?>
+	<div class="wrap">
+		<h1 style="display:flex;align-items:center;gap:10px;">Affiliate Router
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=pl-ad-engine' ) ); ?>" class="button" style="font-size:12px;">Back to Ad Engine</a>
+		</h1>
+
+		<nav class="nav-tab-wrapper" style="margin-bottom:16px;">
+			<a href="?page=pl-affiliate-router&tab=dashboard" class="nav-tab">&#x1F4CA; Dashboard</a>
+			<a href="?page=pl-affiliate-router&tab=homepage" class="nav-tab">&#x1F3E0; Homepage Toggle</a>
+			<a href="?page=pl-affiliate-router&tab=aff-page" class="nav-tab nav-tab-active">&#x1F4CC; Affiliate Page Stats</a>
+		</nav>
+
+		<div style="margin-top:24px;">
+			<!-- Period selector -->
+			<div style="margin-bottom:20px;display:flex;gap:8px;">
+				<?php foreach ( array( 1 => 'Today', 7 => '7 Days', 14 => '14 Days', 30 => '30 Days' ) as $d => $lbl ) : ?>
+				<a href="?page=pl-affiliate-router&tab=aff-page&days=<?php echo $d; ?>"
+					style="padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;<?php echo $days == $d ? 'background:#FF6B35;color:#fff' : 'background:#f0f0f0;color:#333'; ?>">
+					<?php echo esc_html( $lbl ); ?>
+				</a>
+				<?php endforeach; ?>
+			</div>
+
+			<!-- Overview stats -->
+			<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
+				<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:20px;text-align:center;border-left:4px solid #FF6B35;">
+					<div style="font-size:32px;font-weight:800;color:#FF6B35;"><?php echo number_format( $total_pv ); ?></div>
+					<div style="font-size:12px;color:#888;margin-top:4px;">PAGE VIEWS (<?php echo $days; ?> DAYS)</div>
+				</div>
+				<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:20px;text-align:center;border-left:4px solid #00A88F;">
+					<div style="font-size:32px;font-weight:800;color:#00A88F;"><?php echo number_format( $total_clicks ); ?></div>
+					<div style="font-size:12px;color:#888;margin-top:4px;">AFFILIATE LINK CLICKS</div>
+				</div>
+				<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:20px;text-align:center;border-left:4px solid #6c5ce7;">
+					<div style="font-size:32px;font-weight:800;color:#6c5ce7;"><?php echo $ctr; ?>%</div>
+					<div style="font-size:12px;color:#888;margin-top:4px;">CLICK-THROUGH RATE</div>
+				</div>
+			</div>
+
+			<!-- Clicks by position -->
+			<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:24px;margin-bottom:20px;">
+				<h3 style="margin:0 0 16px;font-size:16px;">Clicks by CTA Position</h3>
+				<?php if ( empty( $clicks_by_pos ) ) : ?>
+					<p style="color:#999;text-align:center;padding:30px;">No clicks tracked yet. Make sure the affiliate page has been visited.</p>
+				<?php else :
+					$max_clicks = max( $clicks_by_pos );
+					$pos_labels = array(
+						'nav'           => 'Nav Bar Button',
+						'hero'          => 'Hero — Start Free Trial',
+						'mid-banner'    => 'Mid Banner',
+						'why-1'         => 'Why Card 1 (Pinterest Addicts)',
+						'why-2'         => 'Why Card 2 (170K Students)',
+						'why-3'         => 'Why Card 3 (Zero Risk)',
+						'curriculum'    => 'Curriculum Section',
+						'testimonials'  => 'Testimonials',
+						'final-cta'     => 'Final CTA — Start Free',
+						'final-preview' => 'Final CTA — Watch Preview',
+						'sticky-bottom' => 'Sticky Mobile Bar',
+					);
+					foreach ( $clicks_by_pos as $pos => $count ) :
+						$pct   = $max_clicks > 0 ? round( ( $count / $max_clicks ) * 100 ) : 0;
+						$label = $pos_labels[ $pos ] ?? $pos;
+					?>
+					<div style="display:flex;align-items:center;margin:8px 0;font-size:13px;">
+						<span style="width:220px;flex-shrink:0;color:#555;"><?php echo esc_html( $label ); ?></span>
+						<div style="flex:1;height:20px;background:#f3f4f6;border-radius:4px;overflow:hidden;margin:0 12px;">
+							<div style="height:100%;width:<?php echo $pct; ?>%;background:#FF6B35;border-radius:4px;min-width:2px;"></div>
+						</div>
+						<span style="width:40px;text-align:right;font-weight:700;color:#333;"><?php echo $count; ?></span>
+						<span style="width:50px;text-align:right;color:#999;font-size:11px;"><?php echo $total_pv > 0 ? round( ( $count / $total_pv ) * 100, 1 ) : 0; ?>%</span>
+					</div>
+					<?php endforeach; ?>
+				<?php endif; ?>
+			</div>
+
+			<!-- View affiliate page link -->
+			<?php
+			$page_id  = get_option( 'pl_affiliate_homepage_page_id', 0 );
+			$page_url = $page_id ? get_permalink( $page_id ) : home_url( '/pinterest-course/' );
+			?>
+			<div style="text-align:center;padding:16px;background:#fff8f3;border:1px solid #ffe0cc;border-radius:8px;">
+				<a href="<?php echo esc_url( $page_url ); ?>" target="_blank" style="color:#FF6B35;font-weight:600;font-size:14px;">
+					View Affiliate Landing Page &rarr;
+				</a>
+				&nbsp;&nbsp;&nbsp;
+				<a href="?page=pl-affiliate-router&tab=homepage" style="color:#666;font-size:13px;">
+					Manage Homepage Toggle
+				</a>
+			</div>
+		</div>
+	</div>
 	<?php
 }
 

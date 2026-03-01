@@ -1114,4 +1114,123 @@ function pl_count_listicle_items() {
 	return count( $matches[0] );
 }
 
+// ============================================================
+// AFFILIATE PAGE — CLICK TRACKING
+// ============================================================
 
+/**
+ * Store affiliate click data as JSON files (same pattern as visitor tracker)
+ */
+function pl_affiliate_click_dir() {
+	$upload = wp_upload_dir();
+	$dir    = $upload['basedir'] . '/pl-affiliate-clicks/' . gmdate('Y-m-d');
+	if (!file_exists($dir)) {
+		wp_mkdir_p($dir);
+	}
+	return $dir;
+}
+
+/**
+ * REST endpoint: POST /pl/v1/affiliate-click
+ */
+function pl_register_affiliate_click_endpoint() {
+	register_rest_route('pl/v1', '/affiliate-click', [
+		'methods'             => 'POST',
+		'callback'            => 'pl_handle_affiliate_click',
+		'permission_callback' => '__return_true',
+	]);
+}
+add_action('rest_api_init', 'pl_register_affiliate_click_endpoint');
+
+function pl_handle_affiliate_click(WP_REST_Request $request) {
+	$body = $request->get_body();
+	$data = json_decode($body, true);
+	if (!$data) return new WP_REST_Response(['ok' => false], 400);
+
+	$record = [
+		'pos'  => sanitize_text_field($data['pos']    ?? 'unknown'),
+		'page' => sanitize_text_field($data['page']   ?? 'affiliate-homepage'),
+		'ts'   => intval($data['ts']                  ?? time() * 1000),
+		'ref'  => sanitize_text_field($data['ref']    ?? ''),
+		'ua'   => sanitize_text_field($data['ua']     ?? ''),
+		'ip'   => substr(md5($_SERVER['REMOTE_ADDR'] ?? ''), 0, 8), // hashed, not raw IP
+	];
+
+	// Skip page_view tracking for file clutter — count separately
+	if ($record['pos'] === 'page_view') {
+		// Increment daily page view count in a simple counter file
+		$dir      = pl_affiliate_click_dir();
+		$pv_file  = $dir . '/pageviews.txt';
+		$current  = file_exists($pv_file) ? (int) file_get_contents($pv_file) : 0;
+		file_put_contents($pv_file, $current + 1, LOCK_EX);
+		return new WP_REST_Response(['ok' => true], 200);
+	}
+
+	// Save click as JSON file
+	$dir      = pl_affiliate_click_dir();
+	$filename = $dir . '/' . microtime(true) . '_' . wp_generate_uuid4() . '.json';
+	file_put_contents($filename, wp_json_encode($record), LOCK_EX);
+
+	return new WP_REST_Response(['ok' => true], 200);
+}
+
+/**
+ * Hook: track affiliate page views server-side as backup
+ */
+add_action('pl_affiliate_page_view', function() {
+	// Will be fired via do_action in template
+});
+
+// ============================================================
+// AFFILIATE PAGE — HOMEPAGE TOGGLE
+// ============================================================
+
+/**
+ * If toggle is ON, redirect the homepage to the Mia affiliate page
+ */
+function pl_affiliate_homepage_redirect() {
+	if (!is_front_page() || is_admin()) return;
+	if (!get_option('pl_affiliate_homepage_active', 0)) return;
+
+	$page_id = (int) get_option('pl_affiliate_homepage_page_id', 0);
+	if ($page_id && get_post_status($page_id) === 'publish') {
+		wp_redirect(get_permalink($page_id), 302);
+		exit;
+	}
+}
+add_action('template_redirect', 'pl_affiliate_homepage_redirect');
+
+/**
+ * One-time setup: create the Mia affiliate page in WP if it doesn't exist
+ */
+function pl_create_affiliate_page_once() {
+	if (get_option('pl_affiliate_page_created')) return;
+
+	// Check if page with this template already exists
+	$existing = get_pages([
+		'meta_key'   => '_wp_page_template',
+		'meta_value' => 'page-affiliate-homepage.php',
+		'number'     => 1,
+	]);
+
+	if (!empty($existing)) {
+		update_option('pl_affiliate_homepage_page_id', $existing[0]->ID);
+		update_option('pl_affiliate_page_created', 1);
+		return;
+	}
+
+	$page_id = wp_insert_post([
+		'post_title'   => 'Pinterest Course — Free Trial',
+		'post_name'    => 'pinterest-course',
+		'post_status'  => 'publish',
+		'post_type'    => 'page',
+		'post_content' => '',
+	]);
+
+	if ($page_id && !is_wp_error($page_id)) {
+		update_post_meta($page_id, '_wp_page_template', 'page-affiliate-homepage.php');
+		update_option('pl_affiliate_homepage_page_id', $page_id);
+		update_option('pl_affiliate_page_created', 1);
+	}
+}
+add_action('init', 'pl_create_affiliate_page_once');
